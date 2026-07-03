@@ -1,0 +1,168 @@
+{
+  "id": 42,
+  "jsonrpc": "2.0",
+  "result": {
+    "total": 13,
+    "page": 1,
+    "perPage": 100,
+    "pagesCount": 1,
+    "items": [
+      {
+        "id": "5b680f6fb1a43d860a7b08fd",
+        "name": "GLOBEX-DC02",
+        "operatingSystemVersion": "Windows Server 2022 Datacenter",
+        "lastSeen": "2026-07-02T21:13:00Z",
+        "machineType": 2,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.10.310",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b08fe",
+        "name": "GLOBEX-FS01",
+        "operatingSystemVersion": "Windows Server 2022 Datacenter",
+        "lastSeen": "2026-07-02T18:56:00Z",
+        "machineType": 2,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b090a",
+        "name": "globex-ws-109.ad.globex.example",
+        "operatingSystemVersion": "Windows 11 Enterprise",
+        "lastSeen": "2026-07-01T15:32:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b090b",
+        "name": "GLOBEX-WS-110",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-07-01T13:15:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.10.310",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b090c",
+        "name": "GLOBEX-WS-111",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-07-01T10:58:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b090d",
+        "name": "GLOBEX-WS-112",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-07-01T08:41:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.10.310",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b090e",
+        "name": "GLOBEX-WS-113",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-07-01T06:24:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b090f",
+        "name": "GLOBEX-WS-114",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-07-01T04:07:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.10.310",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0910",
+        "name": "GLOBEX-WS-115",
+        "operatingSystemVersion": "Windows 11 Enterprise",
+        "lastSeen": "2026-07-01T01:50:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0912",
+        "name": "GLOBEX-WS-117",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-05-29T00:00:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0914",
+        "name": "GLOBEX-WS-119",
+        "operatingSystemVersion": "Windows 11 Enterprise",
+        "lastSeen": "2026-06-17T00:00:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0919",
+        "name": "GLOBEX-LT-204",
+        "operatingSystemVersion": "Windows 11 Enterprise",
+        "lastSeen": "2026-07-02T17:17:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.10.310",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b091c",
+        "name": "GLOBEX-PRN-OLD",
+        "operatingSystemVersion": "Windows Server 2022 Datacenter",
+        "lastSeen": "2026-05-19T00:00:00Z",
+        "machineType": 2,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      }
+    ]
+  }
+}

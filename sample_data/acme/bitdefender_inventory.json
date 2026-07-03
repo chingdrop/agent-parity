@@ -1,0 +1,120 @@
+{
+  "id": 42,
+  "jsonrpc": "2.0",
+  "result": {
+    "total": 9,
+    "page": 1,
+    "perPage": 100,
+    "pagesCount": 1,
+    "items": [
+      {
+        "id": "5b680f6fb1a43d860a7b0900",
+        "name": "ACME-WEB01",
+        "operatingSystemVersion": "Windows Server 2022 Datacenter",
+        "lastSeen": "2026-07-02T14:22:00Z",
+        "machineType": 2,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0911",
+        "name": "ACME-WS-015",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-06-30T23:33:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.10.310",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0912",
+        "name": "ACME-WS-016",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-06-30T21:16:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0913",
+        "name": "ACME-WS-017",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-06-30T18:59:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.10.310",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0914",
+        "name": "ACME-WS-018",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-06-30T16:42:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0915",
+        "name": "ACME-WS-019",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-06-30T14:25:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.10.310",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0916",
+        "name": "ACME-WS-020",
+        "operatingSystemVersion": "Windows 11 Enterprise",
+        "lastSeen": "2026-06-30T12:08:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0921",
+        "name": "ACME-LT-006",
+        "operatingSystemVersion": "Windows 11 Enterprise",
+        "lastSeen": "2026-06-15T00:00:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.10.310",
+          "productOutdated": false
+        }
+      },
+      {
+        "id": "5b680f6fb1a43d860a7b0928",
+        "name": "ACME-KIOSK7",
+        "operatingSystemVersion": "Windows 10 Enterprise",
+        "lastSeen": "2026-07-01T07:02:00Z",
+        "machineType": 1,
+        "managedWithBest": true,
+        "agent": {
+          "version": "7.9.8.200",
+          "productOutdated": false
+        }
+      }
+    ]
+  }
+}

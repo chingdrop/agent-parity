@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# Django
+db.sqlite3
+staticfiles/
+
+# Secrets — config.yaml holds only ${VAR} references and is safe to commit;
+# .env holds the actual values and must never be.
+.env
+
+# Tooling
+.pytest_cache/
+.claude/
+.idea/
+.vscode/
+.DS_Store
+celerybeat-schedule*

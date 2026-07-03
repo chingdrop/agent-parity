@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}agent-parity{% endblock %}</title>
+  <style>
+    /* Deliberately minimal: just enough for tables, badges, and the chart. */
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+           margin: 0; color: #1f2937; background: #f9fafb; }
+    header { background: #111827; color: #f9fafb; padding: 0.75rem 1.5rem;
+             display: flex; gap: 1.5rem; align-items: baseline; }
+    header a { color: #f9fafb; text-decoration: none; }
+    header a:hover { text-decoration: underline; }
+    header .brand { font-weight: 700; font-size: 1.1rem; }
+    main { max-width: 1100px; margin: 1.5rem auto; padding: 0 1.5rem; }
+    h1, h2, h3 { font-weight: 600; }
+    table { border-collapse: collapse; width: 100%; background: #fff; }
+    th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #e5e7eb;
+             font-size: 0.9rem; }
+    th { background: #f3f4f6; }
+    .card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+            padding: 1rem 1.25rem; margin-bottom: 1.5rem; }
+    .metrics { display: flex; gap: 2rem; flex-wrap: wrap; margin: 0.5rem 0 1rem; }
+    .metric .value { font-size: 1.6rem; font-weight: 700; }
+    .metric .label { font-size: 0.8rem; color: #6b7280; text-transform: uppercase; }
+    .badge { display: inline-block; padding: 0.1rem 0.5rem; border-radius: 999px;
+             font-size: 0.78rem; font-weight: 600; white-space: nowrap; }
+    .badge.covered { background: #d1fae5; color: #065f46; }
+    .badge.missing_agent { background: #fee2e2; color: #991b1b; }
+    .badge.orphaned_agent { background: #ffedd5; color: #9a3412; }
+    .badge.stale_coverage { background: #fef3c7; color: #92400e; }
+    .badge.run-complete { background: #d1fae5; color: #065f46; }
+    .badge.run-partial { background: #fef3c7; color: #92400e; }
+    .badge.run-failed { background: #fee2e2; color: #991b1b; }
+    .badge.run-pending { background: #e5e7eb; color: #374151; }
+    form.filters { display: flex; gap: 0.75rem; align-items: end; margin-bottom: 1rem;
+                   flex-wrap: wrap; }
+    form.filters label { display: block; font-size: 0.75rem; color: #6b7280; }
+    select, button { padding: 0.3rem 0.5rem; font-size: 0.9rem; }
+    .muted { color: #6b7280; font-size: 0.85rem; }
+    .pagination { margin-top: 1rem; font-size: 0.9rem; }
+    canvas.trend { max-height: 220px; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header>
+    <span class="brand">agent-parity</span>
+    <a href="{% url 'dashboard:overview' %}">Overview</a>
+    <a href="{% url 'dashboard:device_list' %}">Devices</a>
+    <a href="/admin/">Admin</a>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

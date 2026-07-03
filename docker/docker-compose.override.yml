@@ -1,0 +1,22 @@
+# Development overrides — applied automatically by `docker compose up`.
+# Bind-mounted source, Django dev server with autoreload, DEBUG settings.
+
+services:
+  web:
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.development
+    volumes:
+      - ..:/app
+
+  worker:
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.development
+    volumes:
+      - ..:/app
+
+  beat:
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.development
+    volumes:
+      - ..:/app

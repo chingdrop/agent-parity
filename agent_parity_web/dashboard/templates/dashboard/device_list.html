@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Devices — agent-parity{% endblock %}
+
+{% block content %}
+<h1>Devices</h1>
+<p class="muted">One row per device/vendor observation from each client's latest run.</p>
+
+<form class="filters" method="get">
+  <div>
+    <label for="client">Client</label>
+    <select name="client" id="client">
+      <option value="">All</option>
+      {% for client in clients %}
+        <option value="{{ client.slug }}" {% if selected.client == client.slug %}selected{% endif %}>
+          {{ client.name }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="status">Status</label>
+    <select name="status" id="status">
+      <option value="">All</option>
+      {% for value, label in statuses %}
+        <option value="{{ value }}" {% if selected.status == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label for="vendor">Vendor</label>
+    <select name="vendor" id="vendor">
+      <option value="">All</option>
+      {% for vendor in vendors %}
+        <option value="{{ vendor }}" {% if selected.vendor == vendor %}selected{% endif %}>{{ vendor }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button type="submit">Filter</button>
+</form>
+
+<table>
+  <thead>
+    <tr>
+      <th>Device</th><th>Client</th><th>Status</th><th>Vendor</th>
+      <th>Agent last seen</th><th>OS</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for snapshot in page %}
+      <tr>
+        <td><a href="{% url 'dashboard:device_detail' snapshot.device.pk %}">{{ snapshot.device.hostname }}</a></td>
+        <td>{{ snapshot.device.client.name }}</td>
+        <td><span class="badge {{ snapshot.status }}">{{ snapshot.get_status_display }}</span></td>
+        <td>{{ snapshot.vendor|default:"—" }}</td>
+        <td>{{ snapshot.agent_last_seen|date:"Y-m-d H:i"|default:"—" }}</td>
+        <td>{{ snapshot.device.os|default:"—" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="muted">No snapshots match these filters.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="pagination">
+  {% if page.has_previous %}
+    <a href="?client={{ selected.client }}&status={{ selected.status }}&vendor={{ selected.vendor }}&page={{ page.previous_page_number }}">&laquo; previous</a>
+  {% endif %}
+  page {{ page.number }} of {{ page.paginator.num_pages }}
+  {% if page.has_next %}
+    <a href="?client={{ selected.client }}&status={{ selected.status }}&vendor={{ selected.vendor }}&page={{ page.next_page_number }}">next &raquo;</a>
+  {% endif %}
+</div>
+{% endblock %}

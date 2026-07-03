@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Coverage overview — agent-parity{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+{% endblock %}
+
+{% block content %}
+<h1>Coverage overview</h1>
+
+{% if not cards %}
+  <p class="muted">No clients yet. Run <code>manage.py seed_demo</code> (or
+  <code>sync_and_correlate</code>) to populate the dashboard.</p>
+{% endif %}
+
+{% for card in cards %}
+  <div class="card">
+    <h2>{{ card.client.name }}</h2>
+    {% if card.run %}
+      <p class="muted">
+        Latest run {{ card.run.pk }} · {{ card.run.started_at|date:"Y-m-d H:i" }} UTC ·
+        <span class="badge run-{{ card.run.status }}">{{ card.run.get_status_display }}</span>
+        {% for source, state in card.run.vendor_status.items %}
+          · {{ source }}: {{ state }}
+        {% endfor %}
+      </p>
+
+      <div class="metrics">
+        <div class="metric">
+          <div class="value">{% if card.coverage_pct is not None %}{{ card.coverage_pct }}%{% else %}—{% endif %}</div>
+          <div class="label">Coverage</div>
+        </div>
+        <div class="metric">
+          <div class="value">{{ card.counts.covered|default:0 }}</div>
+          <div class="label">Covered</div>
+        </div>
+        <div class="metric">
+          <div class="value">{{ card.counts.missing_agent|default:0 }}</div>
+          <div class="label">Missing agent</div>
+        </div>
+        <div class="metric">
+          <div class="value">{{ card.counts.stale_coverage|default:0 }}</div>
+          <div class="label">Stale</div>
+        </div>
+        <div class="metric">
+          <div class="value">{{ card.counts.orphaned_agent|default:0 }}</div>
+          <div class="label">Orphaned agents</div>
+        </div>
+      </div>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Vendor</th><th>Covered</th><th>Stale</th><th>Orphaned</th>
+            <th>Healthy check-in %</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for vendor in card.vendors %}
+            <tr>
+              <td>{{ vendor.name }}</td>
+              <td>{{ vendor.counts.covered|default:0 }}</td>
+              <td>{{ vendor.counts.stale_coverage|default:0 }}</td>
+              <td>{{ vendor.counts.orphaned_agent|default:0 }}</td>
+              <td>{% if vendor.healthy_pct is not None %}{{ vendor.healthy_pct }}%{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <h3>Coverage % over time</h3>
+      <canvas class="trend" data-url="{% url 'dashboard:trend_data' card.client.slug %}"></canvas>
+    {% else %}
+      <p class="muted">No completed runs yet for this client.</p>
+    {% endif %}
+  </div>
+{% endfor %}
+
+<script>
+  document.querySelectorAll("canvas.trend").forEach(async (canvas) => {
+    const data = await (await fetch(canvas.dataset.url)).json();
+    new Chart(canvas, {
+      type: "line",
+      data: {
+        labels: data.labels,
+        datasets: [{
+          label: "Coverage %",
+          data: data.coverage_pct,
+          borderColor: "#059669",
+          backgroundColor: "rgba(5, 150, 105, 0.1)",
+          fill: true,
+          tension: 0.2,
+        }],
+      },
+      options: {
+        scales: { y: { suggestedMin: 0, suggestedMax: 100 } },
+        plugins: { legend: { display: false } },
+      },
+    });
+  });
+</script>
+{% endblock %}

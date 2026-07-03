@@ -1,0 +1,149 @@
+{
+  "num_found": 12,
+  "results": [
+    {
+      "id": 4197801,
+      "name": "ACME-DC02",
+      "os": "WINDOWS",
+      "os_version": "Windows Server 2022 Datacenter",
+      "sensor_version": "4.0.1.128",
+      "last_contact_time": "2026-07-02T21:13:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197802,
+      "name": "ACME-FS01",
+      "os": "WINDOWS",
+      "os_version": "Windows Server 2022 Datacenter",
+      "sensor_version": "3.9.2.2451",
+      "last_contact_time": "2026-07-02T18:56:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197815,
+      "name": "ACME-WS-009",
+      "os": "WINDOWS",
+      "os_version": "Windows 11 Enterprise",
+      "sensor_version": "4.0.1.128",
+      "last_contact_time": "2026-07-01T13:15:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197816,
+      "name": "ACME-WS-010",
+      "os": "WINDOWS",
+      "os_version": "Windows 11 Enterprise",
+      "sensor_version": "3.9.2.2451",
+      "last_contact_time": "2026-07-01T10:58:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197817,
+      "name": "ACME-WS-011",
+      "os": "WINDOWS",
+      "os_version": "Windows 11 Enterprise",
+      "sensor_version": "4.0.1.128",
+      "last_contact_time": "2026-07-01T08:41:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197818,
+      "name": "ACME-WS-012",
+      "os": "WINDOWS",
+      "os_version": "Windows 11 Enterprise",
+      "sensor_version": "3.9.2.2451",
+      "last_contact_time": "2026-07-01T06:24:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197819,
+      "name": "ACME-WS-013",
+      "os": "WINDOWS",
+      "os_version": "Windows 11 Enterprise",
+      "sensor_version": "4.0.1.128",
+      "last_contact_time": "2026-07-01T04:07:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197820,
+      "name": "ACME-WS-014.corp.acme.example",
+      "os": "WINDOWS",
+      "os_version": "Windows 11 Enterprise",
+      "sensor_version": "3.9.2.2451",
+      "last_contact_time": "2026-07-01T01:50:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197830,
+      "name": "ACME-WS-024",
+      "os": "WINDOWS",
+      "os_version": "Windows 10 Enterprise",
+      "sensor_version": "3.9.2.2451",
+      "last_contact_time": "2026-06-03T00:00:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197838,
+      "name": "ACME-LT-007",
+      "os": "WINDOWS",
+      "os_version": "Windows 11 Enterprise",
+      "sensor_version": "3.9.2.2451",
+      "last_contact_time": "2026-07-01T20:44:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197839,
+      "name": "ACME-LT-008",
+      "os": "WINDOWS",
+      "os_version": "Windows 11 Enterprise",
+      "sensor_version": "4.0.1.128",
+      "last_contact_time": "2026-07-01T18:27:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    },
+    {
+      "id": 4197841,
+      "name": "ACME-FS-OLD",
+      "os": "WINDOWS",
+      "os_version": "Windows Server 2022 Datacenter",
+      "sensor_version": "4.0.1.128",
+      "last_contact_time": "2026-05-24T00:00:00Z",
+      "status": "REGISTERED",
+      "policy_name": "Standard",
+      "deployment_type": "ENDPOINT",
+      "virtual_machine": false
+    }
+  ]
+}

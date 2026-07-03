@@ -1,0 +1,32 @@
+[project]
+name = "agent-parity"
+version = "0.1.0"
+description = "Device coverage reconciliation: correlate an AD computer inventory against EDR agent inventories (SentinelOne, Carbon Black, BitDefender) to find missing, orphaned, and stale agent coverage."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "django>=5.2",
+    "pandas>=2.2",
+    "numpy>=2.0",
+    "requests>=2.32",
+    "celery[redis]>=5.5",
+    "redis>=5.0",
+    "pyyaml>=6.0",
+    "gunicorn>=23.0",
+    "psycopg[binary]>=3.2",
+    "whitenoise>=6.7",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.development"
+pythonpath = [".", "agent_parity_web"]
+testpaths = ["tests"]
+
+[tool.uv]
+package = false
