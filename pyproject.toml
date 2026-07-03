@@ -16,6 +16,7 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "whitenoise>=6.7",
     "pandas-stubs~=3.0.3",
+    "celery-types>=0.26.0",
 ]
 
 [dependency-groups]
