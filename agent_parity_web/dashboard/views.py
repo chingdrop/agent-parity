@@ -5,12 +5,11 @@ aggregates) — the views never re-derive pandas classification logic; they
 only present what the pipeline already persisted.
 """
 
+from dashboard.models import Client, CorrelationRun, CoverageSnapshot, CoverageStatus, Device
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, render
-
-from dashboard.models import Client, CorrelationRun, CoverageSnapshot, CoverageStatus, Device
 
 #: Statuses that describe an AD-known device (the coverage denominator);
 #: orphaned agents are a finding, not a coverage gap.

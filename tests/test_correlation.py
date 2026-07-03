@@ -109,9 +109,9 @@ def test_summary_counts_and_coverage_pct():
     ad = ad_frame("WS-01", "WS-02", "WS-03", "WS-04")
     agents = agents_to_frame(
         [
-            agent("WS-01"),                      # covered
-            agent("WS-02", last_seen=STALE),     # stale
-            agent("GHOST-9"),                    # orphaned
+            agent("WS-01"),  # covered
+            agent("WS-02", last_seen=STALE),  # stale
+            agent("GHOST-9"),  # orphaned
         ]
     )  # WS-03, WS-04 -> missing
     summary = correlate(ad, agents, as_of=AS_OF).summary

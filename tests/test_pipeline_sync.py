@@ -5,12 +5,12 @@ fixture edit breaks a scenario, one of these fails by name.
 """
 
 import pytest
+from dashboard import services
+from dashboard.models import CorrelationRun, Device
 from django.core.management import call_command
 
 from agent_parity.config import load_config
 from agent_parity.models import CoverageStatus
-from dashboard import services
-from dashboard.models import CorrelationRun, Device
 
 pytestmark = pytest.mark.django_db
 
@@ -35,11 +35,11 @@ def test_known_scenario_devices_classify_as_authored():
             run.snapshots.filter(device__join_key=join_key).values_list("status", flat=True)
         )
 
-    assert status("acme-sql02") == {CoverageStatus.MISSING_AGENT}      # new server, no agent
-    assert status("acme-ws-023") == {CoverageStatus.STALE_COVERAGE}    # agent silent 25d
-    assert status("acme-fs-old") == {CoverageStatus.ORPHANED_AGENT}    # decommissioned
-    assert status("acme-ws-014") == {CoverageStatus.COVERED}           # FQDN normalization win
-    assert status("acme-dc02") == {CoverageStatus.COVERED}             # reports to two vendors
+    assert status("acme-sql02") == {CoverageStatus.MISSING_AGENT}  # new server, no agent
+    assert status("acme-ws-023") == {CoverageStatus.STALE_COVERAGE}  # agent silent 25d
+    assert status("acme-fs-old") == {CoverageStatus.ORPHANED_AGENT}  # decommissioned
+    assert status("acme-ws-014") == {CoverageStatus.COVERED}  # FQDN normalization win
+    assert status("acme-dc02") == {CoverageStatus.COVERED}  # reports to two vendors
     assert run.snapshots.filter(device__join_key="acme-dc02").count() == 2
 
 

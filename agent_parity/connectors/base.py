@@ -22,8 +22,8 @@ import io
 import json
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta, timezone
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, ClassVar
 
@@ -174,7 +174,9 @@ class AgentConnector(ABC):
         """Normalize a raw inventory payload (live or fixture) to AgentDevice."""
 
     @abstractmethod
-    def _live_fetch_inventory(self) -> list[AgentDevice]: ...
+    def _live_fetch_inventory(self) -> list[AgentDevice]:
+        ...
 
     @abstractmethod
-    def _live_deploy_and_run(self, script_path: Path, target_id: str) -> str: ...
+    def _live_deploy_and_run(self, script_path: Path, target_id: str) -> str:
+        ...

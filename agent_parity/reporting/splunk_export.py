@@ -57,7 +57,7 @@ def send_deltas(deltas: list[dict], splunk: SplunkConfig) -> int:
     headers = {"Authorization": f"Splunk {splunk.hec_token}"}
     sent = 0
     for start in range(0, len(deltas), BATCH_SIZE):
-        batch = deltas[start : start + BATCH_SIZE]
+        batch = deltas[start: start + BATCH_SIZE]
         # HEC accepts newline-concatenated event envelopes in one request.
         body = "\n".join(
             json.dumps(

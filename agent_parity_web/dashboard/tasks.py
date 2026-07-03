@@ -32,14 +32,14 @@ import logging
 from datetime import timedelta
 
 from celery import chord, shared_task
+from dashboard import services
+from dashboard.models import CorrelationRun
 from django.db import transaction
 from django.utils import timezone
 
 from agent_parity.ad_sync.parser import parse_ad_export
 from agent_parity.config import AppConfig, ClientConfig, load_config
 from agent_parity.models import AgentDevice
-from dashboard import services
-from dashboard.models import CorrelationRun
 
 logger = logging.getLogger(__name__)
 

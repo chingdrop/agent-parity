@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 
 import pandas as pd
+from dashboard.models import Client, CorrelationRun, CoverageSnapshot, Device
 from django.db import transaction
 from django.utils import timezone
 
@@ -20,7 +21,6 @@ from agent_parity.correlation.engine import CorrelationResult, agents_to_frame, 
 from agent_parity.deployment.script_runner import run_ad_export
 from agent_parity.models import AgentDevice
 from agent_parity.reporting import splunk_export
-from dashboard.models import Client, CorrelationRun, CoverageSnapshot, Device
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def collect_ad_frame(config: AppConfig, client_slug: str) -> pd.DataFrame:
 
 
 def collect_vendor_inventory(
-    config: AppConfig, client_slug: str, vendor_name: str
+        config: AppConfig, client_slug: str, vendor_name: str
 ) -> list[AgentDevice]:
     connector = get_connector(config, client_slug, vendor_name)
     return connector.fetch_inventory()
@@ -73,9 +73,9 @@ def _first_valid(*values):
 
 @transaction.atomic
 def persist_correlation(
-    run: CorrelationRun,
-    result: CorrelationResult,
-    vendor_status: dict[str, str],
+        run: CorrelationRun,
+        result: CorrelationResult,
+        vendor_status: dict[str, str],
 ) -> int:
     """Load a classified frame into CoverageSnapshot rows for ``run``.
 
@@ -166,11 +166,11 @@ def persist_correlation(
 
 
 def finalize_run(
-    run: CorrelationRun,
-    ad_df: pd.DataFrame,
-    agent_records: list[AgentDevice],
-    vendor_status: dict[str, str],
-    splunk_config=None,
+        run: CorrelationRun,
+        ad_df: pd.DataFrame,
+        agent_records: list[AgentDevice],
+        vendor_status: dict[str, str],
+        splunk_config=None,
 ) -> int:
     """Correlate + persist + (optionally) forward deltas — the shared fan-in."""
     result = correlate(ad_df, agents_to_frame(agent_records), stale_days=run.stale_days)
@@ -229,10 +229,10 @@ def export_deltas_to_splunk(run: CorrelationRun, splunk_config) -> int:
 
 
 def run_pipeline_for_client(
-    config: AppConfig,
-    client_cfg: ClientConfig,
-    run: CorrelationRun | None = None,
-    drift=None,
+        config: AppConfig,
+        client_cfg: ClientConfig,
+        run: CorrelationRun | None = None,
+        drift=None,
 ) -> CorrelationRun:
     """Collect, correlate, and persist for one client, all in-process.
 

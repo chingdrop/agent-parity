@@ -6,11 +6,11 @@ run ID as idempotency key) are identical either way.
 """
 
 import pytest
+from dashboard import services, tasks
+from dashboard.models import CorrelationRun, CoverageSnapshot
 
 from agent_parity.config import load_config
 from agent_parity.connectors.base import ConnectorError
-from dashboard import services, tasks
-from dashboard.models import CorrelationRun, CoverageSnapshot
 
 pytestmark = pytest.mark.django_db
 
@@ -25,7 +25,7 @@ original_collect = services.collect_vendor_inventory
 
 
 def test_chord_produces_partial_run_when_one_vendor_fails(
-    eager_celery, monkeypatch, django_capture_on_commit_callbacks
+        eager_celery, monkeypatch, django_capture_on_commit_callbacks
 ):
     """One flaky vendor API must not prevent the CorrelationRun: the run
     completes as PARTIAL with the failure recorded, and the vendors that
@@ -48,7 +48,7 @@ def test_chord_produces_partial_run_when_one_vendor_fails(
 
 
 def test_chord_completes_cleanly_when_all_vendors_succeed(
-    eager_celery, django_capture_on_commit_callbacks
+        eager_celery, django_capture_on_commit_callbacks
 ):
     config = load_config()
     with django_capture_on_commit_callbacks(execute=True):
@@ -102,7 +102,7 @@ def test_callback_is_idempotent_on_duplicate_delivery(eager_celery):
 
 
 def test_dispatch_all_clients_respects_per_client_cadence(
-    eager_celery, django_capture_on_commit_callbacks
+        eager_celery, django_capture_on_commit_callbacks
 ):
     config = load_config()
     with django_capture_on_commit_callbacks(execute=True):

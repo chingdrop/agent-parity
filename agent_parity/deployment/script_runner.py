@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_parity.connectors.base import AgentConnector, ConnectorError
+from agent_parity.connectors.base import AgentConnector
 
 AD_EXPORT_SCRIPT = Path(__file__).resolve().parent.parent / "ad_sync" / "Export-ADDevices.ps1"
 
@@ -23,9 +23,9 @@ class ScriptExecutionError(Exception):
 
 
 def run_ad_export(
-    connector: AgentConnector,
-    target_id: str,
-    script_path: str | Path = AD_EXPORT_SCRIPT,
+        connector: AgentConnector,
+        target_id: str,
+        script_path: str | Path = AD_EXPORT_SCRIPT,
 ) -> str:
     """Run the AD export script on ``target_id`` and return its raw CSV stdout.
 

@@ -110,9 +110,9 @@ move, structured as a `.pipe()` chain so each stage is independently
 testable:
 
 ```python
-ad_df.pipe(add_join_key)                      # hostname -> normalized join key
-     .pipe(merge_with_agents, agents_df)      # outer merge, indicator=True
-     .pipe(classify_coverage, stale_days=14)  # indicator + staleness -> status
+ad_df.pipe(add_join_key)  # hostname -> normalized join key
+.pipe(merge_with_agents, agents_df)  # outer merge, indicator=True
+.pipe(classify_coverage, stale_days=14)  # indicator + staleness -> status
 ```
 
 The merge indicator *is* the classification: `left_only` → `missing_agent`,
@@ -198,13 +198,13 @@ so it's split:
 
 Two synthetic clients with deliberate, reviewable gap scenarios:
 
-| | Acme Corp (`acme`) | Globex (`globex`) |
-|---|---|---|
-| AD computer objects | 41 | 32 |
-| Vendors | SentinelOne + Carbon Black + BitDefender | SentinelOne + BitDefender |
-| Missing agent | 5 (new server, new-hire imaging gaps, a rebuild, a disabled stray) | 4 |
-| Stale coverage | 3 (15–30 days quiet, one per vendor) | 3 |
-| Orphaned agents | 4 (decommissioned server, shadow-IT laptop, workgroup kiosk, renamed machine) | 3 |
+|                     | Acme Corp (`acme`)                                                            | Globex (`globex`)         |
+|---------------------|-------------------------------------------------------------------------------|---------------------------|
+| AD computer objects | 41                                                                            | 32                        |
+| Vendors             | SentinelOne + Carbon Black + BitDefender                                      | SentinelOne + BitDefender |
+| Missing agent       | 5 (new server, new-hire imaging gaps, a rebuild, a disabled stray)            | 4                         |
+| Stale coverage      | 3 (15–30 days quiet, one per vendor)                                          | 3                         |
+| Orphaned agents     | 4 (decommissioned server, shadow-IT laptop, workgroup kiosk, renamed machine) | 3                         |
 
 Details worth noticing: some devices report to two vendors (exercising the
 one-row-per-vendor merge); one agent per client reports its FQDN while AD has

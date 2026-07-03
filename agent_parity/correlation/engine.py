@@ -86,9 +86,9 @@ def merge_with_agents(ad_df: pd.DataFrame, agents_df: pd.DataFrame) -> pd.DataFr
 
 
 def classify_coverage(
-    merged: pd.DataFrame,
-    stale_days: int = 14,
-    as_of: pd.Timestamp | None = None,
+        merged: pd.DataFrame,
+        stale_days: int = 14,
+        as_of: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """Stage 3: merge indicator + last_seen staleness -> CoverageStatus."""
     as_of = as_of or pd.Timestamp.now(tz="UTC")
@@ -139,10 +139,10 @@ def summarize(frame: pd.DataFrame) -> dict:
 
 
 def correlate(
-    ad_df: pd.DataFrame,
-    agents_df: pd.DataFrame,
-    stale_days: int = 14,
-    as_of: pd.Timestamp | None = None,
+        ad_df: pd.DataFrame,
+        agents_df: pd.DataFrame,
+        stale_days: int = 14,
+        as_of: pd.Timestamp | None = None,
 ) -> CorrelationResult:
     """Run the full chain and return the classified frame plus aggregates."""
     frame = (
