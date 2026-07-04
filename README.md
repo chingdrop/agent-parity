@@ -344,7 +344,10 @@ parallel, and a chord is exactly its shape:
   callback is the backstop that marks a run `failed` instead of leaving it
   `pending` forever.
 - **Scheduling**: Celery beat ticks `dispatch_all_clients` hourly; each
-  client's `sync_interval_hours` in config.yaml decides whether it's due.
+  client's `sync_interval_hours` in config.yaml decides whether it's due. A
+  second daily tick at 07:00 (`CELERY_TIMEZONE`, i.e. UTC) calls the same task
+  with `force=True`, bypassing the per-client interval so every active client
+  gets a fresh correlation before the start of business each morning.
 
 The management command and the chord callback call the same functions in
 `dashboard/services.py` — the parallelism is additive infrastructure, not a

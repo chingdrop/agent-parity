@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
+from celery.schedules import crontab
+
 # agent_parity_web/ — the Django project root.
 BASE_DIR = Path(__file__).resolve().parents[2]
 # Repo root, where the agent_parity core package and sample_data/ live.
@@ -118,11 +120,19 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TIMEZONE = TIME_ZONE
 
 # Beat ticks the orchestrator hourly; per-client cadence (sync_interval_hours
-# in config.yaml) decides whether each client is actually due.
+# in config.yaml) decides whether each client is actually due. A second,
+# daily tick at 07:00 (CELERY_TIMEZONE, i.e. UTC) force-dispatches every
+# active client regardless of its own interval, so a fresh correlation is
+# always ready before the start of business each morning.
 CELERY_BEAT_SCHEDULE = {
     "sync-all-clients": {
         "task": "dashboard.tasks.dispatch_all_clients",
         "schedule": 60 * 60,
+    },
+    "sync-all-clients-7am": {
+        "task": "dashboard.tasks.dispatch_all_clients",
+        "schedule": crontab(hour=7, minute=0),
+        "kwargs": {"force": True},
     },
 }
 

@@ -242,6 +242,18 @@ touched carelessly:
 - `mark_run_failed` is the `link_error` backstop so a callback exception doesn't leave
   a run stuck in `PENDING` forever.
 
+**Beat schedule (`config/settings/base.py`'s `CELERY_BEAT_SCHEDULE`)** has two entries,
+not one, and they're not redundant: `sync-all-clients` ticks `dispatch_all_clients`
+hourly, respecting each client's own `sync_interval_hours` (`_client_is_due`) —
+this is the steady-state cadence. `sync-all-clients-7am` is a second, daily
+`crontab(hour=7, minute=0)` tick calling the *same* task with `force=True`, which
+bypasses `_client_is_due` entirely — a guarantee, not a cadence, that every active
+client has a fresh correlation by the start of business, independent of whatever
+`sync_interval_hours` each one happens to be configured with. `hour=7` is in
+`CELERY_TIMEZONE` (`TIME_ZONE`, currently `"UTC"`) — if that setting ever becomes
+configurable per-deployment, this crontab needs to move with it or "7am" silently
+stops meaning 7am local time.
+
 `tests/test_tasks.py` runs all of this with `task_always_eager` — real logic, fake
 transport. Nothing in the pytest suite proves a real Celery worker actually picks up
 work through a real Redis broker; that's `docker/smoke_test.sh` +
