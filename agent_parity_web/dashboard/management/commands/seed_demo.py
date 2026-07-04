@@ -27,6 +27,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from agent_parity.config import ConfigError, load_config
+from agent_parity.connectors.base import infer_machine_type
 from agent_parity.models import AgentDevice, normalize_hostname
 
 
@@ -55,6 +56,8 @@ def demo_drift(ad_df: pd.DataFrame, agent_records: list[AgentDevice]):
                 os=str(ad_row["os"]),
                 last_seen=now,
                 agent_version="24.2.3.471",
+                platform="windows",
+                machine_type=infer_machine_type(str(ad_row["os"])),
             )
         )
 

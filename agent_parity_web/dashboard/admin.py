@@ -24,7 +24,7 @@ class CorrelationRunAdmin(admin.ModelAdmin):
 
 @admin.register(CoverageSnapshot)
 class CoverageSnapshotAdmin(admin.ModelAdmin):
-    list_display = ("device", "run", "status", "vendor", "agent_last_seen")
-    list_filter = ("status", "vendor", "run__client")
+    list_display = ("device", "run", "status", "vendor", "platform", "machine_type", "agent_last_seen")
+    list_filter = ("status", "vendor", "platform", "machine_type", "run__client")
     search_fields = ("device__join_key",)
     list_select_related = ("device", "run")

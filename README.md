@@ -167,6 +167,33 @@ path (`STORAGE_BUCKET`/`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY` all resolve
 to `null` with no `.env`) — that's only safe because the demo path has no
 live vendor credentials either, so no script ever actually runs.
 
+### Normalizing to SentinelOne's wording
+
+Most of the historical client base was on SentinelOne, so its API vocabulary
+is what reports and dashboards were standardized on — analysts read "windows"
+/ "server"/"desktop" and expect that wording regardless of which vendor
+actually produced a given row. `AgentDevice` carries two fields for this:
+`platform` and `machine_type`. SentinelOne's connector passes its own
+`osType`/`machineType` straight through (it's the canonical source); Carbon
+Black and BitDefender's connectors translate their own raw values into the
+same wording:
+
+- **Carbon Black** reports `os: "WINDOWS"` (uppercase) directly — lowercased
+  to match S1's casing, no inference needed. It has no equivalent to `machineType`
+  at all, so that's inferred from the OS name text instead
+  (`connectors/base.py`'s `infer_machine_type`).
+- **BitDefender** reports `machineType` as a numeric enum (its own API
+  convention) — mapped to S1's string wording (`_MACHINE_TYPES` in
+  `connectors/bitdefender.py`). It has no equivalent to `osType`, so `platform`
+  is inferred from the OS name text (`infer_platform`).
+
+`agent_version` is deliberately **not** touched: SentinelOne, Carbon Black,
+and BitDefender each have their own real versioning scheme for their own
+software. There's no honest way to make Carbon Black's sensor version look
+like a SentinelOne agent version — that would be fabricating a number, not
+normalizing one, so `AgentDevice.agent_version` stays exactly what each
+vendor actually reports.
+
 ### The correlation: a pandas merge, kept honest
 
 `correlation/engine.py` reduces the whole reconciliation to one analytical
@@ -321,7 +348,11 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 - **Config resolver**: global vs. per-client scope, `${VAR}` resolution,
   fixture-mode fallback on unset secrets.
 - **Connectors and parser**: fixture normalization, timestamp rebasing,
-  live-mode gating on complete credentials.
+  live-mode gating on complete credentials, platform/machine_type wording
+  normalized to SentinelOne's conventions (Carbon Black's uppercase `os`
+  enum lowercased, BitDefender's numeric `machineType` mapped to string
+  wording, `infer_platform`/`infer_machine_type` for vendors with no
+  equivalent field) — and that both survive the correlation merge intact.
 - **Object storage and AD-export handoff**: presigned-URL round trip against
   a mocked S3 backend (`moto` — no real MinIO/AWS S3 needed); the
   storage-vs-direct-channel branch in `script_runner.run_ad_export`, including

@@ -38,6 +38,10 @@ class SentinelOneConnector(AgentConnector):
                     os=item.get("osName", ""),
                     last_seen=parse_timestamp(item.get("lastActiveDate")),
                     agent_version=item.get("agentVersion", ""),
+                    # SentinelOne's own wording is the canonical one other
+                    # connectors normalize to — passed straight through here.
+                    platform=item.get("osType", ""),
+                    machine_type=item.get("machineType", ""),
                 )
             )
         return devices

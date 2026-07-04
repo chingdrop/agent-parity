@@ -32,8 +32,20 @@ import pandas as pd
 
 from agent_parity.models import AgentDevice, CoverageStatus, normalize_hostname
 
-#: Columns every agents frame carries into the merge.
-AGENT_COLUMNS = ["join_key", "hostname", "os", "vendor", "agent_id", "last_seen", "agent_version"]
+#: Columns every agents frame carries into the merge. platform/machine_type
+#: are worded to match SentinelOne's own vocabulary regardless of which
+#: vendor actually reported the device (see AgentDevice's docstring).
+AGENT_COLUMNS = [
+    "join_key",
+    "hostname",
+    "os",
+    "vendor",
+    "agent_id",
+    "last_seen",
+    "agent_version",
+    "platform",
+    "machine_type",
+]
 
 
 @dataclass(frozen=True)
@@ -54,6 +66,8 @@ def agents_to_frame(devices: Iterable[AgentDevice]) -> pd.DataFrame:
             "agent_id": d.agent_id,
             "last_seen": d.last_seen,
             "agent_version": d.agent_version,
+            "platform": d.platform,
+            "machine_type": d.machine_type,
         }
         for d in devices
     ]

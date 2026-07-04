@@ -15,6 +15,7 @@ from agent_parity.connectors import (
     ConnectorError,
     SentinelOneConnector,
 )
+from agent_parity.connectors.base import infer_machine_type, infer_platform
 from agent_parity.rest_adapter import RestAdapter
 
 ACME = SAMPLE_DATA_DIR / "acme"
@@ -50,6 +51,63 @@ def test_fixture_inventory_is_normalized(connector_cls):
         assert device.hostname
         assert device.agent_id
         assert device.last_seen is None or device.last_seen.tzinfo is not None
+
+
+@pytest.mark.parametrize("connector_cls", CONNECTORS)
+def test_fixture_inventory_normalizes_platform_and_machine_type_to_s1_wording(connector_cls):
+    """Regardless of vendor, platform/machine_type must read as SentinelOne's
+    own wording ("windows"/"server"/"desktop") — that's the whole point of
+    normalizing them, not just that they're non-empty."""
+    devices = connector_cls(credentials={}, fixture_dir=ACME).fetch_inventory()
+    assert devices
+    for device in devices:
+        assert device.platform == "windows", device
+        assert device.machine_type in ("server", "desktop"), device
+
+
+def test_carbonblack_lowercases_its_uppercase_os_enum():
+    # CBC's real "os" field is an uppercase enum ("WINDOWS"); SentinelOne's
+    # own osType wording is lowercase — this is a straight casing fix, no
+    # inference needed since Carbon Black does report the field directly.
+    devices = CarbonBlackConnector(credentials={}, fixture_dir=ACME).fetch_inventory()
+    assert all(d.platform == "windows" for d in devices)
+
+
+def test_bitdefender_maps_its_numeric_machine_type_enum_to_s1_wording():
+    # GravityZone's machineType is a numeric enum (2 = server in our
+    # fixtures); mapped to SentinelOne's string wording, not inferred, since
+    # BitDefender does report this directly.
+    devices = BitDefenderConnector(credentials={}, fixture_dir=ACME).fetch_inventory()
+    servers = [d for d in devices if "Server" in d.os]
+    desktops = [d for d in devices if "Server" not in d.os]
+    assert servers and all(d.machine_type == "server" for d in servers)
+    assert desktops and all(d.machine_type == "desktop" for d in desktops)
+
+
+@pytest.mark.parametrize(
+    "os_text,expected",
+    [
+        ("Windows Server 2022 Datacenter", "windows"),
+        ("Windows 11 Enterprise", "windows"),
+        ("Ubuntu 22.04 LTS", "linux"),
+        ("macOS Sonoma", "macos"),
+        ("", ""),
+    ],
+)
+def test_infer_platform(os_text, expected):
+    assert infer_platform(os_text) == expected
+
+
+@pytest.mark.parametrize(
+    "os_text,expected",
+    [
+        ("Windows Server 2022 Datacenter", "server"),
+        ("Windows 11 Enterprise", "desktop"),
+        ("", "desktop"),
+    ],
+)
+def test_infer_machine_type(os_text, expected):
+    assert infer_machine_type(os_text) == expected
 
 
 @pytest.mark.parametrize("connector_cls", CONNECTORS)

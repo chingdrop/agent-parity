@@ -41,6 +41,33 @@ class ConnectorError(Exception):
     """A vendor API call or remote execution failed."""
 
 
+def infer_platform(os_text: str) -> str:
+    """Best-effort ``platform`` derivation from a free-text OS name, for
+    vendors whose API has no equivalent to SentinelOne's ``osType`` field.
+
+    Wording matches SentinelOne's own lowercase convention (``"windows"``,
+    ``"linux"``, ``"macos"``) so a device's platform reads the same
+    regardless of which vendor actually reported it.
+    """
+    text = (os_text or "").lower()
+    if "windows" in text:
+        return "windows"
+    if "mac" in text or "darwin" in text:
+        return "macos"
+    if any(name in text for name in ("linux", "ubuntu", "centos", "rhel", "debian")):
+        return "linux"
+    return ""
+
+
+def infer_machine_type(os_text: str) -> str:
+    """Best-effort ``machine_type`` derivation from a free-text OS name, for
+    vendors whose API has no equivalent to SentinelOne's ``machineType``
+    field. Wording matches SentinelOne's own convention (``"server"`` /
+    ``"desktop"``).
+    """
+    return "server" if "server" in (os_text or "").lower() else "desktop"
+
+
 def parse_timestamp(value) -> datetime | None:
     """Parse the ISO-ish timestamps vendor APIs return into aware datetimes."""
     if not value:

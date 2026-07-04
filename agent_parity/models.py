@@ -55,7 +55,18 @@ class ADDevice:
 
 @dataclass(frozen=True)
 class AgentDevice:
-    """One endpoint record from a security vendor's inventory, normalized."""
+    """One endpoint record from a security vendor's inventory, normalized.
+
+    ``platform`` and ``machine_type`` are worded to match SentinelOne's own
+    API vocabulary (``osType`` values like ``"windows"``; ``machineType``
+    values like ``"server"``/``"desktop"``) — most of the historical client
+    base was on SentinelOne, so its wording is the one everyone downstream
+    (reports, dashboards) is used to reading, and Carbon Black/BitDefender's
+    connectors translate their own raw values into it. ``agent_version`` is
+    deliberately left alone: each vendor has its own real versioning scheme
+    for its own software, so there's no honest way to make one look like
+    another's — that would be fabricating a number, not normalizing one.
+    """
 
     vendor: str
     agent_id: str
@@ -63,6 +74,8 @@ class AgentDevice:
     os: str = ""
     last_seen: datetime | None = None
     agent_version: str = ""
+    platform: str = ""
+    machine_type: str = ""
 
     @property
     def join_key(self) -> str:
@@ -77,6 +90,8 @@ class AgentDevice:
             "os": self.os,
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "agent_version": self.agent_version,
+            "platform": self.platform,
+            "machine_type": self.machine_type,
         }
 
     @classmethod
@@ -89,4 +104,6 @@ class AgentDevice:
             os=data.get("os", ""),
             last_seen=datetime.fromisoformat(str(last_seen)) if last_seen else None,
             agent_version=data.get("agent_version", ""),
+            platform=data.get("platform", ""),
+            machine_type=data.get("machine_type", ""),
         )

@@ -99,6 +99,22 @@ script output). No test exercises real network I/O; `tests/test_connectors.py` p
 the RestAdapter wiring (retry config, JSON/text parsing) by monkeypatching the
 underlying `requests.Session.request`, not by hitting a live API.
 
+**`AgentDevice.platform`/`machine_type` are normalized to SentinelOne's wording**
+(most of the historical client base was on S1, so its vocabulary is canonical).
+`_parse_inventory` in each connector sets them: SentinelOne passes its own
+`osType`/`machineType` straight through; Carbon Black lowercases its uppercase
+`os` enum for `platform` and infers `machine_type` from OS text
+(`infer_machine_type`, `connectors/base.py`) since it has no equivalent field;
+BitDefender maps its numeric `machineType` enum to S1's string wording
+(`_MACHINE_TYPES` in `connectors/bitdefender.py`) and infers `platform` from OS
+text (`infer_platform`) since it has no equivalent field. If a 4th vendor is
+added, decide per-field whether it reports something directly-mappable
+(prefer a direct map, like BitDefender's `machineType`) or needs inference
+(like Carbon Black's `machine_type`) — don't guess when the vendor's raw API
+actually has the field. **`agent_version` is deliberately never touched this
+way** — each vendor's version numbering is real and vendor-specific; making
+one look like another's would be fabricating a value, not normalizing one.
+
 ## AD-export object storage (`agent_parity/storage.py`)
 
 S3-compatible handoff for `Export-ADDevices.ps1`'s output, wired through

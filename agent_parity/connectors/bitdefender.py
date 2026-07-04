@@ -25,8 +25,18 @@ from __future__ import annotations
 import base64
 import itertools
 
-from agent_parity.connectors.base import AgentConnector, ConnectorError, parse_timestamp
+from agent_parity.connectors.base import (
+    AgentConnector,
+    ConnectorError,
+    infer_platform,
+    parse_timestamp,
+)
 from agent_parity.models import AgentDevice, Vendor
+
+# GravityZone's machineType is a numeric enum (per its own API); this maps it
+# to SentinelOne's string wording ("server" / "desktop") rather than
+# inferring from OS text, since BitDefender does report this directly.
+_MACHINE_TYPES = {1: "desktop", 2: "server"}
 
 
 class BitDefenderConnector(AgentConnector):
@@ -62,14 +72,21 @@ class BitDefenderConnector(AgentConnector):
         items = (payload.get("result") or payload).get("items", [])
         devices = []
         for item in items:
+            os_version = item.get("operatingSystemVersion", "")
             devices.append(
                 AgentDevice(
                     vendor=self.vendor,
                     agent_id=str(item.get("id", "")),
                     hostname=item.get("name", ""),
-                    os=item.get("operatingSystemVersion", ""),
+                    os=os_version,
                     last_seen=parse_timestamp(item.get("lastSeen")),
                     agent_version=(item.get("agent") or {}).get("version", ""),
+                    # GravityZone has no equivalent to SentinelOne's osType
+                    # field, so it's inferred from the OS name text instead.
+                    platform=infer_platform(os_version),
+                    # GravityZone's own machineType is a numeric enum;
+                    # translated to SentinelOne's string wording.
+                    machine_type=_MACHINE_TYPES.get(item.get("machineType"), ""),
                 )
             )
         return devices

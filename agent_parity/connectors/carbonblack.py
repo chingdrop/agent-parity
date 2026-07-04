@@ -16,7 +16,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_parity.connectors.base import AgentConnector, ConnectorError, parse_timestamp
+from agent_parity.connectors.base import (
+    AgentConnector,
+    ConnectorError,
+    infer_machine_type,
+    parse_timestamp,
+)
 from agent_parity.models import AgentDevice, Vendor
 
 
@@ -32,14 +37,22 @@ class CarbonBlackConnector(AgentConnector):
     def _parse_inventory(self, payload: dict) -> list[AgentDevice]:
         devices = []
         for item in payload.get("results", []):
+            os_version = item.get("os_version", item.get("os", ""))
             devices.append(
                 AgentDevice(
                     vendor=self.vendor,
                     agent_id=str(item.get("id", "")),
                     hostname=item.get("name", ""),
-                    os=item.get("os_version", item.get("os", "")),
+                    os=os_version,
                     last_seen=parse_timestamp(item.get("last_contact_time")),
                     agent_version=item.get("sensor_version", ""),
+                    # CBC's "os" field is an uppercase enum ("WINDOWS",
+                    # "LINUX", "MAC"); lowercasing it matches SentinelOne's
+                    # own osType wording exactly, no inference needed.
+                    platform=item.get("os", "").lower(),
+                    # CBC has no equivalent to SentinelOne's machineType
+                    # field, so it's inferred from the OS name text instead.
+                    machine_type=infer_machine_type(os_version),
                 )
             )
         return devices

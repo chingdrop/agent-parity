@@ -129,3 +129,28 @@ def test_empty_agent_inventory_marks_everything_missing():
     result = correlate(ad_frame("WS-01", "WS-02"), agents_to_frame([]), as_of=AS_OF)
     assert set(result.frame["status"]) == {CoverageStatus.MISSING_AGENT}
     assert len(result.frame) == 2
+
+
+def test_platform_and_machine_type_survive_the_merge():
+    """Not overlapping with any ad_df column, so pd.merge doesn't suffix
+    them — they should reach the classified frame unchanged, ready for
+    CoverageSnapshot persistence."""
+    device = AgentDevice(
+        vendor="carbonblack",
+        agent_id="id-WS-01",
+        hostname="WS-01",
+        last_seen=RECENT,
+        platform="windows",
+        machine_type="desktop",
+    )
+    result = correlate(ad_frame("WS-01"), agents_to_frame([device]), as_of=AS_OF)
+    row = result.frame.iloc[0]
+    assert row["platform"] == "windows"
+    assert row["machine_type"] == "desktop"
+
+
+def test_missing_agent_rows_have_no_platform_or_machine_type():
+    result = correlate(ad_frame("WS-01"), agents_to_frame([]), as_of=AS_OF)
+    row = result.frame.iloc[0]
+    assert pd.isna(row["platform"])
+    assert pd.isna(row["machine_type"])

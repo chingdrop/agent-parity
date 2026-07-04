@@ -161,6 +161,8 @@ def persist_correlation(
             agent_last_seen=(
                 None if pd.isna(row.last_seen) else pd.Timestamp(row.last_seen).to_pydatetime()
             ),
+            platform="" if pd.isna(row.platform) else str(row.platform),
+            machine_type="" if pd.isna(row.machine_type) else str(row.machine_type),
         )
         for row in frame.itertuples(index=False)
     ]

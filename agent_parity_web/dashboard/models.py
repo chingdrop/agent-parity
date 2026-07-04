@@ -95,6 +95,11 @@ class CoverageSnapshot(models.Model):
     match_method = models.CharField(max_length=32, blank=True)
     # The agent's check-in time as of this run (drives staleness).
     agent_last_seen = models.DateTimeField(null=True, blank=True)
+    # Worded to match SentinelOne's own API vocabulary regardless of which
+    # vendor actually reported the device (see AgentDevice's docstring in
+    # agent_parity/models.py) — empty for missing_agent rows, same as vendor.
+    platform = models.CharField(max_length=32, blank=True)
+    machine_type = models.CharField(max_length=32, blank=True)
 
     class Meta:
         ordering = ["device__join_key", "vendor"]
