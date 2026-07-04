@@ -1,0 +1,38 @@
+[
+  {
+    "build": 19044,
+    "name": "Windows 10 21H2",
+    "eol_date": "2023-06-13",
+    "source": "https://endoflife.date/windows"
+  },
+  {
+    "build": 19045,
+    "name": "Windows 10 22H2",
+    "eol_date": "2025-10-14",
+    "source": "https://endoflife.date/windows"
+  },
+  {
+    "build": 22621,
+    "name": "Windows 11 22H2",
+    "eol_date": "2024-10-08",
+    "source": "https://endoflife.date/windows"
+  },
+  {
+    "build": 22631,
+    "name": "Windows 11 23H2",
+    "eol_date": "2025-11-11",
+    "source": "https://endoflife.date/windows"
+  },
+  {
+    "build": 26100,
+    "name": "Windows 11 24H2",
+    "eol_date": "2026-10-13",
+    "source": "https://endoflife.date/windows"
+  },
+  {
+    "build": 20348,
+    "name": "Windows Server 2022",
+    "eol_date": "2031-10-14",
+    "source": "https://endoflife.date/windows-server"
+  }
+]

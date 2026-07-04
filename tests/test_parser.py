@@ -12,6 +12,13 @@ ACME-WS-001,acme-ws-001.corp.acme.example,Windows 11 Enterprise,2026-07-01T08:30
 ACME-DC01,acme-dc01.corp.acme.example,Windows Server 2022 Datacenter,,True,"CN=ACME-DC01,OU=Domain Controllers,DC=corp,DC=acme,DC=example"
 """
 
+SAMPLE_CSV_WITH_BUILD = """\
+Name,DNSHostName,OperatingSystem,OperatingSystemVersion,LastLogonTimestamp,Enabled,DistinguishedName
+ACME-WS-001,acme-ws-001.corp.acme.example,Windows 11 Enterprise,10.0 (22631),2026-07-01T08:30:00+00:00,True,"CN=ACME-WS-001,OU=Workstations,DC=corp,DC=acme,DC=example"
+ACME-DC01,acme-dc01.corp.acme.example,Windows Server 2022 Datacenter,10.0 (20348),2026-07-01T08:30:00+00:00,True,"CN=ACME-DC01,OU=Domain Controllers,DC=corp,DC=acme,DC=example"
+ACME-OLD01,acme-old01.corp.acme.example,Windows Server 2008 R2 Standard,,2026-07-01T08:30:00+00:00,True,"CN=ACME-OLD01,OU=Servers,DC=corp,DC=acme,DC=example"
+"""
+
 
 def test_parses_rows_and_normalizes_join_key():
     frame = parse_ad_export(SAMPLE_CSV)
@@ -45,3 +52,18 @@ def test_drops_rows_with_empty_hostname():
     csv_text = "Name,Enabled\nACME-WS-001,True\n,True\n"
     frame = parse_ad_export(csv_text)
     assert frame["join_key"].tolist() == ["acme-ws-001"]
+
+
+def test_os_build_extracted_from_operating_system_version():
+    frame = parse_ad_export(SAMPLE_CSV_WITH_BUILD)
+    by_key = frame.set_index("join_key")["os_build"]
+    assert by_key["acme-ws-001"] == 22631
+    assert by_key["acme-dc01"] == 20348
+    assert pd.isna(by_key["acme-old01"])
+
+
+def test_missing_operating_system_version_column_yields_no_os_build():
+    """Older-shaped CSV output (before this column existed) must still
+    parse — os_build just comes back empty, not an error."""
+    frame = parse_ad_export(SAMPLE_CSV)
+    assert frame["os_build"].isna().all()

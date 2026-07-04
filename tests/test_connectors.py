@@ -84,6 +84,29 @@ def test_bitdefender_maps_its_numeric_machine_type_enum_to_s1_wording():
     assert desktops and all(d.machine_type == "desktop" for d in desktops)
 
 
+def test_sentinelone_parses_a_windows_build_number_from_its_revision_field():
+    """The whole point of capturing os_build at all: SentinelOne devices
+    with the identical free-text "Windows 11 Enterprise" name resolve to
+    different, real build numbers."""
+    devices = SentinelOneConnector(credentials={}, fixture_dir=ACME).fetch_inventory()
+    windows_11 = [d for d in devices if d.os == "Windows 11 Enterprise"]
+    assert windows_11
+    assert all(d.os_build is not None for d in windows_11)
+    # The fixtures deliberately spread these across more than one feature
+    # update (22H2/23H2/24H2) — if this collapses to one value, the fixture
+    # augmentation (or the parsing) regressed.
+    assert len({d.os_build for d in windows_11}) > 1
+
+
+@pytest.mark.parametrize("connector_cls", [CarbonBlackConnector, BitDefenderConnector])
+def test_carbonblack_and_bitdefender_never_set_os_build(connector_cls):
+    """Neither vendor's real API exposes a build-number-carrying field —
+    os_build must stay unset rather than something guessed."""
+    devices = connector_cls(credentials={}, fixture_dir=ACME).fetch_inventory()
+    assert devices
+    assert all(d.os_build is None for d in devices)
+
+
 @pytest.mark.parametrize(
     "os_text,expected",
     [

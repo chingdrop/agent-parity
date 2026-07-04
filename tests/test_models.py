@@ -34,6 +34,7 @@ def test_ad_device_join_key_uses_hostname():
 def test_ad_device_defaults():
     device = ADDevice(hostname="ACME-DC01")
     assert device.os == ""
+    assert device.os_build is None
     assert device.last_logon is None
     assert device.enabled is True
     assert device.distinguished_name == ""
@@ -66,6 +67,18 @@ def test_agent_device_round_trip_with_no_last_seen():
     restored = AgentDevice.from_dict(original.to_dict())
     assert restored == original
     assert restored.last_seen is None
+    assert restored.os_build is None
+
+
+def test_agent_device_round_trip_with_os_build():
+    """SentinelOne is the one vendor that sets this — Carbon Black/
+    BitDefender devices round-trip with it staying None (previous test)."""
+    original = AgentDevice(
+        vendor="sentinelone", agent_id="1", hostname="ACME-WS-001", os_build=22631
+    )
+    restored = AgentDevice.from_dict(original.to_dict())
+    assert restored == original
+    assert restored.os_build == 22631
 
 
 def test_agent_device_to_dict_is_json_safe():
@@ -73,13 +86,15 @@ def test_agent_device_to_dict_is_json_safe():
         vendor="sentinelone",
         agent_id="1",
         hostname="ACME-DC01",
+        os_build=22631,
         last_seen=datetime(2026, 7, 2, tzinfo=timezone.utc),
     )
     data = device.to_dict()
     # Every value must be a JSON primitive — no datetime objects leaking
     # across the Celery serialization boundary this method exists for.
     assert isinstance(data["last_seen"], str)
-    assert all(isinstance(v, (str, type(None))) for v in data.values())
+    assert isinstance(data["os_build"], int)
+    assert all(isinstance(v, (str, int, type(None))) for v in data.values())
 
 
 def test_coverage_status_values():

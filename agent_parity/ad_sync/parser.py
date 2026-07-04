@@ -1,9 +1,10 @@
 """Parse raw Export-ADDevices.ps1 output into a normalized DataFrame.
 
 The script emits CSV on stdout with columns:
-Name, DNSHostName, OperatingSystem, LastLogonTimestamp, Enabled,
-DistinguishedName. This parser is the only place that knows those column
-names — everything downstream works with the normalized frame it returns.
+Name, DNSHostName, OperatingSystem, OperatingSystemVersion,
+LastLogonTimestamp, Enabled, DistinguishedName. This parser is the only
+place that knows those column names — everything downstream works with the
+normalized frame it returns.
 """
 
 from __future__ import annotations
@@ -13,9 +14,19 @@ import io
 import pandas as pd
 
 from agent_parity.models import normalize_hostname
+from agent_parity.os_eol import extract_build_number
 
 #: Normalized output columns, in order.
-AD_COLUMNS = ["join_key", "hostname", "dns_hostname", "os", "last_logon", "enabled", "distinguished_name"]
+AD_COLUMNS = [
+    "join_key",
+    "hostname",
+    "dns_hostname",
+    "os",
+    "os_build",
+    "last_logon",
+    "enabled",
+    "distinguished_name",
+]
 
 
 class ADParseError(Exception):
@@ -39,6 +50,11 @@ def parse_ad_export(raw_csv: str) -> pd.DataFrame:
             "hostname": frame["Name"].str.strip(),
             "dns_hostname": frame["DNSHostName"].astype(str) if "DNSHostName" in frame else "",
             "os": frame["OperatingSystem"] if "OperatingSystem" in frame else "",
+            "os_build": (
+                frame["OperatingSystemVersion"].map(extract_build_number)
+                if "OperatingSystemVersion" in frame
+                else None
+            ),
             "last_logon": pd.to_datetime(
                 frame["LastLogonTimestamp"], errors="coerce", utc=True, format="ISO8601"
             )

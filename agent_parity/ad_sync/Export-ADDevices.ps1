@@ -19,6 +19,13 @@
 
     LastLogonTimestamp is converted from Windows FILETIME to an ISO-8601
     UTC string so the collector side never has to deal with FILETIME.
+
+    OperatingSystemVersion is AD's own build-number attribute (e.g.
+    "10.0 (22631)"), distinct from OperatingSystem's coarse product name —
+    self-reported by the machine during logon, stock AD schema, no
+    extension needed. This is what lets agent-parity tell *which* Windows
+    10/11 feature update a device is on (its actual end-of-life date
+    depends on that), rather than guessing from the product name alone.
 #>
 
 param(
@@ -28,10 +35,11 @@ param(
 
 Import-Module ActiveDirectory -ErrorAction Stop
 
-$rows = Get-ADComputer -Filter * -Properties DNSHostName, OperatingSystem, LastLogonTimestamp, Enabled |
+$rows = Get-ADComputer -Filter * -Properties DNSHostName, OperatingSystem, OperatingSystemVersion, LastLogonTimestamp, Enabled |
     Select-Object Name,
         DNSHostName,
         @{Name = 'OperatingSystem'; Expression = { $_.OperatingSystem }},
+        @{Name = 'OperatingSystemVersion'; Expression = { $_.OperatingSystemVersion }},
         @{Name = 'LastLogonTimestamp'; Expression = {
             if ($_.LastLogonTimestamp) {
                 [DateTime]::FromFileTimeUtc($_.LastLogonTimestamp).ToString('o')

@@ -85,11 +85,21 @@ def infer_machine_type(os_text: str | None) -> str:
 
 @dataclass(frozen=True)
 class ADDevice:
-    """One computer object from the Active Directory export."""
+    """One computer object from the Active Directory export.
+
+    ``os_build`` is the Windows build number parsed out of AD's own
+    ``operatingSystemVersion`` attribute (e.g. ``10.0 (22631)`` -> ``22631``)
+    — a real, stock AD schema attribute distinct from ``OperatingSystem``,
+    giving an exact build rather than a coarse product name. See
+    ``agent_parity.os_eol`` for what that buys: unlike a free-text OS name,
+    a build number disambiguates *which* Windows 10/11 feature update a
+    device is on, which is what its actual end-of-life date depends on.
+    """
 
     hostname: str
     dns_hostname: str = ""
     os: str = ""
+    os_build: int | None = None
     last_logon: datetime | None = None
     enabled: bool = True
     distinguished_name: str = ""
@@ -112,12 +122,20 @@ class AgentDevice:
     deliberately left alone: each vendor has its own real versioning scheme
     for its own software, so there's no honest way to make one look like
     another's — that would be fabricating a number, not normalizing one.
+
+    ``os_build`` is the Windows build number, when the vendor reports one —
+    SentinelOne does (see ``connectors/sentinelone.py``); Carbon Black and
+    BitDefender don't expose anything equivalent, so it stays ``None`` for
+    them, same as AD-only ``missing_agent`` rows with no build info at all.
+    ``agent_parity.os_eol`` uses it for precise end-of-life lookups when
+    present, falling back to free-text OS name matching when it's ``None``.
     """
 
     vendor: str
     agent_id: str
     hostname: str
     os: str = ""
+    os_build: int | None = None
     last_seen: datetime | None = None
     agent_version: str = ""
     platform: str = ""
@@ -134,6 +152,7 @@ class AgentDevice:
             "agent_id": self.agent_id,
             "hostname": self.hostname,
             "os": self.os,
+            "os_build": self.os_build,
             "last_seen": self.last_seen.isoformat() if self.last_seen else None,
             "agent_version": self.agent_version,
             "platform": self.platform,
@@ -148,6 +167,7 @@ class AgentDevice:
             agent_id=data["agent_id"],
             hostname=data["hostname"],
             os=data.get("os", ""),
+            os_build=data.get("os_build"),
             last_seen=datetime.fromisoformat(str(last_seen)) if last_seen else None,
             agent_version=data.get("agent_version", ""),
             platform=data.get("platform", ""),
