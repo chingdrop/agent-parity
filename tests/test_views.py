@@ -8,12 +8,12 @@ actually persists.
 import json
 
 import pytest
-from dashboard import services
-from dashboard.models import CorrelationRun
 from django.urls import reverse
 
 from agent_parity.config import load_config
 from agent_parity.models import CoverageStatus
+from dashboard import services
+from dashboard.models import CorrelationRun
 
 pytestmark = pytest.mark.django_db
 

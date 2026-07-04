@@ -5,10 +5,10 @@ only indirectly through pipeline runs in test_pipeline_sync.py/test_tasks.py.
 """
 
 import pytest
-from dashboard.models import Client, CorrelationRun, CoverageSnapshot, CoverageStatus, Device
 from django.db import IntegrityError, transaction
 
 from agent_parity.models import CoverageStatus as PipelineCoverageStatus
+from dashboard.models import Client, CorrelationRun, CoverageSnapshot, CoverageStatus, Device
 
 pytestmark = pytest.mark.django_db
 

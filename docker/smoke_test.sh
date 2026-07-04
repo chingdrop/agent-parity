@@ -13,6 +13,7 @@
 #   --keep   leave the stack running on exit (default: always tears down)
 
 set -uo pipefail
+# shellcheck disable=SC2164
 cd "$(dirname "$0")"
 
 KEEP=0

@@ -6,10 +6,10 @@ that nothing goes through a task queue. With no credentials in the
 environment, every connector runs against ``sample_data/`` fixtures.
 """
 
-from dashboard import services
 from django.core.management.base import BaseCommand, CommandError
 
 from agent_parity.config import ConfigError, load_config
+from dashboard import services
 
 
 class Command(BaseCommand):

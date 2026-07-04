@@ -165,9 +165,9 @@ def backfill_machine_type(classified: pd.DataFrame) -> pd.DataFrame:
 
 
 def classify_eol_status(
-    classified: pd.DataFrame,
-    as_of: pd.Timestamp | None = None,
-    warning_days: int = DEFAULT_EOL_WARNING_DAYS,
+        classified: pd.DataFrame,
+        as_of: pd.Timestamp | None = None,
+        warning_days: int = DEFAULT_EOL_WARNING_DAYS,
 ) -> pd.DataFrame:
     """Stage 5: classify every row's OS lifecycle status (end_of_life /
     eol_soon / supported / unknown) — an independent prioritization signal

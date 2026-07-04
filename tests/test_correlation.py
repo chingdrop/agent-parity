@@ -30,11 +30,11 @@ def ad_frame(*hostnames: str, os: str = "Windows 11", os_build: int | None = Non
 
 
 def agent(
-    hostname: str,
-    last_seen: datetime | None = RECENT,
-    vendor="sentinelone",
-    os: str = "",
-    os_build: int | None = None,
+        hostname: str,
+        last_seen: datetime | None = RECENT,
+        vendor="sentinelone",
+        os: str = "",
+        os_build: int | None = None,
 ) -> AgentDevice:
     return AgentDevice(
         vendor=vendor,

@@ -161,10 +161,10 @@ class AgentConnector(ABC):
     # -- remote script execution -------------------------------------------
 
     def deploy_and_run(
-        self,
-        script_path: str | Path,
-        target_id: str,
-        script_args: dict[str, str] | None = None,
+            self,
+            script_path: str | Path,
+            target_id: str,
+            script_args: dict[str, str] | None = None,
     ) -> str:
         """Push a script to ``target_id``, execute it, and return its stdout.
 
@@ -249,7 +249,7 @@ class AgentConnector(ABC):
         ...
 
     def _live_deploy_and_run(
-        self, script_path: Path, target_id: str, script_args: dict[str, str]
+            self, script_path: Path, target_id: str, script_args: dict[str, str]
     ) -> str:
         """Default for vendors with ``supports_remote_execution = False``.
 

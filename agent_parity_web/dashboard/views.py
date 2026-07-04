@@ -5,6 +5,11 @@ aggregates) — the views never re-derive pandas classification logic; they
 only present what the pipeline already persisted.
 """
 
+from django.core.paginator import Paginator
+from django.db.models import Count, Q
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404, render
+
 from dashboard.models import (
     Client,
     CorrelationRun,
@@ -13,10 +18,6 @@ from dashboard.models import (
     Device,
     OSLifecycleStatus,
 )
-from django.core.paginator import Paginator
-from django.db.models import Count, Q
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404, render
 
 #: Statuses that describe an AD-known device (the coverage denominator);
 #: orphaned agents are a finding, not a coverage gap.
@@ -229,7 +230,7 @@ def trend_data(request, slug: str):
             at_risk=Count(
                 "snapshots",
                 filter=Q(snapshots__eol_status__in=AT_RISK_EOL_STATUSES)
-                & Q(snapshots__status__in=AD_STATUSES),
+                       & Q(snapshots__status__in=AD_STATUSES),
             ),
         )
     )

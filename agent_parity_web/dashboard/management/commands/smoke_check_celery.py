@@ -11,9 +11,10 @@ where a real Redis and a real worker container exist; used by
 
 import time
 
+from django.core.management.base import BaseCommand, CommandError
+
 from dashboard.models import CorrelationRun
 from dashboard.tasks import dispatch_all_clients
-from django.core.management.base import BaseCommand, CommandError
 
 TERMINAL_STATUSES = (CorrelationRun.RunStatus.COMPLETE, CorrelationRun.RunStatus.PARTIAL)
 

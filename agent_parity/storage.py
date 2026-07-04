@@ -49,13 +49,13 @@ class ObjectStorage:
     """
 
     def __init__(
-        self,
-        bucket: str,
-        *,
-        endpoint_url: str | None = None,
-        access_key: str | None = None,
-        secret_key: str | None = None,
-        region: str = "us-east-1",
+            self,
+            bucket: str,
+            *,
+            endpoint_url: str | None = None,
+            access_key: str | None = None,
+            secret_key: str | None = None,
+            region: str = "us-east-1",
     ):
         self.bucket = bucket
         self.client = boto3.client(

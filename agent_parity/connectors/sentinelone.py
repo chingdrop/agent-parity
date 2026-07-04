@@ -75,7 +75,7 @@ class SentinelOneConnector(AgentConnector):
                 return devices
 
     def _live_deploy_and_run(
-        self, script_path: Path, target_id: str, script_args: dict[str, str]
+            self, script_path: Path, target_id: str, script_args: dict[str, str]
     ) -> str:
         base = self.credentials["api_url"].rstrip("/")
 

@@ -3,8 +3,9 @@ cheap to verify, easy to silently regress (a model added without an
 @admin.register call just doesn't show up, with no error anywhere else).
 """
 
-from dashboard.models import Client, CorrelationRun, CoverageSnapshot, Device
 from django.contrib import admin
+
+from dashboard.models import Client, CorrelationRun, CoverageSnapshot, Device
 
 
 def test_every_dashboard_model_is_registered():

@@ -7,11 +7,11 @@ idempotency guarantee outside of Celery entirely.
 import numpy as np
 import pandas as pd
 import pytest
-from dashboard import services
-from dashboard.models import Client, CorrelationRun, CoverageSnapshot
 
 from agent_parity.config import load_config
 from agent_parity.correlation.engine import CorrelationResult
+from dashboard import services
+from dashboard.models import Client, CorrelationRun, CoverageSnapshot
 
 pytestmark = pytest.mark.django_db
 

@@ -5,12 +5,12 @@ fixture edit breaks a scenario, one of these fails by name.
 """
 
 import pytest
-from dashboard import services
-from dashboard.models import CorrelationRun, Device
 from django.core.management import call_command
 
 from agent_parity.config import load_config
 from agent_parity.models import CoverageStatus
+from dashboard import services
+from dashboard.models import CorrelationRun, Device
 
 pytestmark = pytest.mark.django_db
 

@@ -1,5 +1,6 @@
-from dashboard.models import Client, CorrelationRun, CoverageSnapshot, Device
 from django.contrib import admin
+
+from dashboard.models import Client, CorrelationRun, CoverageSnapshot, Device
 
 
 @admin.register(Client)

@@ -6,11 +6,11 @@ run ID as idempotency key) are identical either way.
 """
 
 import pytest
-from dashboard import services, tasks
-from dashboard.models import CorrelationRun, CoverageSnapshot
 
 from agent_parity.config import load_config
 from agent_parity.connectors.base import ConnectorError
+from dashboard import services, tasks
+from dashboard.models import CorrelationRun, CoverageSnapshot
 
 pytestmark = pytest.mark.django_db
 
