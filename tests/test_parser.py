@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from agent_parity.ad_sync.parser import ADParseError, parse_ad_export
+from agent_parity.ad_sync.parser import ADParseError, concat_ad_frames, parse_ad_export
 
 SAMPLE_CSV = """\
 Name,DNSHostName,OperatingSystem,LastLogonTimestamp,Enabled,DistinguishedName
@@ -67,3 +67,27 @@ def test_missing_operating_system_version_column_yields_no_os_build():
     parse — os_build just comes back empty, not an error."""
     frame = parse_ad_export(SAMPLE_CSV)
     assert frame["os_build"].isna().all()
+
+
+# --- concat_ad_frames: multi-domain master list -----------------------------------
+
+SECOND_DOMAIN_CSV = """\
+Name,DNSHostName,OperatingSystem,LastLogonTimestamp,Enabled,DistinguishedName
+GLOBEX-BR-WS01,globex-br-ws01.br.globex.example,Windows 11 Enterprise,2026-07-01T10:00:00+00:00,True,"CN=GLOBEX-BR-WS01,OU=Workstations,DC=br,DC=globex,DC=example"
+"""
+
+
+def test_concat_ad_frames_combines_rows_from_every_domain():
+    frame = concat_ad_frames([parse_ad_export(SAMPLE_CSV), parse_ad_export(SECOND_DOMAIN_CSV)])
+    assert len(frame) == 4
+    assert set(frame["join_key"]) == {
+        "acme-ws-001", "acme-ws-002", "acme-dc01", "globex-br-ws01",
+    }
+
+
+def test_concat_ad_frames_of_a_single_domain_is_unchanged():
+    """A single-domain client's collect_ad_frame still goes through
+    concat_ad_frames — with one frame, the result must be identical."""
+    original = parse_ad_export(SAMPLE_CSV)
+    result = concat_ad_frames([original])
+    pd.testing.assert_frame_equal(result, original)

@@ -29,7 +29,7 @@ def test_import_creates_a_client_row_per_config_yaml_client(imported):
 def test_import_carries_topology_fields_onto_the_client_row():
     import_app_config(load_config())
     acme = Client.objects.get(slug="acme")
-    assert acme.ad_target_device == "ACME-DC01"
+    assert acme.ad_target_devices == ["ACME-DC01"]
     assert acme.sync_interval_hours == 6
 
 
@@ -48,9 +48,14 @@ def test_per_client_vendor_gets_one_row_per_enabled_client(imported):
 def test_build_app_config_from_db_round_trips_client_topology(imported):
     acme = imported.client("acme")
     assert acme.name == "Acme Corp"
-    assert acme.ad_target_device == "ACME-DC01"
+    assert acme.ad_target_devices == ("ACME-DC01",)
     assert acme.sync_interval_hours == 6
     assert set(acme.vendors) == {"sentinelone", "carbonblack", "bitdefender"}
+
+
+def test_build_app_config_from_db_round_trips_multiple_domains(imported):
+    globex = imported.client("globex")
+    assert globex.ad_target_devices == ("GLOBEX-DC01", "GLOBEX-BR-DC01")
 
 
 def test_build_app_config_from_db_resolves_credentials_the_same_way_as_yaml(monkeypatch):

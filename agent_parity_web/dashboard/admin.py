@@ -16,7 +16,7 @@ class ClientAdmin(admin.ModelAdmin):
         "slug",
         "is_active",
         "enabled_vendors",
-        "ad_target_device",
+        "ad_target_devices",
         "sync_interval_hours",
     )
     prepopulated_fields = {"slug": ("name",)}

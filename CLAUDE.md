@@ -101,8 +101,11 @@ Every connector implements `fetch_inventory()` and `deploy_and_run(script_path,
 target_id)` against a shared `AgentConnector` ABC (`connectors/base.py`). **Fixture
 fallback is not a test-only shim — it's the default runtime path.** `is_live` gates
 on whether all `required_credentials` are present; if not, `fetch_inventory()` reads
-`sample_data/<client>/<vendor>_inventory.json` and `deploy_and_run()` returns the
-client's `ad_export.csv`, with all timestamps rebased so the newest check-in is ~now
+`sample_data/<client>/<vendor>_inventory.json` and `deploy_and_run()` returns
+`sample_data/<client>/ad_export_<target_id>.csv` — one file per domain
+controller, since a client with multiple AD domains (`ClientConfig.ad_target_devices`,
+see "Multi-domain clients" below) has a distinct export per domain, not one
+shared file. Timestamps are rebased so the newest check-in is ~now
 (`rebase_timestamps` / `rebase_csv_timestamps`) — this is what keeps the authored
 stale/recent split in `sample_data/` stable regardless of when the demo is run. Don't
 add credential-checking logic anywhere else; it belongs in `is_live` alone.
@@ -233,9 +236,39 @@ both in mind. Raises `ConfigError` if a client has no capable vendor at all. Cal
 pick elsewhere — that bug (silently routing AD export through whichever vendor happens
 to sort first, capable or not) is exactly what this function replaced.
 
+## Multi-domain clients (`ClientConfig.ad_target_devices`)
+
+A client can span more than one AD domain/forest — no single domain controller can
+enumerate computer objects outside its own domain, so `ad_target_devices` is a tuple,
+not a single hostname, and the export script runs once per entry.
+`dashboard/services.py`'s `collect_ad_frame` is the orchestrator: it loops the tuple,
+calling `collect_ad_csv` + `parse_ad_export` per domain, and concatenates the results
+with `agent_parity/ad_sync/parser.py`'s `concat_ad_frames` into the one master
+DataFrame `correlate()` actually sees. A single-domain client (most of them) is just
+the `len == 1` case of this same loop — there's no separate single-domain code path,
+by design.
+
+Tolerant of partial failure the same way per-vendor collection already is: one
+domain's status is recorded independently (`f"ad:{target_device}"` in `vendor_status`,
+e.g. `ad:GLOBEX-DC01`), and `collect_ad_frame` returns `None` for the frame only when
+*every* domain failed. `services.finalize_run` is where that "nothing to correlate
+against" case is actually handled (marks the run `FAILED`) — both the synchronous path
+(`run_pipeline_for_client`) and the Celery chord callback (`tasks.correlate_client`)
+delegate to it rather than each re-implementing the check; don't duplicate that logic
+back into either caller. On the Celery side, `dispatch_client` fans out one
+`collect_ad_export` task per `ad_target_devices` entry, mirroring the existing
+one-task-per-vendor fan-out exactly.
+
+Fixture mode picks the CSV by target device — `sample_data/<client>/ad_export_<target_device>.csv`
+(`connectors/base.py`'s `deploy_and_run`) — one file per domain, not one shared
+`ad_export.csv`. The demo's `globex` client is intentionally multi-domain
+(`GLOBEX-DC01` + a branch office `GLOBEX-BR-DC01`, both in `config.yaml` and
+`sample_data/globex/`) so this path has real test/demo coverage; `acme` stays
+single-domain.
+
 ## DB-backed config (`agent_parity_web/dashboard/config_db.py`, `views_setup.py`)
 
-Client topology (`Client.ad_target_device`/`sync_interval_hours`/`enabled_vendors`) and
+Client topology (`Client.ad_target_devices`/`sync_interval_hours`/`enabled_vendors`) and
 vendor credentials (`VendorCredential.credentials`, encrypted — see below) live in the
 DB, not `config.yaml`, so they can be managed through the setup page (`/setup/`)
 instead of hand-editing a committed file and restarting every process. Two symmetric

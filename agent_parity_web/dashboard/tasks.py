@@ -1,8 +1,10 @@
 """Celery tasks: the scaled-mode pipeline.
 
-Shape: one *group* of fan-out tasks per client — the AD export plus one
-inventory pull per enabled vendor — feeding a *chord* callback that runs the
-pandas correlation exactly once, against that client's complete result set.
+Shape: one *group* of fan-out tasks per client — one AD export task per
+domain controller (a client with multiple AD domains has more than one)
+plus one inventory pull per enabled vendor — feeding a *chord* callback that
+runs the pandas correlation exactly once, against that client's complete
+result set.
 
 Three deliberate design points:
 
@@ -35,7 +37,7 @@ from celery import chord, shared_task
 from django.db import transaction
 from django.utils import timezone
 
-from agent_parity.ad_sync.parser import parse_ad_export
+from agent_parity.ad_sync.parser import concat_ad_frames, parse_ad_export
 from agent_parity.config import AppConfig, ClientConfig
 from agent_parity.models import AgentDevice
 from dashboard import services
@@ -95,14 +97,20 @@ VENDOR_TASKS = {
 
 
 @shared_task(rate_limit="10/m")
-def collect_ad_export(client_slug: str) -> dict:
-    """The AD export leg of the fan-out (remote script execution is slow)."""
+def collect_ad_export(client_slug: str, target_device: str) -> dict:
+    """The AD export leg of the fan-out (remote script execution is slow).
+
+    One task per (client, domain controller) — a client with multiple AD
+    domains gets one of these per entry in ``ClientConfig.ad_target_devices``
+    (see ``dispatch_client``); ``correlate_client`` concatenates whichever
+    domains' exports succeed.
+    """
     try:
-        raw_csv = services.collect_ad_csv(build_app_config_from_db(), client_slug)
-        return {"source": "ad", "ok": True, "csv": raw_csv}
+        raw_csv = services.collect_ad_csv(build_app_config_from_db(), client_slug, target_device)
+        return {"source": "ad", "target_device": target_device, "ok": True, "csv": raw_csv}
     except Exception as exc:  # noqa: BLE001
-        logger.warning("AD export failed for %s: %s", client_slug, exc)
-        return {"source": "ad", "ok": False, "error": str(exc)}
+        logger.warning("AD export failed for %s domain %s: %s", client_slug, target_device, exc)
+        return {"source": "ad", "target_device": target_device, "ok": False, "error": str(exc)}
 
 
 # --- fan-in: the chord callback ------------------------------------------------
@@ -121,31 +129,27 @@ def correlate_client(results: list[dict], run_id: int) -> dict:
         return {"run_id": run_id, "status": run.status, "duplicate": True}
 
     vendor_status: dict[str, str] = {}
-    ad_csv: str | None = None
+    ad_csvs: list[str] = []
     agent_records: list[AgentDevice] = []
     for payload in results:
         source = payload["source"]
+        # AD payloads are keyed per domain (ad:<target_device>) since a
+        # client can have more than one — vendor payloads keep their plain
+        # vendor name, of which there's exactly one per client.
+        key = f"ad:{payload['target_device']}" if source == "ad" else source
         if not payload.get("ok"):
-            vendor_status[source] = f"error: {payload.get('error', 'unknown')}"
+            vendor_status[key] = f"error: {payload.get('error', 'unknown')}"
             continue
-        vendor_status[source] = "ok"
+        vendor_status[key] = "ok"
         if source == "ad":
-            ad_csv = payload["csv"]
+            ad_csvs.append(payload["csv"])
         else:
             agent_records.extend(AgentDevice.from_dict(r) for r in payload["records"])
 
-    # No AD export means there is nothing to reconcile against — that run is
-    # failed, not partial.
-    if ad_csv is None:
-        run.status = CorrelationRun.RunStatus.FAILED
-        run.vendor_status = vendor_status
-        run.finished_at = timezone.now()
-        run.save(update_fields=["status", "vendor_status", "finished_at"])
-        return {"run_id": run_id, "status": run.status}
-
-    count = services.finalize_run(
-        run, parse_ad_export(ad_csv), agent_records, vendor_status,
-    )
+    # concat_ad_frames/finalize_run handle "every domain failed" (ad_csvs
+    # empty) by failing the run outright — nothing to reconcile against.
+    ad_df = concat_ad_frames([parse_ad_export(csv) for csv in ad_csvs]) if ad_csvs else None
+    count = services.finalize_run(run, ad_df, agent_records, vendor_status)
     run.refresh_from_db()
     return {"run_id": run_id, "status": run.status, "snapshots": count}
 
@@ -177,7 +181,10 @@ def dispatch_client(config: AppConfig, client_cfg: ClientConfig) -> int | None:
 
     with transaction.atomic():
         run = CorrelationRun.objects.create(client=client, stale_days=config.stale_days)
-        header = [collect_ad_export.s(client_cfg.slug)] + [
+        header = [
+            collect_ad_export.s(client_cfg.slug, target_device)
+            for target_device in client_cfg.ad_target_devices
+        ] + [
             VENDOR_TASKS[vendor].s(client_cfg.slug) for vendor in sorted(client_cfg.vendors)
         ]
         callback = correlate_client.s(run_id=run.pk).on_error(mark_run_failed.s(run_id=run.pk))

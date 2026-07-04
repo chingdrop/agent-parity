@@ -75,7 +75,7 @@ def test_client_create_post_creates_client_and_per_client_credentials(staff_clie
             "name": "New Client",
             "slug": "newco",
             "is_active": "on",
-            "ad_target_device": "NEWCO-DC01",
+            "ad_target_devices": "NEWCO-DC01\nNEWCO-BR-DC01",
             "sync_interval_hours": "12",
             "enabled_vendors": ["sentinelone", "carbonblack"],
             "carbonblack-api_url": "https://defense.example.com",
@@ -87,7 +87,7 @@ def test_client_create_post_creates_client_and_per_client_credentials(staff_clie
     assert response.status_code == 302
 
     client_row = Client.objects.get(slug="newco")
-    assert client_row.ad_target_device == "NEWCO-DC01"
+    assert client_row.ad_target_devices == ["NEWCO-DC01", "NEWCO-BR-DC01"]
     assert client_row.sync_interval_hours == 12
     assert set(client_row.enabled_vendors) == {"sentinelone", "carbonblack"}
 
@@ -126,7 +126,7 @@ def test_client_edit_blank_credential_fields_preserve_existing_values(staff_clie
             "name": "Acme Corp",
             "slug": "acme",
             "is_active": "on",
-            "ad_target_device": "ACME-DC01",
+            "ad_target_devices": "ACME-DC01",
             "sync_interval_hours": "6",
             "enabled_vendors": ["carbonblack"],
             # Only org_key changes; everything else blank -> keeps its value.
@@ -195,7 +195,8 @@ vendors:
 clients:
   - name: Uploaded Co
     slug: uploadedco
-    ad_target_device: UPLOADEDCO-DC01
+    ad_target_devices:
+      - UPLOADEDCO-DC01
     sync_interval_hours: 8
     vendors:
       sentinelone: {}
@@ -212,7 +213,7 @@ def test_import_config_yaml_creates_client_and_credentials(staff_client):
     assert response.status_code == 302
 
     client_row = Client.objects.get(slug="uploadedco")
-    assert client_row.ad_target_device == "UPLOADEDCO-DC01"
+    assert client_row.ad_target_devices == ["UPLOADEDCO-DC01"]
     cred = VendorCredential.objects.get(client=None, vendor="sentinelone")
     assert cred.credentials["api_token"] == "uploaded-token"
 

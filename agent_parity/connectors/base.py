@@ -185,8 +185,11 @@ class AgentConnector(ABC):
             )
         if self.is_live:
             return self._live_deploy_and_run(Path(script_path), target_id, script_args or {})
-        # Fixture mode: the canned AD export stands in for the script output.
-        path = self._fixture_path("ad_export.csv")
+        # Fixture mode: the canned AD export for this specific domain
+        # controller stands in for the script output — one file per
+        # target_id, since a client with multiple AD domains has a distinct
+        # export per domain (see dashboard/services.py's collect_ad_frame).
+        path = self._fixture_path(f"ad_export_{target_id}.csv")
         return rebase_csv_timestamps(path.read_text())
 
     # -- helpers -------------------------------------------------------------

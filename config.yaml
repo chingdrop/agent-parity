@@ -31,8 +31,10 @@ vendors:
 clients:
   - name: Acme Corp
     slug: acme
-    # Domain-joined endpoint the AD export script is pushed to.
-    ad_target_device: ACME-DC01
+    # Domain-joined endpoint(s) the AD export script is pushed to — one per
+    # AD domain. Acme is single-domain.
+    ad_target_devices:
+      - ACME-DC01
     sync_interval_hours: 6
     vendors:
       sentinelone: { }
@@ -45,7 +47,13 @@ clients:
 
   - name: Globex
     slug: globex
-    ad_target_device: GLOBEX-DC01
+    # Globex spans two AD domains (a branch-office child domain in addition
+    # to its primary one) — the export script runs on a domain controller
+    # in each, and the resulting CSVs are concatenated into one master AD
+    # list before correlation (see dashboard/services.py's collect_ad_frame).
+    ad_target_devices:
+      - GLOBEX-DC01
+      - GLOBEX-BR-DC01
     sync_interval_hours: 12
     vendors:
       sentinelone: { }

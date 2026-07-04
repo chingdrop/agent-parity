@@ -70,3 +70,18 @@ def parse_ad_export(raw_csv: str) -> pd.DataFrame:
     # empty-string join group.
     parsed = parsed[parsed["join_key"] != ""].reset_index(drop=True)
     return parsed[AD_COLUMNS]
+
+
+def concat_ad_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    """Concatenate one already-parsed AD frame per domain into one master list.
+
+    A client spanning multiple AD domains/forests has the export script run
+    separately on a domain controller in each one (see
+    ``dashboard.services.collect_ad_frame``) — this is where those per-domain
+    results become the single frame the correlation engine sees. Domains are
+    assumed to be disjoint namespaces (no computer object should appear in
+    more than one domain's export); a duplicate join_key across domains isn't
+    specially detected or deduplicated here, matching this project's existing
+    "no fuzzy matching, by design" stance on join-key ambiguity.
+    """
+    return pd.concat(frames, ignore_index=True)

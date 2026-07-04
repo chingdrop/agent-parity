@@ -4,6 +4,8 @@ idempotency path): the small helpers and the sync-path persistence
 idempotency guarantee outside of Celery entirely.
 """
 
+from dataclasses import replace
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -60,6 +62,70 @@ def test_sync_client_from_config_updates_existing_client_on_second_call():
     assert second.name == "Acme Corp"
     assert second.enabled_vendors == sorted(client_cfg.vendors)
     assert Client.objects.count() == 1  # no duplicate row
+
+
+# --- collect_ad_frame: multi-domain concatenation + partial-failure tolerance ---
+
+
+def test_collect_ad_frame_concatenates_globexs_two_domains():
+    """Globex declares two AD domains in config.yaml — both fixture exports
+    must be collected and concatenated into one master frame."""
+    config = load_config()
+    ad_df, status = services.collect_ad_frame(config, "globex")
+
+    assert ad_df is not None
+    assert status == {"ad:GLOBEX-DC01": "ok", "ad:GLOBEX-BR-DC01": "ok"}
+    join_keys = set(ad_df["join_key"])
+    assert "globex-dc01" in join_keys  # from the primary domain
+    assert "globex-br-ws01" in join_keys  # from the branch domain
+
+
+def test_collect_ad_frame_tolerates_one_domain_failing():
+    """One domain's export failing (bad target device, unreachable DC, ...)
+    must not stop the others — same tolerance as per-vendor collection."""
+    config = load_config()
+    broken_globex = replace(
+        config.client("globex"), ad_target_devices=("GLOBEX-DC01", "NONEXISTENT-DC99")
+    )
+    config = replace(config, clients={**config.clients, "globex": broken_globex})
+
+    ad_df, status = services.collect_ad_frame(config, "globex")
+
+    assert ad_df is not None
+    assert status["ad:GLOBEX-DC01"] == "ok"
+    assert status["ad:NONEXISTENT-DC99"].startswith("error")
+    assert "globex-dc01" in set(ad_df["join_key"])
+
+
+def test_collect_ad_frame_returns_none_when_every_domain_fails():
+    config = load_config()
+    broken_globex = replace(
+        config.client("globex"), ad_target_devices=("NONEXISTENT-DC98", "NONEXISTENT-DC99")
+    )
+    config = replace(config, clients={**config.clients, "globex": broken_globex})
+
+    ad_df, status = services.collect_ad_frame(config, "globex")
+
+    assert ad_df is None
+    assert all(v.startswith("error") for v in status.values())
+
+
+# --- finalize_run: no-AD-data handling ------------------------------------------
+
+
+def test_finalize_run_marks_the_run_failed_when_ad_df_is_none():
+    config = load_config()
+    client = services.sync_client_from_config(config.client("acme"))
+    run = CorrelationRun.objects.create(client=client, stale_days=config.stale_days)
+
+    count = services.finalize_run(
+        run, None, [], {"ad:ACME-DC01": "error: target endpoint offline"}
+    )
+
+    run.refresh_from_db()
+    assert count == 0
+    assert run.status == CorrelationRun.RunStatus.FAILED
+    assert run.snapshots.count() == 0
 
 
 # --- persist_correlation idempotency, outside of Celery ------------------------

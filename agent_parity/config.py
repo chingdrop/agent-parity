@@ -70,7 +70,14 @@ class VendorConfig:
 class ClientConfig:
     name: str
     slug: str
-    ad_target_device: str
+    # One domain-joined endpoint per AD domain — a client spanning multiple
+    # domains/forests needs the export script run separately in each (no
+    # single domain controller can enumerate computer objects outside its
+    # own domain); the resulting CSVs are concatenated into one master AD
+    # frame before correlation (see dashboard/services.py's
+    # collect_ad_frame). A single-domain client is just the len == 1 case
+    # of this same tuple, not a special case.
+    ad_target_devices: tuple[str, ...]
     sync_interval_hours: int
     # vendor name -> that client's credential block (empty dict for
     # global-scoped vendors, which carry credentials at the vendor level).
@@ -155,7 +162,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         client = ClientConfig(
             name=entry["name"],
             slug=entry["slug"],
-            ad_target_device=entry.get("ad_target_device", ""),
+            ad_target_devices=tuple(entry.get("ad_target_devices") or ()),
             sync_interval_hours=int(entry.get("sync_interval_hours", 24)),
             vendors={v: (creds or {}) for v, creds in (entry.get("vendors") or {}).items()},
         )

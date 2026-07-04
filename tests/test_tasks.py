@@ -39,7 +39,7 @@ def test_chord_produces_partial_run_when_one_vendor_fails(
     assert run.status == CorrelationRun.RunStatus.PARTIAL
     assert run.vendor_status["carbonblack"].startswith("error")
     assert run.vendor_status["sentinelone"] == "ok"
-    assert run.vendor_status["ad"] == "ok"
+    assert run.vendor_status["ad:ACME-DC01"] == "ok"
     # SentinelOne/BitDefender results were still correlated and persisted.
     assert run.snapshots.filter(vendor="sentinelone").exists()
     assert run.snapshots.filter(vendor="bitdefender").exists()
@@ -49,12 +49,16 @@ def test_chord_produces_partial_run_when_one_vendor_fails(
 def test_chord_completes_cleanly_when_all_vendors_succeed(
         eager_celery, django_capture_on_commit_callbacks, db_config
 ):
+    """Globex has two AD domains (see config.yaml) — both domains' export
+    tasks must fire and both must show up in vendor_status."""
     with django_capture_on_commit_callbacks(execute=True):
         run_id = tasks.dispatch_client(db_config, db_config.client("globex"))
 
     run = CorrelationRun.objects.get(pk=run_id)
     assert run.status == CorrelationRun.RunStatus.COMPLETE
-    assert set(run.vendor_status) == {"ad", "sentinelone", "bitdefender"}
+    assert set(run.vendor_status) == {
+        "ad:GLOBEX-DC01", "ad:GLOBEX-BR-DC01", "sentinelone", "bitdefender",
+    }
     assert run.snapshots.count() > 0
 
 
@@ -65,7 +69,12 @@ def test_run_failed_when_ad_export_is_missing(eager_celery):
     run = CorrelationRun.objects.create(client=client, stale_days=config.stale_days)
 
     results = [
-        {"source": "ad", "ok": False, "error": "target endpoint offline"},
+        {
+            "source": "ad",
+            "target_device": "ACME-DC01",
+            "ok": False,
+            "error": "target endpoint offline",
+        },
         {"source": "sentinelone", "ok": True, "records": []},
     ]
     tasks.correlate_client(results, run_id=run.pk)
@@ -82,10 +91,10 @@ def test_callback_is_idempotent_on_duplicate_delivery(eager_celery):
     client = services.sync_client_from_config(config.client("globex"))
     run = CorrelationRun.objects.create(client=client, stale_days=config.stale_days)
 
-    csv_text = services.collect_ad_csv(config, "globex")
+    csv_text = services.collect_ad_csv(config, "globex", "GLOBEX-DC01")
     records = services.collect_vendor_inventory(config, "globex", "sentinelone")
     results = [
-        {"source": "ad", "ok": True, "csv": csv_text},
+        {"source": "ad", "target_device": "GLOBEX-DC01", "ok": True, "csv": csv_text},
         {"source": "sentinelone", "ok": True, "records": [r.to_dict() for r in records]},
     ]
 

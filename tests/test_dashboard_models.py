@@ -107,7 +107,7 @@ def test_deleting_client_cascades_to_devices_and_runs():
 
 def test_client_topology_fields_default():
     client = Client.objects.create(name="Acme Corp", slug="acme")
-    assert client.ad_target_device == ""
+    assert client.ad_target_devices == []
     assert client.sync_interval_hours == 24
 
 

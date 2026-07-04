@@ -19,7 +19,7 @@ def _client(vendors: tuple[str, ...]) -> ClientConfig:
     return ClientConfig(
         name="Test Client",
         slug="test",
-        ad_target_device="TEST-DC01",
+        ad_target_devices=("TEST-DC01",),
         sync_interval_hours=24,
         vendors={v: {} for v in vendors},
     )

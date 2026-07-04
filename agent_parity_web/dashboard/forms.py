@@ -12,6 +12,30 @@ from agent_parity.connectors import CONNECTOR_CLASSES
 from dashboard.models import VENDOR_CHOICES, Client
 
 
+class NewlineListField(forms.CharField):
+    """A JSONField-backed list of strings, edited as one value per line.
+
+    Used for ``Client.ad_target_devices`` — friendlier than the JSONField's
+    default raw-JSON widget for something that's really just "one domain
+    controller hostname per line, one per AD domain."
+    """
+
+    widget = forms.Textarea
+
+    def prepare_value(self, value):
+        # Called with the stored list on initial render, but with whatever
+        # was last submitted (already a string) when redisplaying after a
+        # validation error — handle both.
+        if isinstance(value, list):
+            return "\n".join(value)
+        return value
+
+    def to_python(self, value):
+        if not value:
+            return []
+        return [line.strip() for line in value.splitlines() if line.strip()]
+
+
 class ClientForm(forms.ModelForm):
     enabled_vendors = forms.MultipleChoiceField(
         choices=VENDOR_CHOICES,
@@ -21,6 +45,12 @@ class ClientForm(forms.ModelForm):
         "shared across every client (edited on the overview page); "
         "per-client vendors have a credentials section below.",
     )
+    ad_target_devices = NewlineListField(
+        required=True,
+        help_text="One domain controller hostname per line — the export "
+        "script runs on each and the results are concatenated into one "
+        "master list. Most clients have just one.",
+    )
 
     class Meta:
         model = Client
@@ -28,7 +58,7 @@ class ClientForm(forms.ModelForm):
             "name",
             "slug",
             "is_active",
-            "ad_target_device",
+            "ad_target_devices",
             "sync_interval_hours",
             "enabled_vendors",
         ]

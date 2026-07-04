@@ -17,7 +17,7 @@
             <th>Name</th>
             <th>Slug</th>
             <th>Active</th>
-            <th>AD target device</th>
+            <th>AD target devices</th>
             <th>Sync interval</th>
             <th>Vendors</th>
             <th></th>
@@ -29,7 +29,7 @@
             <td>{{ client.name }}</td>
             <td><code>{{ client.slug }}</code></td>
             <td>{{ client.is_active|yesno:"yes,no" }}</td>
-            <td>{{ client.ad_target_device|default:"—" }}</td>
+            <td>{{ client.ad_target_devices|join:", "|default:"—" }}</td>
             <td>{{ client.sync_interval_hours }}h</td>
             <td>{{ client.enabled_vendors|join:", "|default:"—" }}</td>
             <td><a href="{% url 'dashboard:client_edit' client.slug %}">Edit</a></td>

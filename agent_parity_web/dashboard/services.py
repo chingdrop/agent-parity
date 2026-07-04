@@ -14,7 +14,7 @@ import pandas as pd
 from django.db import transaction
 from django.utils import timezone
 
-from agent_parity.ad_sync.parser import parse_ad_export
+from agent_parity.ad_sync.parser import concat_ad_frames, parse_ad_export
 from agent_parity.config import (
     AppConfig,
     ClientConfig,
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def sync_client_from_config(client_cfg: ClientConfig) -> Client:
-    """Upsert the ORM Client row from its config.yaml entry."""
+    """Upsert the ORM Client row from its resolved ClientConfig."""
     client, _ = Client.objects.update_or_create(
         slug=client_cfg.slug,
         defaults={"name": client_cfg.name, "enabled_vendors": sorted(client_cfg.vendors)},
@@ -42,8 +42,9 @@ def sync_client_from_config(client_cfg: ClientConfig) -> Client:
     return client
 
 
-def collect_ad_csv(config: AppConfig, client_slug: str) -> str:
-    """Run the AD export through one of the client's vendor channels.
+def collect_ad_csv(config: AppConfig, client_slug: str, target_device: str) -> str:
+    """Run the AD export through one of the client's vendor channels, on one
+    domain controller.
 
     Not every enabled vendor can carry it — only ones whose connector
     genuinely supports remote script execution (see
@@ -52,16 +53,44 @@ def collect_ad_csv(config: AppConfig, client_slug: str) -> str:
     (``config.storage``), the export is handed off through it instead of the
     vendor's own output channel; unconfigured, nothing changes. Returns the
     raw CSV text — JSON-safe, so the Celery fan-out task can ship it as-is.
+
+    Called once per entry in ``client_cfg.ad_target_devices`` — see
+    ``collect_ad_frame``, which is what actually loops over a client's
+    domains and concatenates the results.
     """
     client_cfg = config.client(client_slug)
     vendor_name = pick_ad_export_vendor(client_cfg)
     connector = get_connector(config, client_slug, vendor_name)
     storage = get_storage(config)
-    return run_ad_export(connector, client_cfg.ad_target_device, storage=storage)
+    return run_ad_export(connector, target_device, storage=storage)
 
 
-def collect_ad_frame(config: AppConfig, client_slug: str) -> pd.DataFrame:
-    return parse_ad_export(collect_ad_csv(config, client_slug))
+def collect_ad_frame(config: AppConfig, client_slug: str) -> tuple[pd.DataFrame | None, dict[str, str]]:
+    """Collect, parse, and concatenate the AD export from every one of this
+    client's domain controllers into one master DataFrame.
+
+    Tolerant of partial failure the same way vendor-inventory collection
+    already is (see ``run_pipeline_for_client``) — one domain being
+    unreachable doesn't sink the others; a client with only one domain still
+    goes through this same loop, just with one iteration. The returned frame
+    is ``None`` only when *every* domain failed, meaning there's nothing at
+    all to correlate against.
+    """
+    client_cfg = config.client(client_slug)
+    frames: list[pd.DataFrame] = []
+    status: dict[str, str] = {}
+    for target_device in client_cfg.ad_target_devices:
+        key = f"ad:{target_device}"
+        try:
+            csv_text = collect_ad_csv(config, client_slug, target_device)
+            frames.append(parse_ad_export(csv_text))
+            status[key] = "ok"
+        except Exception as exc:  # noqa: BLE001 — one domain down must not sink the others
+            logger.warning("AD export failed for %s domain %s: %s", client_slug, target_device, exc)
+            status[key] = f"error: {exc}"
+    if not frames:
+        return None, status
+    return concat_ad_frames(frames), status
 
 
 def collect_vendor_inventory(
@@ -186,11 +215,23 @@ def persist_correlation(
 
 def finalize_run(
         run: CorrelationRun,
-        ad_df: pd.DataFrame,
+        ad_df: pd.DataFrame | None,
         agent_records: list[AgentDevice],
         vendor_status: dict[str, str],
 ) -> int:
-    """Correlate + persist — the shared fan-in."""
+    """Correlate + persist — the shared fan-in.
+
+    ``ad_df`` is ``None`` when every one of a client's domains failed to
+    export (see ``collect_ad_frame``/``tasks.correlate_client``) — there's
+    nothing to correlate against, so the run fails outright rather than
+    partially, the same way a missing AD export always has.
+    """
+    if ad_df is None:
+        run.status = CorrelationRun.RunStatus.FAILED
+        run.vendor_status = vendor_status
+        run.finished_at = timezone.now()
+        run.save(update_fields=["status", "vendor_status", "finished_at"])
+        return 0
     result = correlate(ad_df, agents_to_frame(agent_records), stale_days=run.stale_days)
     return persist_correlation(run, result, vendor_status)
 
@@ -215,9 +256,7 @@ def run_pipeline_for_client(
     if run is None:
         run = CorrelationRun.objects.create(client=client, stale_days=config.stale_days)
 
-    vendor_status: dict[str, str] = {}
-    ad_df = collect_ad_frame(config, client_cfg.slug)
-    vendor_status["ad"] = "ok"
+    ad_df, vendor_status = collect_ad_frame(config, client_cfg.slug)
 
     agent_records: list[AgentDevice] = []
     for vendor_name in sorted(client_cfg.vendors):

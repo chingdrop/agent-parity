@@ -145,6 +145,34 @@ to add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
 `_request_json()`/`_as_text()` helpers narrow that `dict | str | bytes` result
 for call sites that know which one they expect.
 
+### Multi-domain clients: one export per domain, concatenated into a master list
+
+A client isn't always a single AD domain — some span multiple domains or
+forests, and no one domain controller can enumerate computer objects outside
+its own domain. `ClientConfig.ad_target_devices` (`agent_parity/config.py`) is
+a list, not a single hostname: `Export-ADDevices.ps1` runs once per entry, and
+`dashboard/services.py`'s `collect_ad_frame` parses and concatenates the
+resulting CSVs (`agent_parity/ad_sync/parser.py`'s `concat_ad_frames`) into
+one master AD DataFrame before correlation ever runs. A single-domain client
+is just the one-element case of the same list — not a special code path.
+
+Collection is tolerant of partial failure the same way per-vendor inventory
+collection already is: one domain being unreachable doesn't sink the others,
+and the scaled (Celery) path fans out one `collect_ad_export` task per domain
+the same way it already fans out one task per vendor. Only when *every*
+domain fails does the run fail outright (nothing at all to correlate
+against) — `dashboard/services.py`'s `finalize_run` is where both the
+synchronous path and the Celery chord callback share that "no AD data" check,
+rather than each re-implementing it. Per-domain outcomes show up in a run's
+`vendor_status` keyed `ad:<target_device>` (e.g. `ad:GLOBEX-DC01`), alongside
+the plain vendor-name keys for agent inventory.
+
+Vendor agent inventories are unaffected by any of this — agents in every
+domain still report to the same per-client vendor console, so only the AD
+side of collection fans out. The demo's `globex` client models this: it has
+two domains (`GLOBEX-DC01` and a branch office `GLOBEX-BR-DC01`) in
+`config.yaml`/`sample_data/globex/`, while `acme` stays single-domain.
+
 ### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
 Vendor remote-execution output channels are not a reliable way to get a full

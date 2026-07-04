@@ -47,8 +47,10 @@ class Client(models.Model):
     # Which vendors this client uses; drives which VendorCredential rows are
     # looked up and which fan-out tasks get dispatched for it.
     enabled_vendors = models.JSONField(default=list, blank=True)
-    # Domain-joined endpoint the AD export script is pushed to.
-    ad_target_device = models.CharField(max_length=255, blank=True)
+    # Domain-joined endpoints the AD export script is pushed to — one per AD
+    # domain (see ClientConfig.ad_target_devices in agent_parity/config.py);
+    # a single-domain client just has one entry.
+    ad_target_devices = models.JSONField(default=list, blank=True)
     sync_interval_hours = models.PositiveIntegerField(default=24)
 
     class Meta:

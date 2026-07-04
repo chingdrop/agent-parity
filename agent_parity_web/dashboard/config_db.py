@@ -57,7 +57,7 @@ def import_app_config(config: AppConfig) -> None:
             defaults={
                 "name": client_cfg.name,
                 "enabled_vendors": sorted(client_cfg.vendors),
-                "ad_target_device": client_cfg.ad_target_device,
+                "ad_target_devices": list(client_cfg.ad_target_devices),
                 "sync_interval_hours": client_cfg.sync_interval_hours,
             },
         )
@@ -99,7 +99,7 @@ def build_app_config_from_db() -> AppConfig:
         clients[client.slug] = ClientConfig(
             name=client.name,
             slug=client.slug,
-            ad_target_device=client.ad_target_device,
+            ad_target_devices=tuple(client.ad_target_devices),
             sync_interval_hours=client.sync_interval_hours,
             vendors=vendors,
         )
