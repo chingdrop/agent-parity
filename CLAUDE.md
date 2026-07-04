@@ -216,3 +216,16 @@ touched carelessly:
   committed (it lived in a scratch directory outside the repo). The committed CSV/JSON
   files are the source of truth now; there's no `generate_fixtures.py` in this repo to
   regenerate them from.
+- Test coverage is intentionally close to 1:1 with source modules: `test_models.py` ↔
+  `agent_parity/models.py`, `test_rest_adapter.py` ↔ `agent_parity/rest_adapter.py`,
+  `test_dashboard_models.py` ↔ `dashboard/models.py`, `test_services.py` ↔ the parts of
+  `dashboard/services.py` not already exercised by `test_pipeline_sync.py`/`test_tasks.py`,
+  `test_views.py` ↔ `dashboard/views.py`. When adding a new module with real logic in it,
+  add its test file alongside — don't rely on it being incidentally exercised by a
+  higher-level pipeline test, which is exactly the gap `test_views.py` filled (the views
+  had zero direct coverage before, only manual browser checks).
+- Deliberately not unit-tested: Django settings modules, `config/celery.py`/`wsgi.py`/
+  `urls.py`, `dashboard/apps.py` — declarative framework wiring, not application logic.
+  A failure there breaks every other test in the suite (which loads them just to run),
+  so that failure mode is already covered by the suite's own existence; don't add
+  tests-that-just-assert-a-constant-equals-itself for these.

@@ -360,6 +360,32 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 - **Fixture scenarios**: named tests pin the authored gap scenarios
   (`acme-sql02` is missing, `acme-fs-old` is orphaned, …) so a fixture edit
   that breaks a scenario fails loudly.
+- **Pipeline data shapes** (`test_models.py`): `normalize_hostname` edge
+  cases, `ADDevice`/`AgentDevice` join-key properties, `AgentDevice.to_dict`/
+  `from_dict` round-tripping across the Celery JSON boundary.
+- **HTTP transport** (`test_rest_adapter.py`): content-type-based parsing
+  (JSON/text/bytes), retry configuration, header merging, `files=` passthrough
+  — `RestAdapter` in isolation, not just through a connector.
+- **ORM schema** (`test_dashboard_models.py`): `CoverageStatus` choices stay
+  in lockstep with the pipeline's own enum, `__str__` methods, the
+  `(client, join_key)` uniqueness constraint, cascade deletes.
+- **Service-layer internals** (`test_services.py`): `_first_valid`'s
+  NaN/None handling, `sync_client_from_config`'s create-vs-update (upsert)
+  behavior, `persist_correlation`'s idempotency guarantee exercised directly
+  rather than only through the Celery chord.
+- **Dashboard views** (`test_views.py`): overview's empty state and populated
+  coverage cards, device-list filtering (client/status/vendor) and
+  pagination, device-detail 404 handling, the trend-data JSON endpoint —
+  against a DB seeded via the real pipeline, not hand-built fixtures.
+- **Admin registration** (`test_admin.py`): every model actually shows up in
+  Django admin (a model added without `@admin.register` fails silently
+  everywhere else).
+
+Deliberately not unit-tested: Django settings modules, `config/celery.py`/
+`wsgi.py`/`urls.py`, and `dashboard/apps.py` — these are declarative framework
+wiring, not application logic; a failure there breaks every other test in the
+suite (which loads them to run at all), so that failure mode is already
+covered by the suite existing.
 
 ## Out of scope for v1
 
