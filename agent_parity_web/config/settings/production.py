@@ -7,6 +7,9 @@ DEBUG = False
 if not os.environ.get("SECRET_KEY"):
     raise RuntimeError("SECRET_KEY must be set in production")
 
+if not os.environ.get("CREDENTIAL_ENCRYPTION_KEY"):
+    raise RuntimeError("CREDENTIAL_ENCRYPTION_KEY must be set in production")
+
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.environ.get("ALLOWED_HOSTS", "").split(",")

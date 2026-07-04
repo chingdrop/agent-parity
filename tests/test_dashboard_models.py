@@ -8,7 +8,14 @@ import pytest
 from django.db import IntegrityError, transaction
 
 from agent_parity.models import CoverageStatus as PipelineCoverageStatus
-from dashboard.models import Client, CorrelationRun, CoverageSnapshot, CoverageStatus, Device
+from dashboard.models import (
+    Client,
+    CorrelationRun,
+    CoverageSnapshot,
+    CoverageStatus,
+    Device,
+    VendorCredential,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -96,3 +103,64 @@ def test_deleting_client_cascades_to_devices_and_runs():
 
     assert Device.objects.count() == 0
     assert CorrelationRun.objects.count() == 0
+
+
+def test_client_topology_fields_default():
+    client = Client.objects.create(name="Acme Corp", slug="acme")
+    assert client.ad_target_device == ""
+    assert client.sync_interval_hours == 24
+
+
+def test_vendor_credential_str_shows_global_or_client_scope():
+    global_cred = VendorCredential.objects.create(
+        client=None, vendor="sentinelone", credentials={"api_url": "x", "api_token": "y"}
+    )
+    assert str(global_cred) == "global/sentinelone"
+
+    client = Client.objects.create(name="Acme Corp", slug="acme")
+    per_client_cred = VendorCredential.objects.create(
+        client=client, vendor="carbonblack", credentials={"api_id": "ACMEID"}
+    )
+    assert str(per_client_cred) == "acme/carbonblack"
+
+
+def test_vendor_credential_round_trips_through_encryption():
+    creds = {"api_url": "https://usea1.sentinelone.net", "api_token": "s1-secret"}
+    VendorCredential.objects.create(client=None, vendor="sentinelone", credentials=creds)
+
+    fetched = VendorCredential.objects.get(vendor="sentinelone")
+    assert fetched.credentials == creds
+
+
+def test_vendor_credential_is_encrypted_at_rest():
+    """The raw DB column must never contain the plaintext credential values —
+    only dashboard/fields.py's EncryptedJSONField should ever see them
+    decrypted."""
+    from django.db import connection
+
+    VendorCredential.objects.create(
+        client=None, vendor="bitdefender", credentials={"api_key": "super-secret-value"}
+    )
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT credentials FROM dashboard_vendorcredential")
+        raw_value = cursor.fetchone()[0]
+    assert "super-secret-value" not in raw_value
+
+
+def test_vendor_credential_only_one_global_row_per_vendor():
+    VendorCredential.objects.create(client=None, vendor="sentinelone", credentials={})
+    with pytest.raises(IntegrityError), transaction.atomic():
+        VendorCredential.objects.create(client=None, vendor="sentinelone", credentials={})
+
+
+def test_vendor_credential_one_row_per_client_per_vendor_but_not_across_clients():
+    acme = Client.objects.create(name="Acme Corp", slug="acme")
+    globex = Client.objects.create(name="Globex", slug="globex")
+    VendorCredential.objects.create(client=acme, vendor="carbonblack", credentials={})
+
+    # Same vendor, different client: fine.
+    VendorCredential.objects.create(client=globex, vendor="carbonblack", credentials={})
+
+    # Same vendor, same client: violates the constraint.
+    with pytest.raises(IntegrityError), transaction.atomic():
+        VendorCredential.objects.create(client=acme, vendor="carbonblack", credentials={})

@@ -19,6 +19,15 @@ if str(REPO_ROOT) not in sys.path:
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "insecure-dev-only-key-change-me")
 
+# Encrypts VendorCredential.credentials at the ORM layer (dashboard/fields.py)
+# so vendor API credentials aren't stored in plaintext once they live in the
+# DB rather than a gitignored .env file. Must be a Fernet key
+# (Fernet.generate_key()) — this insecure default is dev-only, same pattern
+# as SECRET_KEY above; production.py requires a real one.
+CREDENTIAL_ENCRYPTION_KEY = os.environ.get(
+    "CREDENTIAL_ENCRYPTION_KEY", "SbLYzyFRKsiM1kgnUHZEBS9g2pB1P-FwDsPn1adX-PQ="
+)
+
 DEBUG = False
 ALLOWED_HOSTS: list[str] = []
 

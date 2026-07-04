@@ -6,10 +6,18 @@ so per-device history and per-run aggregates are both plain queries.
 """
 
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
+from agent_parity.connectors import CONNECTOR_CLASSES
 from agent_parity.models import CoverageStatus as PipelineStatus
 from agent_parity.models import OSLifecycleStatus as PipelineOSLifecycleStatus
+from dashboard.fields import EncryptedJSONField
+
+#: Vendor names known to the pipeline (agent_parity.connectors.CONNECTOR_CLASSES
+#: is the single source of truth so this can't drift from what connectors
+#: actually exist).
+VENDOR_CHOICES = [(name, name) for name in sorted(CONNECTOR_CLASSES)]
 
 
 class CoverageStatus(models.TextChoices):
@@ -36,14 +44,55 @@ class Client(models.Model):
     name = models.CharField(max_length=200)
     slug = models.SlugField(unique=True)
     is_active = models.BooleanField(default=True)
-    # Denormalized from config.yaml on each sync, for display/filtering.
+    # Which vendors this client uses; drives which VendorCredential rows are
+    # looked up and which fan-out tasks get dispatched for it.
     enabled_vendors = models.JSONField(default=list, blank=True)
+    # Domain-joined endpoint the AD export script is pushed to.
+    ad_target_device = models.CharField(max_length=255, blank=True)
+    sync_interval_hours = models.PositiveIntegerField(default=24)
 
     class Meta:
         ordering = ["name"]
 
     def __str__(self):
         return self.name
+
+
+class VendorCredential(models.Model):
+    """A vendor's API credentials, encrypted at rest.
+
+    ``client`` is null for global-scope vendors (SentinelOne, BitDefender —
+    one credential set for the whole organization) and set for per-client
+    vendors (Carbon Black — a distinct credential set per client). Which
+    vendors are global vs per-client is a fixed business fact, not something
+    this model or a setup form decides — see
+    ``agent_parity.config.VENDOR_SCOPE``.
+    """
+
+    client = models.ForeignKey(
+        Client, null=True, blank=True, on_delete=models.CASCADE, related_name="vendor_credentials"
+    )
+    vendor = models.CharField(max_length=32, choices=VENDOR_CHOICES)
+    # Vendor-specific shape (e.g. {"api_url", "api_token"} for SentinelOne vs
+    # {"api_url", "api_id", "api_key", "org_key"} for Carbon Black) — a
+    # single encrypted blob rather than per-vendor columns, same as
+    # VendorConfig.credentials/ClientConfig.vendors in agent_parity/config.py.
+    credentials = EncryptedJSONField(default=dict, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["vendor"], condition=Q(client__isnull=True), name="uniq_global_vendor_credential"
+            ),
+            models.UniqueConstraint(
+                fields=["client", "vendor"],
+                condition=Q(client__isnull=False),
+                name="uniq_per_client_vendor_credential",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.client.slug if self.client else 'global'}/{self.vendor}"
 
 
 class Device(models.Model):
