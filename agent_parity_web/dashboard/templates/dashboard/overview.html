@@ -76,6 +76,30 @@
         server can be named anything but can't fake being a Windows Server.
     </p>
 
+    <div class="metrics">
+        <div class="metric">
+            <div class="value">{{ card.at_risk_total|default:0 }}</div>
+            <div class="label">At-risk OS (EOL / EOL soon)</div>
+        </div>
+        <div class="metric">
+            <div class="value">{{ card.eol_counts.end_of_life|default:0 }}</div>
+            <div class="label">Already end of life</div>
+        </div>
+        <div class="metric">
+            <div class="value">{{ card.eol_counts.eol_soon|default:0 }}</div>
+            <div class="label">EOL within 180 days</div>
+        </div>
+        <div class="metric">
+            <div class="value">{{ card.at_risk_counts.missing_agent|default:0 }}</div>
+            <div class="label">At-risk &amp; missing agent</div>
+        </div>
+    </div>
+    <p class="muted">
+        Independent of coverage: a <em>covered</em> end-of-life server still means
+        the OS itself needs upgrading — no agent fixes that. "At-risk &amp; missing
+        agent" is the worst case: unsupported and invisible at the same time.
+    </p>
+
     <table>
         <thead>
         <tr>
@@ -100,9 +124,10 @@
     </table>
 
     <h3>Coverage % over time</h3>
-    <p class="muted">Overall coverage alongside server-only coverage — the
-        two numbers a quarterly report needs: is coverage improving, and are
-        the highest-value assets covered.</p>
+    <p class="muted">Overall coverage, server-only coverage, and at-risk OS % —
+        the three numbers a quarterly report needs: is coverage improving, are
+        the highest-value assets covered, and is the fleet's OS risk trending
+        down.</p>
     <canvas class="trend" data-url="{% url 'dashboard:trend_data' card.client.slug %}"></canvas>
     {% else %}
     <p class="muted">No completed runs yet for this client.</p>
@@ -132,6 +157,16 @@
                         borderColor: "#b45309",
                         backgroundColor: "rgba(180, 83, 9, 0.1)",
                         borderDash: [6, 4],
+                        fill: false,
+                        tension: 0.2,
+                        spanGaps: true,
+                    },
+                    {
+                        label: "At-risk OS %",
+                        data: data.at_risk_pct,
+                        borderColor: "#b91c1c",
+                        backgroundColor: "rgba(185, 28, 28, 0.1)",
+                        borderDash: [2, 2],
                         fill: false,
                         tension: 0.2,
                         spanGaps: true,

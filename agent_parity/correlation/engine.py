@@ -30,15 +30,25 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
-from agent_parity.models import AgentDevice, CoverageStatus, infer_machine_type, normalize_hostname
+from agent_parity.models import (
+    AgentDevice,
+    CoverageStatus,
+    OSLifecycleStatus,
+    infer_machine_type,
+    normalize_hostname,
+)
+from agent_parity.os_eol import DEFAULT_WARNING_DAYS as DEFAULT_EOL_WARNING_DAYS
+from agent_parity.os_eol import eol_status_for_device
 
 #: Columns every agents frame carries into the merge. platform/machine_type
 #: are worded to match SentinelOne's own vocabulary regardless of which
 #: vendor actually reported the device (see AgentDevice's docstring).
+#: os_build is only ever set by SentinelOne (see AgentDevice's docstring).
 AGENT_COLUMNS = [
     "join_key",
     "hostname",
     "os",
+    "os_build",
     "vendor",
     "agent_id",
     "last_seen",
@@ -62,6 +72,7 @@ def agents_to_frame(devices: Iterable[AgentDevice]) -> pd.DataFrame:
         {
             "hostname": d.hostname,
             "os": d.os,
+            "os_build": d.os_build,
             "vendor": d.vendor,
             "agent_id": d.agent_id,
             "last_seen": d.last_seen,
@@ -153,6 +164,59 @@ def backfill_machine_type(classified: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def classify_eol_status(
+    classified: pd.DataFrame,
+    as_of: pd.Timestamp | None = None,
+    warning_days: int = DEFAULT_EOL_WARNING_DAYS,
+) -> pd.DataFrame:
+    """Stage 5: classify every row's OS lifecycle status (end_of_life /
+    eol_soon / supported / unknown) — an independent prioritization signal
+    alongside coverage status and machine_type: a missing, end-of-life
+    Domain Controller is a very different priority than a missing,
+    actively-supported one.
+
+    Prefers the agent's own reported build number and OS text (freshest,
+    live data, and the only source that ever has a build number at all —
+    SentinelOne; Carbon Black/BitDefender don't), falling back to AD's,
+    which is captured for every device now, not just missing_agent rows.
+    Free-text OS-name matching (agent_parity.os_eol) is the last resort when
+    neither side has a build number, not the first. The resolved build
+    number is also kept as its own column (``os_build``) — not just an
+    intermediate value — so persistence has one clean field to write,
+    matching whichever source actually determined the status.
+    """
+    out = classified.copy()
+    as_of_date = (as_of or pd.Timestamp.now(tz="UTC")).date()
+    build_cols = [c for c in ("os_build_agent", "os_build_ad") if c in out.columns]
+    text_cols = [c for c in ("os_agent", "os_ad") if c in out.columns]
+
+    def resolved_build(row):
+        for col in build_cols:
+            if pd.notna(row[col]):
+                return int(row[col])
+        return None
+
+    def resolved_text(row):
+        for col in text_cols:
+            if isinstance(row[col], str) and row[col]:
+                return row[col]
+        return None
+
+    if out.empty:
+        out["os_build"] = pd.Series(dtype="object")
+        out["eol_status"] = pd.Series(dtype="object")
+        return out
+
+    out["os_build"] = out.apply(resolved_build, axis=1)
+    out["eol_status"] = out.apply(
+        lambda row: eol_status_for_device(
+            resolved_text(row), row["os_build"], as_of=as_of_date, warning_days=warning_days
+        ),
+        axis=1,
+    )
+    return out
+
+
 def summarize(frame: pd.DataFrame) -> dict:
     """Aggregates for reporting — plain value_counts/groupby, nothing clever."""
     status_counts = frame["status"].value_counts().to_dict()
@@ -179,6 +243,19 @@ def summarize(frame: pd.DataFrame) -> dict:
     server_missing = server_status_counts.get(CoverageStatus.MISSING_AGENT.value, 0)
     server_denominator = server_covered + server_stale + server_missing
 
+    # OS lifecycle status is a third, independent prioritization axis: a
+    # device whose OS is already end-of-life (or close to it) is worth
+    # flagging regardless of coverage status — an uncovered end-of-life
+    # server is the worst case, but a *covered* one still means the OS
+    # itself needs upgrading, which no agent fixes.
+    eol_counts = frame["eol_status"].value_counts().to_dict() if "eol_status" in frame else {}
+    at_risk = (
+        frame[frame["eol_status"].isin([OSLifecycleStatus.END_OF_LIFE, OSLifecycleStatus.EOL_SOON])]
+        if "eol_status" in frame
+        else frame.iloc[0:0]
+    )
+    at_risk_status_counts = at_risk["status"].value_counts().to_dict() if len(at_risk) else {}
+
     return {
         "total_rows": int(len(frame)),
         "unique_devices": int(frame["join_key"].nunique()),
@@ -189,6 +266,8 @@ def summarize(frame: pd.DataFrame) -> dict:
         "server_coverage_pct": round(100.0 * server_covered / server_denominator, 1)
         if server_denominator
         else 0.0,
+        "eol_status_counts": {k: int(v) for k, v in eol_counts.items()},
+        "at_risk_status_counts": {k: int(v) for k, v in at_risk_status_counts.items()},
     }
 
 
@@ -197,6 +276,7 @@ def correlate(
         agents_df: pd.DataFrame,
         stale_days: int = 14,
         as_of: pd.Timestamp | None = None,
+        eol_warning_days: int = DEFAULT_EOL_WARNING_DAYS,
 ) -> CorrelationResult:
     """Run the full chain and return the classified frame plus aggregates."""
     frame = (
@@ -204,5 +284,6 @@ def correlate(
         .pipe(merge_with_agents, agents_df)
         .pipe(classify_coverage, stale_days=stale_days, as_of=as_of)
         .pipe(backfill_machine_type)
+        .pipe(classify_eol_status, as_of=as_of, warning_days=eol_warning_days)
     )
     return CorrelationResult(frame=frame, summary=summarize(frame))

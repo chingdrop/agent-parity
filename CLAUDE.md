@@ -58,10 +58,10 @@ before assuming the imports are actually broken.
 This is the analytical core and is deliberately a `.pipe()` chain, not one function:
 `add_join_key` → `merge_with_agents` (`pd.merge(..., how="outer", indicator=True)`) →
 `classify_coverage` (turns the merge indicator + a `last_seen` staleness check into
-`CoverageStatus`) → `backfill_machine_type`. Each stage is independently testable;
-keep it that way rather than inlining. `join_key` normalization (strip DNS suffix,
-lowercase, trim) is the only matching logic — there's no fuzzy matching, by design
-(noted as future work).
+`CoverageStatus`) → `backfill_machine_type` → `classify_eol_status`. Each stage is
+independently testable; keep it that way rather than inlining. `join_key`
+normalization (strip DNS suffix, lowercase, trim) is the only matching logic —
+there's no fuzzy matching, by design (noted as future work).
 
 **`backfill_machine_type` exists for one reason**: `machine_type` (see
 `AgentDevice`'s docstring) only ever comes from the agent side of the merge, so a
@@ -76,6 +76,19 @@ isn't already set; an agent-reported value always wins. Don't try to infer
 criticality from the hostname — that's exactly the unreliable signal this design
 deliberately avoids (file/storage servers can be named anything; a Windows Server
 SKU can't fake being one).
+
+**`classify_eol_status` (see `agent_parity/os_eol.py`) is the third prioritization
+axis**, independent of coverage: a covered end-of-life server still needs an OS
+upgrade. It resolves `os_build` per row with the same both-sides-then-fallback
+precedence as `backfill_machine_type` — agent-reported build first (only
+SentinelOne sets one), then AD's own `operatingSystemVersion`-derived build, then
+free-text OS-name matching (the only option for Carbon Black/BitDefender-only
+rows, which never carry a build number). Because a column is only pandas-suffixed
+when it exists on *both* merge sides, watch for a bare (unsuffixed) `os_build`
+column if a test helper's frame doesn't include it on both the AD and agent side —
+this silently breaks the precedence logic without erroring. `eol_status` is always
+one of the four `OSLifecycleStatus` values, never blank, because AD's build/OS
+text is captured for every row, including `missing_agent`.
 
 Tests for this module assert on classification outcomes and merge-invariants (row
 count = union of join keys), not on `pd.merge` itself — follow that pattern for new

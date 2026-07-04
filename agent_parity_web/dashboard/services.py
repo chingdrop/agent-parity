@@ -163,6 +163,8 @@ def persist_correlation(
             ),
             platform="" if pd.isna(row.platform) else str(row.platform),
             machine_type="" if pd.isna(row.machine_type) else str(row.machine_type),
+            eol_status=row.eol_status,
+            os_build=None if pd.isna(row.os_build) else int(row.os_build),
         )
         for row in frame.itertuples(index=False)
     ]

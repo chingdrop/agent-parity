@@ -9,6 +9,7 @@ from django.db import models
 from django.utils import timezone
 
 from agent_parity.models import CoverageStatus as PipelineStatus
+from agent_parity.models import OSLifecycleStatus as PipelineOSLifecycleStatus
 
 
 class CoverageStatus(models.TextChoices):
@@ -18,6 +19,15 @@ class CoverageStatus(models.TextChoices):
     MISSING_AGENT = PipelineStatus.MISSING_AGENT.value, "Missing agent"
     ORPHANED_AGENT = PipelineStatus.ORPHANED_AGENT.value, "Orphaned agent"
     STALE_COVERAGE = PipelineStatus.STALE_COVERAGE.value, "Stale coverage"
+
+
+class OSLifecycleStatus(models.TextChoices):
+    """ORM mirror of the pipeline's OSLifecycleStatus enum (same values)."""
+
+    UNKNOWN = PipelineOSLifecycleStatus.UNKNOWN.value, "Unknown"
+    SUPPORTED = PipelineOSLifecycleStatus.SUPPORTED.value, "Supported"
+    EOL_SOON = PipelineOSLifecycleStatus.EOL_SOON.value, "EOL soon"
+    END_OF_LIFE = PipelineOSLifecycleStatus.END_OF_LIFE.value, "End of life"
 
 
 class Client(models.Model):
@@ -100,6 +110,17 @@ class CoverageSnapshot(models.Model):
     # agent_parity/models.py) — empty for missing_agent rows, same as vendor.
     platform = models.CharField(max_length=32, blank=True)
     machine_type = models.CharField(max_length=32, blank=True)
+    # Unlike platform/machine_type, always one of the four defined choices —
+    # every row gets a lifecycle classification, even "unknown", since
+    # AD's own build number (see ADDevice's docstring) is captured for
+    # every device, not just ones with a build-reporting agent.
+    eol_status = models.CharField(
+        max_length=16, choices=OSLifecycleStatus.choices, default=OSLifecycleStatus.UNKNOWN
+    )
+    # The Windows build number that determined eol_status, when one was
+    # available (AD or SentinelOne) — null when neither side had one and
+    # eol_status came from free-text matching instead.
+    os_build = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         ordering = ["device__join_key", "vendor"]

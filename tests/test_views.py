@@ -67,6 +67,22 @@ def test_overview_known_missing_server_counts_toward_servers_missing(client, acm
     assert card["server_counts"].get("missing_agent", 0) >= 1
 
 
+def test_overview_at_risk_counts_cover_eol_and_eol_soon(client, acme_run):
+    """acme has real end_of_life and eol_soon devices from the build-number
+    fixtures — at_risk_counts must include both, cross-tabbed by coverage
+    status, not just a flat count."""
+    response = client.get(reverse("dashboard:overview"))
+    card = response.context["cards"][0]
+
+    assert card["at_risk_total"] > 0
+    assert set(card["eol_counts"]) <= {"unknown", "supported", "eol_soon", "end_of_life"}
+    assert sum(card["eol_counts"].values()) == sum(card["counts"].values())
+    # at_risk_counts is itself a subset of eol_counts' end_of_life+eol_soon.
+    assert card["at_risk_total"] == card["eol_counts"].get(
+        "end_of_life", 0
+    ) + card["eol_counts"].get("eol_soon", 0)
+
+
 def test_overview_omits_inactive_clients(client, acme_run):
     acme_run.client.is_active = False
     acme_run.client.save()
@@ -105,6 +121,13 @@ def test_device_list_filters_by_machine_type(client, acme_run):
     assert all(s.machine_type == "server" for s in page.object_list)
     # The known missing server must be reachable through this filter alone.
     assert any(s.device.join_key == "acme-sql02" for s in page.object_list)
+
+
+def test_device_list_filters_by_eol_status(client, acme_run):
+    response = client.get(reverse("dashboard:device_list"), {"eol_status": "end_of_life"})
+    page = response.context["page"]
+    assert len(page.object_list) > 0
+    assert all(s.eol_status == "end_of_life" for s in page.object_list)
 
 
 def test_device_list_filters_by_client_slug(client, acme_run):
@@ -157,6 +180,8 @@ def test_trend_data_returns_json_with_one_point_per_run(client, acme_run):
     assert 0 <= payload["coverage_pct"][0] <= 100
     assert len(payload["server_coverage_pct"]) == 1
     assert 0 <= payload["server_coverage_pct"][0] <= 100
+    assert len(payload["at_risk_pct"]) == 1
+    assert 0 <= payload["at_risk_pct"][0] <= 100
 
 
 def test_trend_data_404s_for_unknown_client_slug(client):
@@ -172,5 +197,9 @@ def test_trend_data_empty_before_any_run(client):
     assert response.status_code == 200
     payload = json.loads(response.content)
     assert payload == {
-        "client": "emptyco", "labels": [], "coverage_pct": [], "server_coverage_pct": [],
+        "client": "emptyco",
+        "labels": [],
+        "coverage_pct": [],
+        "server_coverage_pct": [],
+        "at_risk_pct": [],
     }

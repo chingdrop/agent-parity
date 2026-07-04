@@ -19,7 +19,9 @@
 <h2>Coverage history</h2>
 <p class="muted">This device's status in every correlation run — the relational
     history a flat log stream can't show. Platform/machine type are worded to
-    match SentinelOne's own vocabulary regardless of which vendor reported it.</p>
+    match SentinelOne's own vocabulary regardless of which vendor reported it.
+    EOL status prefers an exact Windows build number (AD or SentinelOne) and
+    falls back to free-text OS matching when no build number is available.</p>
 <table>
     <thead>
     <tr>
@@ -29,6 +31,8 @@
         <th>Vendor</th>
         <th>Platform</th>
         <th>Machine type</th>
+        <th>EOL status</th>
+        <th>OS build</th>
         <th>Match</th>
         <th>Agent last seen</th>
     </tr>
@@ -42,12 +46,14 @@
         <td>{{ snapshot.vendor|default:"—" }}</td>
         <td>{{ snapshot.platform|default:"—" }}</td>
         <td>{{ snapshot.machine_type|default:"—" }}</td>
+        <td>{{ snapshot.get_eol_status_display }}</td>
+        <td>{{ snapshot.os_build|default:"—" }}</td>
         <td>{{ snapshot.match_method }}</td>
         <td>{{ snapshot.agent_last_seen|date:"Y-m-d H:i"|default:"—" }}</td>
     </tr>
     {% empty %}
     <tr>
-        <td colspan="8" class="muted">No snapshots recorded for this device.</td>
+        <td colspan="10" class="muted">No snapshots recorded for this device.</td>
     </tr>
     {% endfor %}
     </tbody>

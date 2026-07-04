@@ -14,19 +14,35 @@ RECENT = datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc)  # < 1 day old
 STALE = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)  # > 14 days old
 
 
-def ad_frame(*hostnames: str, os: str = "Windows 11") -> pd.DataFrame:
+def ad_frame(*hostnames: str, os: str = "Windows 11", os_build: int | None = None) -> pd.DataFrame:
+    """Mirrors ad_sync.parser's real output shape (os_build included, even
+    when None) — without this column, a merge against agents_to_frame's
+    output (which always has os_build) leaves it unsuffixed, which is not
+    what production ever actually produces."""
     return pd.DataFrame(
         {
             "hostname": list(hostnames),
             "os": [os] * len(hostnames),
+            "os_build": [os_build] * len(hostnames),
             "last_logon": [AS_OF - timedelta(days=1)] * len(hostnames),
         }
     )
 
 
-def agent(hostname: str, last_seen: datetime | None = RECENT, vendor="sentinelone") -> AgentDevice:
+def agent(
+    hostname: str,
+    last_seen: datetime | None = RECENT,
+    vendor="sentinelone",
+    os: str = "",
+    os_build: int | None = None,
+) -> AgentDevice:
     return AgentDevice(
-        vendor=vendor, agent_id=f"id-{hostname}", hostname=hostname, last_seen=last_seen
+        vendor=vendor,
+        agent_id=f"id-{hostname}",
+        hostname=hostname,
+        last_seen=last_seen,
+        os=os,
+        os_build=os_build,
     )
 
 
@@ -225,3 +241,97 @@ def test_server_coverage_pct_is_zero_when_there_are_no_servers():
     result = correlate(ad_frame("WS-01", os="Windows 11 Enterprise"), agents_to_frame([agent("WS-01")]), as_of=AS_OF)
     assert result.summary["server_status_counts"] == {}
     assert result.summary["server_coverage_pct"] == 0.0
+
+
+# --- classify_eol_status ------------------------------------------------------------
+#
+# AS_OF is 2026-07-03. Build 22621 (Windows 11 22H2) EOL'd 2024-10-08;
+# 22631 (23H2) EOL'd 2025-11-11; 26100 (24H2) EOL's 2026-10-13, ~102 days
+# out — within the 180-day warning window, so eol_soon, not end_of_life.
+
+
+def test_eol_status_uses_agent_build_when_ad_has_none():
+    device = agent("WS-01", os="Windows 11 Enterprise", os_build=26100)
+    result = correlate(
+        ad_frame("WS-01", os="Windows 11 Enterprise", os_build=None),
+        agents_to_frame([device]),
+        as_of=AS_OF,
+    )
+    row = result.frame.iloc[0]
+    assert row["os_build"] == 26100
+    assert row["eol_status"] == "eol_soon"
+
+
+def test_eol_status_falls_back_to_ad_build_when_agent_has_none():
+    """Matched device, agent reports no build (Carbon Black/BitDefender) —
+    AD's own build (captured for every device now) still resolves it
+    precisely instead of falling all the way back to free-text "unknown"."""
+    device = agent("WS-01", os="Windows 11 Enterprise", os_build=None, vendor="carbonblack")
+    result = correlate(
+        ad_frame("WS-01", os="Windows 11 Enterprise", os_build=22621),
+        agents_to_frame([device]),
+        as_of=AS_OF,
+    )
+    row = result.frame.iloc[0]
+    assert row["os_build"] == 22621
+    assert row["eol_status"] == "end_of_life"
+
+
+def test_eol_status_prefers_agent_build_over_ad_build_when_both_present():
+    """The agent's own report is the freshest signal — even if it somehow
+    disagreed with AD's, the agent wins, same precedence as machine_type."""
+    device = agent("WS-01", os="Windows 11 Enterprise", os_build=26100)
+    result = correlate(
+        ad_frame("WS-01", os="Windows 11 Enterprise", os_build=22621),
+        agents_to_frame([device]),
+        as_of=AS_OF,
+    )
+    row = result.frame.iloc[0]
+    assert row["os_build"] == 26100
+    assert row["eol_status"] == "eol_soon"
+
+
+def test_eol_status_falls_back_to_free_text_when_no_build_anywhere():
+    """The genuine Carbon Black/BitDefender-only case: no build on either
+    side, so a bare "Windows 11 Enterprise" resolves no further than the
+    Stage 1 free-text table (which deliberately doesn't cover Windows 11)."""
+    device = agent("WS-01", os="Windows 11 Enterprise", os_build=None, vendor="carbonblack")
+    result = correlate(
+        ad_frame("WS-01", os="Windows 11 Enterprise", os_build=None),
+        agents_to_frame([device]),
+        as_of=AS_OF,
+    )
+    assert result.frame.iloc[0]["eol_status"] == "unknown"
+
+
+def test_missing_agent_row_uses_ad_build_for_precise_eol_status():
+    """A missing_agent row has no agent data at all, but AD's own build
+    (captured regardless of coverage) still gives a precise answer — not
+    just the coarser free-text fallback."""
+    result = correlate(
+        ad_frame("ACME-DC01", os="Windows 11 Enterprise", os_build=22631),
+        agents_to_frame([]),
+        as_of=AS_OF,
+    )
+    row = result.frame.iloc[0]
+    assert row["status"] == CoverageStatus.MISSING_AGENT
+    assert row["os_build"] == 22631
+    assert row["eol_status"] == "end_of_life"
+
+
+def test_summary_eol_status_counts_and_at_risk_cross_tab():
+    ad = pd.concat(
+        [
+            ad_frame("WS-01", os="Windows 11 Enterprise", os_build=22621),  # covered, EOL
+            ad_frame("WS-02", os="Windows Server 2022 Datacenter", os_build=20348),  # missing, supported
+        ],
+        ignore_index=True,
+    )
+    agents = agents_to_frame([agent("WS-01", os="Windows 11 Enterprise", os_build=22621)])
+    summary = correlate(ad, agents, as_of=AS_OF).summary
+
+    assert summary["eol_status_counts"] == {"end_of_life": 1, "supported": 1}
+    # Only WS-01 is at risk (end_of_life); it's covered, not missing —
+    # the cross-tab is what lets a report distinguish "unsupported but at
+    # least visible" from "unsupported and invisible."
+    assert summary["at_risk_status_counts"] == {CoverageStatus.COVERED: 1}

@@ -5,7 +5,14 @@ aggregates) — the views never re-derive pandas classification logic; they
 only present what the pipeline already persisted.
 """
 
-from dashboard.models import Client, CorrelationRun, CoverageSnapshot, CoverageStatus, Device
+from dashboard.models import (
+    Client,
+    CorrelationRun,
+    CoverageSnapshot,
+    CoverageStatus,
+    Device,
+    OSLifecycleStatus,
+)
 from django.core.paginator import Paginator
 from django.db.models import Count, Q
 from django.http import JsonResponse
@@ -18,6 +25,11 @@ AD_STATUSES = (
     CoverageStatus.STALE_COVERAGE,
     CoverageStatus.MISSING_AGENT,
 )
+
+#: A device is "at risk" if its OS is already unsupported or will be soon —
+#: independent of coverage status: a *covered* end-of-life server still
+#: means the OS itself needs upgrading, which no agent fixes.
+AT_RISK_EOL_STATUSES = (OSLifecycleStatus.END_OF_LIFE, OSLifecycleStatus.EOL_SOON)
 
 
 def _latest_run(client: Client) -> CorrelationRun | None:
@@ -57,6 +69,19 @@ def overview(request):
             .values("status")
             .annotate(n=Count("id"))
         }
+        # A third, independent prioritization axis: how many devices are
+        # already running an unsupported (or soon-to-be) OS, and of those,
+        # how many are also missing coverage — the actual worst case.
+        eol_counts = {
+            row["eol_status"]: row["n"]
+            for row in run.snapshots.values("eol_status").annotate(n=Count("id"))
+        }
+        at_risk_counts = {
+            row["status"]: row["n"]
+            for row in run.snapshots.filter(eol_status__in=AT_RISK_EOL_STATUSES)
+            .values("status")
+            .annotate(n=Count("id"))
+        }
         vendors = []
         vendor_rows = (
             run.snapshots.exclude(vendor="")
@@ -88,6 +113,9 @@ def overview(request):
                 "coverage_pct": _coverage_pct(counts),
                 "server_counts": server_counts,
                 "server_coverage_pct": _coverage_pct(server_counts),
+                "eol_counts": eol_counts,
+                "at_risk_counts": at_risk_counts,
+                "at_risk_total": sum(at_risk_counts.values()),
                 "vendors": vendors,
             }
         )
@@ -113,6 +141,7 @@ def device_list(request):
         "status": request.GET.get("status", ""),
         "vendor": request.GET.get("vendor", ""),
         "machine_type": request.GET.get("machine_type", ""),
+        "eol_status": request.GET.get("eol_status", ""),
     }
     if selected["client"]:
         snapshots = snapshots.filter(device__client__slug=selected["client"])
@@ -122,6 +151,8 @@ def device_list(request):
         snapshots = snapshots.filter(vendor=selected["vendor"])
     if selected["machine_type"]:
         snapshots = snapshots.filter(machine_type=selected["machine_type"])
+    if selected["eol_status"]:
+        snapshots = snapshots.filter(eol_status=selected["eol_status"])
 
     page = Paginator(snapshots, 50).get_page(request.GET.get("page"))
     vendor_names = (
@@ -145,6 +176,7 @@ def device_list(request):
             "statuses": CoverageStatus.choices,
             "vendors": vendor_names,
             "machine_types": machine_types,
+            "eol_statuses": OSLifecycleStatus.choices,
             "selected": selected,
         },
     )
@@ -163,10 +195,12 @@ def device_detail(request, pk: int):
 def trend_data(request, slug: str):
     """Coverage % per CorrelationRun, consumed by the overview Chart.js chart.
 
-    Reports overall coverage and server-only coverage (the high-value-asset
-    stand-in) as two parallel series — a quarterly report needs to show both
-    "coverage is improving overall" and "the assets that matter most are
-    covered" as trends, not just a single point-in-time snapshot.
+    Reports three parallel series — overall coverage, server-only coverage
+    (the high-value-asset stand-in), and the at-risk % (devices already
+    running an unsupported OS, or soon to be) — a quarterly report needs
+    "coverage is improving," "the assets that matter most are covered," and
+    "the fleet's OS risk is trending down" as three trends, not just a
+    single point-in-time snapshot.
     """
     client = get_object_or_404(Client, slug=slug)
     runs = (
@@ -192,9 +226,14 @@ def trend_data(request, slug: str):
                     snapshots__status=CoverageStatus.MISSING_AGENT, snapshots__machine_type="server"
                 ),
             ),
+            at_risk=Count(
+                "snapshots",
+                filter=Q(snapshots__eol_status__in=AT_RISK_EOL_STATUSES)
+                & Q(snapshots__status__in=AD_STATUSES),
+            ),
         )
     )
-    labels, values, server_values = [], [], []
+    labels, values, server_values, at_risk_values = [], [], [], []
     for run in runs:
         denominator = run.covered + run.stale + run.missing
         if not denominator:
@@ -205,11 +244,13 @@ def trend_data(request, slug: str):
         server_values.append(
             round(100.0 * run.server_covered / server_denominator, 1) if server_denominator else None
         )
+        at_risk_values.append(round(100.0 * run.at_risk / denominator, 1))
     return JsonResponse(
         {
             "client": client.slug,
             "labels": labels,
             "coverage_pct": values,
             "server_coverage_pct": server_values,
+            "at_risk_pct": at_risk_values,
         }
     )

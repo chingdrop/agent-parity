@@ -20,10 +20,12 @@ no live credentials required.
 The original tool existed to feed a quarterly report sent to clients: show
 that agent coverage was trending upward over time, and flag high-value
 assets (Domain Controllers, file/storage servers) specifically, so gaps
-there got prioritized over a missing agent on a random workstation. Both of
-those are first-class in this rebuild, not just implied by the raw data —
-see [High-value assets](#high-value-assets-servers-as-the-prioritization-signal)
-below.
+there got prioritized over a missing agent on a random workstation. A third
+axis works the same way: a device running an OS that's already end-of-life
+(or soon will be) is a risk finding independent of whether an agent is
+installed on it. All three are first-class in this rebuild, not just implied
+by the raw data — see [High-value assets](#high-value-assets-servers-as-the-prioritization-signal)
+and [OS end-of-life](#os-end-of-life-a-third-prioritization-axis) below.
 
 ## Quick start (demo mode — no Docker, no Redis, no Celery)
 
@@ -235,6 +237,45 @@ most are covered" are both visible as trends, not just point-in-time
 snapshots; the device list is filterable by `machine_type` so pulling
 "every missing or stale server, across every client" for a report is one
 filter, not a manual search.
+
+### OS end-of-life: a third prioritization axis
+
+[endoflife.date](https://endoflife.date/) is the source for a small,
+hand-typed reference table (`agent_parity/os_eol_data.json`,
+`os_eol_builds_data.json`) mapping OS names — and, where possible, exact
+Windows build numbers — to their end-of-life date. Every device gets
+classified against today's date into `unknown` / `supported` / `eol_soon`
+(within 180 days) / `end_of_life` (`agent_parity/os_eol.py`). This is
+independent of coverage: a *covered* end-of-life server still means the OS
+itself needs upgrading — no agent fixes that — so `at_risk_counts` cross-tabs
+EOL status against coverage status to surface the worst case, an unsupported
+OS with no agent watching it.
+
+Free-text OS names are ambiguous for anything past Windows 10 — "Windows 11"
+alone doesn't say which feature update, and each one has its own EOL date, so
+there's deliberately no bare "Windows 11" entry in the free-text table. Where
+an exact Windows build number is available, it resolves that ambiguity
+precisely instead:
+
+- **Active Directory** exposes it natively — `operatingSystemVersion` (e.g.
+  `"10.0 (22631)"`) is a stock schema attribute, not a fabrication.
+- **SentinelOne** carries a build number in its inventory too (reconstructed
+  from prior direct experience with the API, flagged in
+  `connectors/sentinelone.py` as worth confirming against current docs since
+  it isn't in the public API reference).
+- **Carbon Black and BitDefender** have no equivalent field — devices only
+  seen through those vendors fall back to the free-text table.
+
+`extract_build_number()` (`agent_parity/os_eol.py`) parses both an AD-style
+`"10.0 (22631)"` string and a full internal version string like
+`"10.0.22631.3155"`, distinguishing the true build (10000–99999) from the
+trailing UBR/revision component. `classify_eol_status()` in
+`correlation/engine.py` prefers a build number when either side of the merge
+has one — agent-reported first, then AD's — and only falls back to free-text
+matching when neither does. AD's own build number is captured for *every*
+device (the same backfill principle as `machine_type`), so even a
+`missing_agent` row — no agent record at all — still gets a precise EOL
+classification instead of `unknown`.
 
 ### The correlation: a pandas merge, kept honest
 
