@@ -196,9 +196,9 @@ def dispatch_client(config: AppConfig, client_cfg: ClientConfig) -> int | None:
                 key = services.site_status_key(vendor, site, index, len(sites))
                 vendor_tasks.append(VENDOR_TASKS[vendor].s(client_cfg.slug, index, key))
         header = [
-            collect_ad_export.s(client_cfg.slug, target_device)
-            for target_device in client_cfg.ad_target_devices
-        ] + vendor_tasks
+                     collect_ad_export.s(client_cfg.slug, target_device)
+                     for target_device in client_cfg.ad_target_devices
+                 ] + vendor_tasks
         callback = correlate_client.s(run_id=run.pk).on_error(mark_run_failed.s(run_id=run.pk))
         # Dispatch only after the CorrelationRun row commits — otherwise a
         # worker can pick up the callback before the run it references exists.

@@ -115,9 +115,9 @@ def client_form(request, slug: str | None = None):
             for vendor in GLOBAL_VENDORS
         }
         if (
-            form.is_valid()
-            and all(f.is_valid() for f in vendor_forms.values())
-            and all(f.is_valid() for f in account_forms.values())
+                form.is_valid()
+                and all(f.is_valid() for f in vendor_forms.values())
+                and all(f.is_valid() for f in account_forms.values())
         ):
             saved_client = form.save()
             for vendor, vendor_form in vendor_forms.items():

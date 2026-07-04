@@ -44,14 +44,14 @@ class ClientForm(forms.ModelForm):
         widget=forms.CheckboxSelectMultiple,
         required=False,
         help_text="Vendors this client uses. Global vendors' credentials are "
-        "shared across every client (edited on the overview page); "
-        "per-client vendors have a credentials section below.",
+                  "shared across every client (edited on the overview page); "
+                  "per-client vendors have a credentials section below.",
     )
     ad_target_devices = NewlineListField(
         required=True,
         help_text="One domain controller hostname per line — the export "
-        "script runs on each and the results are concatenated into one "
-        "master list. Most clients have just one.",
+                  "script runs on each and the results are concatenated into one "
+                  "master list. Most clients have just one.",
     )
 
     class Meta:
@@ -103,7 +103,7 @@ class GlobalVendorAccountForm(forms.Form):
         self.vendor = vendor
         self.fields["account"] = forms.ChoiceField(
             choices=[("", "(default — only matters with more than one account)")]
-            + [(name, name) for name in account_names],
+                    + [(name, name) for name in account_names],
             required=False,
             label=f"{vendor} account",
         )
@@ -116,7 +116,7 @@ class VendorAccountNameForm(forms.Form):
     account = forms.CharField(
         max_length=64,
         help_text='A short name for this account, e.g. "mssp" or "dfir" — '
-        "used in the URL, not shown anywhere else.",
+                  "used in the URL, not shown anywhere else.",
     )
 
     def clean_account(self) -> str:
