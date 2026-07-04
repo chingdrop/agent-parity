@@ -13,10 +13,13 @@ The credential model is split in two on purpose:
 ``None``, which is what puts a connector into fixture mode — so a fresh
 checkout with no ``.env`` runs the entire pipeline against ``sample_data/``.
 
-The same file also declares an optional ``storage:`` section (object storage
-for the AD-export handoff — see ``agent_parity.storage``), resolved the same
-way: unset ``${VAR}``s mean unconfigured, and ``get_storage()`` returns
-``None`` rather than raising.
+The same file also declares a ``storage:`` section (object storage for the
+AD-export handoff — see ``agent_parity.storage``), resolved the same way:
+unset ``${VAR}``s mean unconfigured, and ``get_storage()`` returns ``None``
+rather than raising. ``None`` is only a valid state for clients with no live
+vendor credentials at all (pure fixture/demo mode) — ``deployment.script_runner
+.run_ad_export`` treats a live connector with no storage as a configuration
+error, not a fallback.
 """
 
 from __future__ import annotations
@@ -76,12 +79,14 @@ class ClientConfig:
 
 @dataclass(frozen=True)
 class StorageConfig:
-    """Optional S3-compatible object storage for the AD-export handoff.
+    """S3-compatible object storage for the AD-export handoff.
 
-    Unconfigured by default (every field ``None``) — the uv demo path never
-    sets these, so ``enabled`` is False and the pipeline falls back to
-    fetching the script's output directly through the vendor's own
-    remote-execution channel, exactly as if this feature didn't exist.
+    Required for any client with live vendor credentials — vendor
+    remote-execution output channels don't reliably preserve a CSV's exact
+    formatting, so ``deployment.script_runner.run_ad_export`` refuses to run
+    a live export without it. Unconfigured by default (every field ``None``,
+    ``enabled`` False) is only valid for the uv demo path, where no vendor
+    has live credentials either, so no script ever actually executes.
     """
 
     backend: str = "s3"
@@ -248,11 +253,11 @@ def get_connector(config: AppConfig, client_slug: str, vendor_name: str):
 def get_storage(config: AppConfig):
     """Build the object-storage client for the AD-export handoff, or None.
 
-    None means "not configured" — the same fallback-by-omission pattern used
-    for vendor credentials: ``deployment.script_runner.run_ad_export`` treats
-    it as "fetch the script's output directly through the vendor channel,"
-    exactly like before this feature existed. A fresh checkout with no
-    STORAGE_* variables in .env never touches this at all.
+    None means "not configured." That's only a valid state for the uv demo
+    path (no vendor has live credentials, so no script ever actually runs);
+    ``deployment.script_runner.run_ad_export`` raises a clear error if a live
+    connector reaches it with no storage configured, rather than falling
+    back to the vendor's own (unreliable) output channel.
     """
     if not config.storage.enabled:
         return None

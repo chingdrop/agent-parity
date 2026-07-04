@@ -126,12 +126,13 @@ to add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
 `_request_json()`/`_as_text()` helpers narrow that `dict | str | bytes` result
 for call sites that know which one they expect.
 
-### AD-export handoff: object storage instead of the vendor channel (optional)
+### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
-Vendor remote-execution channels have real output-size limits — fine for a
-console command, not necessarily fine for a full AD computer export from a
-large environment. When object storage is configured (`agent_parity/storage.py`),
-the handoff changes shape entirely:
+Vendor remote-execution output channels are not a reliable way to get a full
+AD export back: RSO/Live Response output handling doesn't consistently
+preserve exact formatting — encoding, line endings — and has real
+output-size limits a large environment's export can exceed. So the handoff
+doesn't go through them at all:
 
 1. agent-parity generates a short-lived, single-object **presigned PUT URL**
    (default 15-minute expiry) — the remote endpoint never holds a standing
@@ -156,13 +157,15 @@ It is *not* Azure Blob Storage capable — Blob doesn't speak the S3 API, so
 that would need a second implementation with a different SDK, not just
 different credentials.
 
-Unconfigured (the uv demo default — `STORAGE_BUCKET`/`STORAGE_ACCESS_KEY`/
-`STORAGE_SECRET_KEY` all resolve to `null` with no `.env`), `run_ad_export`
-falls back to fetching the script's output directly through the vendor's own
-channel, exactly as if this feature didn't exist. It's also never engaged for
-a non-live (fixture-mode) connector — there's no real endpoint to upload
-anything from, so fixture mode always returns the canned `sample_data/`
-CSV directly, regardless of whether storage happens to be configured.
+**Storage is required for any live export** — `run_ad_export` raises a clear
+error rather than falling back to the vendor channel if a live connector
+reaches it with no storage configured. The one exception is fixture mode: a
+non-live connector has no real endpoint to upload anything from, so it always
+returns the canned `sample_data/` CSV directly, regardless of whether storage
+happens to be configured. Storage is unconfigured by default in the uv demo
+path (`STORAGE_BUCKET`/`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY` all resolve
+to `null` with no `.env`) — that's only safe because the demo path has no
+live vendor credentials either, so no script ever actually runs.
 
 ### The correlation: a pandas merge, kept honest
 

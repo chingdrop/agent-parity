@@ -1,4 +1,5 @@
-"""Tests for the storage-backed vs. direct AD-export handoff paths.
+"""Tests for the storage-backed AD-export handoff and the mandatory-storage
+rule for live connectors.
 
 Uses a hand-written fake connector (not a real vendor connector) to isolate
 run_ad_export's orchestration logic — the connector implementations
@@ -34,11 +35,15 @@ def moto_storage():
         yield ObjectStorage(bucket="test-bucket", access_key="test", secret_key="test")
 
 
-def test_no_storage_configured_uses_direct_channel():
+def test_live_connector_without_storage_raises_clear_error():
+    """Storage is mandatory for a live export — the vendor's own
+    remote-execution output channel doesn't reliably preserve the CSV's
+    formatting, so a missing storage config must never silently fall back
+    to it."""
     connector = _fake_connector(is_live=True)
-    result = run_ad_export(connector, "ACME-DC01", storage=None)
-    assert result == SAMPLE_CSV
-    connector.deploy_and_run.assert_called_once()
+    with pytest.raises(ScriptExecutionError, match="object storage is required"):
+        run_ad_export(connector, "ACME-DC01", storage=None)
+    connector.deploy_and_run.assert_not_called()
 
 
 def test_fixture_mode_never_touches_storage_even_if_configured():

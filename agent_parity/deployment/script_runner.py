@@ -8,25 +8,23 @@ place for the agent itself. Each connector implements the vendor mechanics
 (stage / execute / poll / retrieve); this module is the uniform entry point
 the pipeline calls.
 
-There are two ways the script's CSV output gets back to agent-parity, chosen
-by whether object storage (``agent_parity.storage``) is configured:
+**Object storage (``agent_parity.storage``) is mandatory for any live export.**
+Vendor remote-execution output channels (SentinelOne RSO's fetch-files,
+Carbon Black Live Response's command output) don't reliably preserve a CSV's
+exact formatting — encoding and line-ending normalization, truncation at
+real output-size limits — observed problems, not theoretical ones. Instead:
+a short-lived presigned PUT URL is generated, the script receives it as an
+argument and uploads its own output straight to object storage, the vendor
+call only needs to report that the script *ran* (its stdout is ignored
+entirely), and the CSV is fetched with a plain GET. The uploaded bytes are
+exactly what the script wrote — the vendor's output-capture path is never in
+the loop for the data itself.
 
-* **No storage (default)** — the vendor's own remote-execution channel
-  captures the script's stdout directly and that *is* the CSV, exactly as
-  before object storage existed.
-* **Storage configured** — the script never returns the CSV through the
-  vendor channel at all. A short-lived presigned PUT URL is generated, the
-  script receives it as an argument and uploads its own output straight to
-  object storage, the vendor call only needs to report that the script *ran*
-  (its stdout is ignored), and the CSV is fetched with a plain GET. This
-  exists because vendor remote-execution channels have real output-size
-  limits a full AD export can exceed — with storage configured, the export
-  never has to fit through that channel at all.
-
-Only engaged when the connector is actually live: fixture mode has no real
-endpoint to run a script on, so there's nothing that could genuinely upload
-anything — it always returns the canned fixture CSV directly, regardless of
-whether storage happens to be configured.
+The one exception is fixture mode: a non-live connector has no real endpoint
+to run a script on, so there's nothing that could genuinely upload anything.
+It always returns the canned fixture CSV directly, regardless of whether
+storage happens to be configured — storage is only required once a
+connector is actually live.
 """
 
 from __future__ import annotations
@@ -51,16 +49,29 @@ def run_ad_export(
     storage: ObjectStorage | None = None,
     object_key: str | None = None,
 ) -> str:
-    """Run the AD export script on ``target_id`` and return its raw CSV text."""
-    if storage is None or not connector.is_live:
+    """Run the AD export script on ``target_id`` and return its raw CSV text.
+
+    ``storage`` may be ``None`` only when ``connector`` is not live (fixture
+    mode); for a live connector, ``None`` is a configuration error, not a
+    silent fallback to the vendor's own (unreliable) output channel.
+    """
+    if not connector.is_live:
         raw = connector.deploy_and_run(script_path, target_id)
         return _validate_csv(connector.vendor, target_id, raw)
 
+    if storage is None:
+        raise ScriptExecutionError(
+            f"{connector.vendor}: object storage is required for a live AD export "
+            f"(set STORAGE_BUCKET/STORAGE_ACCESS_KEY/STORAGE_SECRET_KEY) — the "
+            f"vendor's remote-execution output channel doesn't reliably preserve "
+            f"the exported CSV's formatting"
+        )
+
     key = object_key or f"ad-exports/{connector.vendor}/{uuid4().hex}.csv"
     upload_url = storage.presigned_put_url(key)
-    # The return value is intentionally unused here — with storage
-    # configured, the script's real output *is* the uploaded object, not
-    # whatever the vendor channel happened to capture as stdout.
+    # The return value is intentionally unused here — the script's real
+    # output *is* the uploaded object, never whatever the vendor channel
+    # happened to capture as stdout.
     connector.deploy_and_run(script_path, target_id, script_args={"UploadUrl": upload_url})
     raw = storage.get_object(key).decode("utf-8")
     storage.delete_object(key)  # best-effort; never blocks a successful export

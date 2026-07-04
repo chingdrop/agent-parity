@@ -101,34 +101,41 @@ underlying `requests.Session.request`, not by hitting a live API.
 
 ## AD-export object storage (`agent_parity/storage.py`)
 
-Optional S3-compatible handoff for `Export-ADDevices.ps1`'s output, wired through
-`deployment/script_runner.run_ad_export`. Exists because vendor remote-execution
-channels have real output-size limits a full AD export can exceed. When
-`config.storage.enabled` (all of `STORAGE_BUCKET`/`STORAGE_ACCESS_KEY`/
-`STORAGE_SECRET_KEY` set) **and** the connector is live:
+S3-compatible handoff for `Export-ADDevices.ps1`'s output, wired through
+`deployment/script_runner.run_ad_export`. **Mandatory for any live connector** —
+not an optional upgrade. Vendor remote-execution output channels (SentinelOne
+RSO's fetch-files, Carbon Black Live Response's command output) don't reliably
+preserve a CSV's exact formatting (encoding, line endings) and have real
+output-size limits a full AD export can exceed, so the vendor channel is never
+used to carry the actual export data once a connector is live:
 
-1. `run_ad_export` generates a presigned PUT URL (`ObjectStorage.presigned_put_url`,
+1. `run_ad_export` raises `ScriptExecutionError` immediately if `connector.is_live`
+   and `storage is None` — a live export with no storage configured is a
+   configuration error, not something to silently work around by falling back
+   to the vendor channel. Don't reintroduce that fallback.
+2. Otherwise it generates a presigned PUT URL (`ObjectStorage.presigned_put_url`,
    15-minute default expiry) and passes it to `deploy_and_run(..., script_args={"UploadUrl": ...})`.
-2. The script uploads its own CSV there — the vendor call's return value is
+3. The script uploads its own CSV there — the vendor call's return value is
    discarded entirely, since the real output never goes through it.
-3. `run_ad_export` downloads with `get_object` and deletes the object
+4. `run_ad_export` downloads with `get_object` and deletes the object
    (best-effort; failures there only log, they never fail an export that
    already succeeded).
 
-**Fixture mode never touches storage, even if it's configured** — `run_ad_export`
-checks `storage is None or not connector.is_live` first. There's no real endpoint
-in fixture mode to have uploaded anything, so engaging the storage path there would
-just be a guaranteed `StorageError` (missing key) instead of the canned
-`sample_data/` CSV. Don't remove that check to "simplify" the branching.
+**Fixture mode is the one exception** — `run_ad_export` checks `connector.is_live`
+*before* the storage check. There's no real endpoint in fixture mode to have
+uploaded anything, so it always returns the canned `sample_data/` CSV directly,
+regardless of whether storage happens to be configured. This is also why the
+uv demo path can leave `STORAGE_*` unset in `.env`: safe only because no vendor
+has live credentials there either, so no script ever actually runs.
 
 Built against the S3 API via `boto3`, not a specific product — MinIO
 (self-hosted, via the Docker Compose `minio` service) for local/dev, real AWS
 S3 in production, same `ObjectStorage` class either way; only `endpoint_url`
 changes. This is *not* Azure Blob Storage capable — different API, would need
 a second implementation with a different SDK, not just different config.
-`get_storage(config)` returns `None` when unconfigured (same fallback-by-omission
-pattern as `get_connector`); `config.storage.backend` only supports `"s3"` today,
-and `get_storage` raises `ConfigError` for anything else.
+`get_storage(config)` returns `None` when unconfigured (`config.storage.enabled`
+is False); `config.storage.backend` only supports `"s3"` today, and
+`get_storage` raises `ConfigError` for anything else.
 
 Only SentinelOne and Carbon Black connectors accept `script_args` meaningfully
 (BitDefender doesn't implement `_live_deploy_and_run` at all). SentinelOne passes
