@@ -335,6 +335,29 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web pyt
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
+### Smoke-testing the real stack
+
+`uv run pytest` is fast and offline by design (fixtures, SQLite, `task_always_eager`
+Celery) — which also means it structurally can't catch a broken Dockerfile, a
+Celery worker that never picks up work, or a MinIO endpoint the app can't
+actually reach. `docker/smoke_test.sh` covers that gap: it builds and starts
+the full Compose stack, seeds demo data against a real Postgres, dispatches a
+real Celery group/chord through a real Redis broker/worker
+(`manage.py smoke_check_celery`), round-trips a real object through the
+running MinIO server (`manage.py smoke_check_storage`), and tears everything
+down.
+
+```console
+cd docker
+./smoke_test.sh          # ~1-2 minutes; needs Docker running
+./smoke_test.sh --keep   # leave the stack up afterward, for debugging
+```
+
+Not part of `uv run pytest` or any fast/CI path — it needs Docker, takes
+noticeably longer, and is inherently less deterministic than the offline
+suite (real network calls, real timing). Run it manually, e.g. before a
+release, not on every commit.
+
 ## Tests
 
 `uv run pytest` — all offline, no broker:
@@ -386,6 +409,12 @@ Deliberately not unit-tested: Django settings modules, `config/celery.py`/
 wiring, not application logic; a failure there breaks every other test in the
 suite (which loads them to run at all), so that failure mode is already
 covered by the suite existing.
+
+Also deliberately **not** covered here: whether the real, distributed pieces
+(Celery worker/broker, MinIO) actually work together — `task_always_eager`
+and `moto` prove the *logic* is right but never touch a real network or a
+second process. That's what `docker/smoke_test.sh` is for; see
+[Smoke-testing the real stack](#smoke-testing-the-real-stack) above.
 
 ## Out of scope for v1
 

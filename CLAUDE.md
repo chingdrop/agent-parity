@@ -163,6 +163,11 @@ mechanisms, same `script_args: dict[str, str]` contract from `deploy_and_run`.
 Tests use `moto` (`@mock_aws` / the `mock_aws()` context manager) — no real
 MinIO or AWS S3 touches the test suite, and a real presigned-URL PUT/GET round
 trip still gets exercised (`tests/test_storage.py`, `tests/test_script_runner.py`).
+`moto` proves the code path, not the network — `manage.py smoke_check_storage`
+(`docker/smoke_test.sh`, Docker-only) round-trips a real object through the
+actual `minio` service, including auto-creating the smoke-test bucket
+(`ObjectStorage` itself has no bucket-admin methods on purpose; production
+bucket provisioning is out-of-band, so that stays smoke-test-only code).
 
 ## Credential resolution (`agent_parity/config.py`)
 
@@ -202,6 +207,13 @@ touched carelessly:
   finalized. Don't dispatch a chord before its `CorrelationRun` row has committed.
 - `mark_run_failed` is the `link_error` backstop so a callback exception doesn't leave
   a run stuck in `PENDING` forever.
+
+`tests/test_tasks.py` runs all of this with `task_always_eager` — real logic, fake
+transport. Nothing in the pytest suite proves a real Celery worker actually picks up
+work through a real Redis broker; that's `docker/smoke_test.sh` +
+`manage.py smoke_check_celery` (Docker-only, not part of `pytest`). If you change the
+fan-out/fan-in wiring, the eager-mode tests can tell you the *logic* still works, but
+only the smoke test can tell you the *transport* still works.
 
 ## Testing conventions
 
