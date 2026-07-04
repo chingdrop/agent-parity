@@ -68,6 +68,26 @@ def test_deploy_and_run_fixture_returns_ad_csv():
     assert "ACME-DC01" in output
 
 
+def test_bitdefender_does_not_support_remote_execution():
+    """GravityZone has no real equivalent to S1/CB's remote script execution —
+    BitDefender is fetch_inventory-only and must refuse deploy_and_run outright,
+    in both fixture and live mode, rather than quietly handing back a fixture."""
+    assert BitDefenderConnector.supports_remote_execution is False
+
+    fixture_mode = BitDefenderConnector(credentials={}, fixture_dir=ACME)
+    with pytest.raises(ConnectorError, match="does not support remote script execution"):
+        fixture_mode.deploy_and_run("Export-ADDevices.ps1", "ACME-DC01")
+
+    live_mode = BitDefenderConnector(credentials={"api_url": "https://example", "api_key": "k"})
+    with pytest.raises(ConnectorError, match="does not support remote script execution"):
+        live_mode.deploy_and_run("Export-ADDevices.ps1", "ACME-DC01")
+
+
+@pytest.mark.parametrize("connector_cls", [SentinelOneConnector, CarbonBlackConnector])
+def test_other_vendors_still_support_remote_execution(connector_cls):
+    assert connector_cls.supports_remote_execution is True
+
+
 def test_is_live_requires_all_credentials():
     partial = CarbonBlackConnector(
         credentials={"api_url": "https://example", "api_id": "X", "api_key": None, "org_key": "Y"}

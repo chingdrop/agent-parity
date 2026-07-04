@@ -140,6 +140,50 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     )
 
 
+#: Preference order for the vendor that carries a client's AD export, among
+#: whichever of its enabled vendors genuinely support remote script execution
+#: (see ``AgentConnector.supports_remote_execution``). This isn't just
+#: alphabetical: it reflects real deployment prevalence — SentinelOne covered
+#: the bulk of the client base, Carbon Black a handful of clients, and
+#: BitDefender (never eligible here) exactly one. A vendor not in this tuple
+#: still sorts after these two, alphabetically, so adding a 4th capable
+#: vendor doesn't require touching this list.
+AD_EXPORT_VENDOR_PREFERENCE = ("sentinelone", "carbonblack")
+
+
+def pick_ad_export_vendor(client_cfg: ClientConfig) -> str:
+    """Pick the vendor to carry ``client_cfg``'s AD export.
+
+    Only vendors whose connector sets ``supports_remote_execution = True``
+    are eligible — not every EDR vendor's API can push and run an arbitrary
+    script, and picking one that can't would silently misrepresent it.
+    """
+    # Imported here (not at module level) for the same reason as in
+    # get_connector: keep topology-only config loading free of the connector
+    # dependency chain (requests) for callers that don't need it.
+    from agent_parity.connectors import CONNECTOR_CLASSES
+
+    capable = [
+        vendor_name
+        for vendor_name in client_cfg.vendors
+        if CONNECTOR_CLASSES[vendor_name].supports_remote_execution
+    ]
+    if not capable:
+        raise ConfigError(
+            f"Client {client_cfg.slug!r} has no vendor capable of remote script "
+            f"execution (needed to carry the AD export); enabled vendors: "
+            f"{sorted(client_cfg.vendors)}"
+        )
+
+    def preference_key(vendor_name: str) -> tuple[int, str]:
+        try:
+            return AD_EXPORT_VENDOR_PREFERENCE.index(vendor_name), vendor_name
+        except ValueError:
+            return len(AD_EXPORT_VENDOR_PREFERENCE), vendor_name
+
+    return min(capable, key=preference_key)
+
+
 def get_connector(config: AppConfig, client_slug: str, vendor_name: str):
     """Build a configured connector for a (client, vendor) pair.
 

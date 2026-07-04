@@ -1,14 +1,17 @@
 """Shared connector interface.
 
-Every vendor connector supports two capabilities:
+Every vendor connector supports ``fetch_inventory()`` — pull the vendor's
+current endpoint list, normalized to ``AgentDevice`` records.
 
-* ``fetch_inventory()`` — pull the vendor's current endpoint list, normalized
-  to ``AgentDevice`` records.
-* ``deploy_and_run(script_path, target_id)`` — push a script to a managed
-  endpoint through the vendor's remote-execution capability and return its
-  stdout. This is how the AD export is collected: the script runs on an
-  already domain-joined, already-managed endpoint, so agent-parity never
-  needs its own domain credentials or LDAP bind.
+Most also support ``deploy_and_run(script_path, target_id)`` — push a script
+to a managed endpoint through the vendor's remote-execution capability and
+return its stdout. This is how the AD export is collected: the script runs
+on an already domain-joined, already-managed endpoint, so agent-parity never
+needs its own domain credentials or LDAP bind. Not every EDR vendor's real
+API exposes an equivalent to "run an arbitrary script" though — connectors
+that don't (see ``supports_remote_execution`` below) are fetch_inventory-only,
+and ``agent_parity.config.pick_ad_export_vendor`` is what picks a client's
+AD-export vendor from among the ones that actually can.
 
 When a connector has no usable credentials it falls back to local fixtures
 under ``sample_data/<client>/`` so the whole pipeline runs with zero live
@@ -105,6 +108,16 @@ class AgentConnector(ABC):
     vendor: ClassVar[str]
     required_credentials: ClassVar[tuple[str, ...]]
 
+    #: Whether this vendor's real API exposes anything equivalent to "push
+    #: and run an arbitrary script" (SentinelOne's Remote Script Orchestration,
+    #: Carbon Black's Live Response). Not every EDR vendor does — BitDefender
+    #: GravityZone's remote-task API is limited to predefined task types (scan,
+    #: isolate, install/uninstall, ...), so it overrides this to False and is
+    #: fetch_inventory-only. ``deploy_and_run`` refuses to run at all when this
+    #: is False, in both live and fixture mode, so the pipeline never silently
+    #: attributes a capability to a vendor that doesn't really have it.
+    supports_remote_execution: ClassVar[bool] = True
+
     #: Seconds between remote-execution status polls, and the overall cap.
     poll_interval: ClassVar[float] = 5.0
     poll_timeout: ClassVar[float] = 300.0
@@ -140,7 +153,17 @@ class AgentConnector(ABC):
     # -- remote script execution -------------------------------------------
 
     def deploy_and_run(self, script_path: str | Path, target_id: str) -> str:
-        """Push a script to ``target_id``, execute it, and return its stdout."""
+        """Push a script to ``target_id``, execute it, and return its stdout.
+
+        Checked before the live/fixture fork so a vendor without genuine
+        remote-execution capability can't produce a misleadingly successful
+        result in demo mode either.
+        """
+        if not self.supports_remote_execution:
+            raise ConnectorError(
+                f"{self.vendor}: does not support remote script execution "
+                f"(fetch_inventory-only vendor)"
+            )
         if self.is_live:
             return self._live_deploy_and_run(Path(script_path), target_id)
         # Fixture mode: the canned AD export stands in for the script output.
@@ -206,6 +229,11 @@ class AgentConnector(ABC):
     def _live_fetch_inventory(self) -> list[AgentDevice]:
         ...
 
-    @abstractmethod
     def _live_deploy_and_run(self, script_path: Path, target_id: str) -> str:
-        ...
+        """Default for vendors with ``supports_remote_execution = False``.
+
+        The public ``deploy_and_run`` already refuses before reaching here;
+        this is a defensive fallback for anything that calls this directly.
+        Vendors that genuinely support remote execution override it.
+        """
+        raise ConnectorError(f"{self.vendor}: remote script execution not implemented")

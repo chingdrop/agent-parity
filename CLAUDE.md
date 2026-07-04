@@ -78,6 +78,16 @@ client's `ad_export.csv`, with all timestamps rebased so the newest check-in is 
 stale/recent split in `sample_data/` stable regardless of when the demo is run. Don't
 add credential-checking logic anywhere else; it belongs in `is_live` alone.
 
+**Not every vendor supports `deploy_and_run()` for real.** `supports_remote_execution`
+(ClassVar, default `True`) gates it — `BitDefenderConnector` sets it `False` because
+GravityZone's real API has no equivalent to SentinelOne's Remote Script Orchestration
+or Carbon Black's Live Response, only predefined task types (scan, isolate, ...).
+`deploy_and_run()` raises `ConnectorError` before the live/fixture fork when this is
+`False`, so BitDefender can't accidentally "succeed" at something it doesn't really do,
+even in demo mode. It's fetch_inventory-only. If a 4th vendor connector genuinely can't
+run scripts either, set this the same way — don't leave `_live_deploy_and_run`
+unimplemented and let it fail some other way.
+
 Live mode goes through `agent_parity/rest_adapter.py` (`RestAdapter`, ported from a
 sibling project) rather than a bare `requests.Session` — retries/backoff on
 429/5xx are configured there once, shared by all three vendors. `RestAdapter.request()`
@@ -99,6 +109,16 @@ is the one place that knows `global` vs `per_client` scope — SentinelOne/BitDe
 are global (same credentials for every client), Carbon Black is per-client. When adding
 a vendor or a client, this is the function whose behavior actually matters; don't
 special-case scope logic in a connector or in `services.py`.
+
+`pick_ad_export_vendor(client_cfg)` picks which of a client's enabled vendors carries
+the AD export — filtered to `supports_remote_execution = True` connectors, then broken
+by `AD_EXPORT_VENDOR_PREFERENCE = ("sentinelone", "carbonblack")`, not alphabetically.
+That preference order is a real business fact (S1 covered most of the client base, CB a
+handful, BitDefender basically none) as much as a technical one — if you touch it, keep
+both in mind. Raises `ConfigError` if a client has no capable vendor at all. Called from
+`services.collect_ad_csv`; don't reintroduce a `sorted(client_cfg.vendors)[0]`-style
+pick elsewhere — that bug (silently routing AD export through whichever vendor happens
+to sort first, capable or not) is exactly what this function replaced.
 
 ## Celery chord (`agent_parity_web/dashboard/tasks.py`)
 

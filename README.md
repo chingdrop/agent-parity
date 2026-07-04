@@ -96,12 +96,27 @@ agent itself:
   `/web/api/v2.1/remote-scripts/status`, fetch the result.
 - **Carbon Black Cloud** — Live Response session: `put file` to stage the
   script, `create process` to run PowerShell, read stdout from the session.
-- **BitDefender GravityZone** — task pattern over the JSON-RPC API: create a
-  custom task, poll task status, fetch the output.
+
+**Not BitDefender GravityZone.** Its remote-task API is real but limited to
+predefined task types (scan, isolate/deisolate, install/uninstall, patch
+management, ...) — nothing equivalent to "push and run an arbitrary script."
+An earlier version of this connector modeled a `createCustomScriptTask` RPC
+method to paper over that, but that method doesn't actually exist in
+GravityZone's public API, so it's been removed rather than left implying an
+accuracy it didn't have. `BitDefenderConnector.supports_remote_execution =
+False`; it's fetch_inventory-only, and `deploy_and_run()` refuses outright
+(in both live and fixture mode) rather than silently succeeding.
 
 `deployment/script_runner.py` is the uniform entry point; each connector's
 `deploy_and_run()` implements the vendor mechanics. AD collection and agent
-inventory both flow through the same authenticated channel per vendor.
+inventory both flow through the same authenticated channel per vendor — for
+whichever vendor is actually carrying the AD export. Every client needs at
+least one enabled vendor with real remote-execution capability;
+`agent_parity/config.py`'s `pick_ad_export_vendor()` picks it, preferring
+SentinelOne over Carbon Black (reflecting real deployment prevalence — the
+bulk of the original client base was on SentinelOne, a handful on Carbon
+Black, one on BitDefender) and raising a clear `ConfigError` if a client has
+neither.
 
 All three connectors share one HTTP transport — `agent_parity/rest_adapter.py`
 (`RestAdapter`) — instead of a bare `requests.Session`: automatic retries with

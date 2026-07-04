@@ -15,7 +15,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from agent_parity.ad_sync.parser import parse_ad_export
-from agent_parity.config import AppConfig, ClientConfig, get_connector
+from agent_parity.config import AppConfig, ClientConfig, get_connector, pick_ad_export_vendor
 from agent_parity.correlation.engine import CorrelationResult, agents_to_frame, correlate
 from agent_parity.deployment.script_runner import run_ad_export
 from agent_parity.models import AgentDevice
@@ -39,12 +39,14 @@ def sync_client_from_config(client_cfg: ClientConfig) -> Client:
 def collect_ad_csv(config: AppConfig, client_slug: str) -> str:
     """Run the AD export through one of the client's vendor channels.
 
-    Any enabled vendor's remote-execution capability can carry the script;
-    we use the first (alphabetically, so it's deterministic). Returns the
-    raw CSV text — JSON-safe, so the Celery fan-out task can ship it as-is.
+    Not every enabled vendor can carry it — only ones whose connector
+    genuinely supports remote script execution (see
+    ``agent_parity.config.pick_ad_export_vendor``, which also raises clearly
+    if a client has none). Returns the raw CSV text — JSON-safe, so the
+    Celery fan-out task can ship it as-is.
     """
     client_cfg = config.client(client_slug)
-    vendor_name = sorted(client_cfg.vendors)[0]
+    vendor_name = pick_ad_export_vendor(client_cfg)
     connector = get_connector(config, client_slug, vendor_name)
     return run_ad_export(connector, client_cfg.ad_target_device)
 

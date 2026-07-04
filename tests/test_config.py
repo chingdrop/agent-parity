@@ -1,9 +1,20 @@
-"""Config resolver tests: ${VAR} resolution and credential scoping."""
+"""Config resolver tests: ${VAR} resolution, credential scoping, and picking
+the vendor that carries a client's AD export."""
 
 import pytest
 
-from agent_parity.config import ConfigError, get_connector, load_config
+from agent_parity.config import ClientConfig, ConfigError, get_connector, load_config, pick_ad_export_vendor
 from agent_parity.connectors import CarbonBlackConnector, SentinelOneConnector
+
+
+def _client(vendors: tuple[str, ...]) -> ClientConfig:
+    return ClientConfig(
+        name="Test Client",
+        slug="test",
+        ad_target_device="TEST-DC01",
+        sync_interval_hours=24,
+        vendors={v: {} for v in vendors},
+    )
 
 
 @pytest.fixture
@@ -61,3 +72,27 @@ def test_unknown_client_and_vendor_raise(config_with_creds):
         config_with_creds.credentials_for("nope", "sentinelone")
     with pytest.raises(ConfigError, match="Unknown vendor"):
         config_with_creds.credentials_for("acme", "nope")
+
+
+def test_ad_export_prefers_sentinelone_over_carbonblack():
+    client = _client(("bitdefender", "carbonblack", "sentinelone"))
+    assert pick_ad_export_vendor(client) == "sentinelone"
+
+
+def test_ad_export_falls_back_to_carbonblack_without_sentinelone():
+    client = _client(("bitdefender", "carbonblack"))
+    assert pick_ad_export_vendor(client) == "carbonblack"
+
+
+def test_ad_export_raises_when_only_bitdefender_is_enabled():
+    client = _client(("bitdefender",))
+    with pytest.raises(ConfigError, match="no vendor capable of remote script execution"):
+        pick_ad_export_vendor(client)
+
+
+def test_ad_export_vendor_selection_matches_committed_topology(config_with_creds):
+    # acme (sentinelone+carbonblack+bitdefender) and globex (sentinelone+bitdefender)
+    # both resolve to sentinelone now — previously "first alphabetically" picked
+    # bitdefender for both, which doesn't genuinely support remote execution.
+    assert pick_ad_export_vendor(config_with_creds.client("acme")) == "sentinelone"
+    assert pick_ad_export_vendor(config_with_creds.client("globex")) == "sentinelone"
