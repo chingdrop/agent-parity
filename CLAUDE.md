@@ -22,6 +22,7 @@ uv run agent_parity_web/manage.py seed_demo          # two runs of history per c
 uv run agent_parity_web/manage.py runserver
 
 uv run agent_parity_web/manage.py sync_and_correlate [--client SLUG] [--all]  # one plain run
+uv run agent_parity_web/manage.py import_config      # one-time: config.yaml -> DB (also seed_demo does this itself)
 
 uv run pytest                                        # full suite, offline, no broker
 uv run pytest tests/test_correlation.py -k covered   # single test/file
@@ -205,14 +206,22 @@ bucket provisioning is out-of-band, so that stays smoke-test-only code).
 
 ## Credential resolution (`agent_parity/config.py`)
 
-`config.yaml` (topology, committed) + `.env` (secrets, gitignored) are resolved together
-by `load_config()` / `get_connector()`. Every secret in `config.yaml` is a `${VAR}`
+`load_config()` parses `config.yaml` (topology) + `.env` (secrets) into `AppConfig`/
+`ClientConfig`/`VendorConfig` dataclasses — every secret in `config.yaml` is a `${VAR}`
 reference; an unset variable resolves to `None` rather than raising, which is exactly
 what puts a connector into fixture mode. `credentials_for(client_slug, vendor_name)`
-is the one place that knows `global` vs `per_client` scope — SentinelOne/BitDefender
-are global (same credentials for every client), Carbon Black is per-client. When adding
-a vendor or a client, this is the function whose behavior actually matters; don't
-special-case scope logic in a connector or in `services.py`.
+is the one place that knows `global` vs `per_client` scope (`VENDOR_SCOPE`) —
+SentinelOne/BitDefender are global (same credentials for every client), Carbon Black
+is per-client. When adding a vendor or a client, this is the function whose behavior
+actually matters; don't special-case scope logic in a connector or in `services.py`.
+
+**`load_config()` is no longer what production entrypoints call.** Client topology and
+vendor credentials are DB-backed now (`dashboard/config_db.py`'s `build_app_config_from_db()`,
+called by every management command and Celery task instead) — see "DB-backed config"
+below. `load_config()` still exists and is still fully correct; it's just been
+demoted to the engine behind the one-time `config.yaml` import (`manage.py import_config`,
+and the setup page's upload form), and it's still what `tests/test_config.py` tests
+directly.
 
 `pick_ad_export_vendor(client_cfg)` picks which of a client's enabled vendors carries
 the AD export — filtered to `supports_remote_execution = True` connectors, then broken
@@ -223,6 +232,45 @@ both in mind. Raises `ConfigError` if a client has no capable vendor at all. Cal
 `services.collect_ad_csv`; don't reintroduce a `sorted(client_cfg.vendors)[0]`-style
 pick elsewhere — that bug (silently routing AD export through whichever vendor happens
 to sort first, capable or not) is exactly what this function replaced.
+
+## DB-backed config (`agent_parity_web/dashboard/config_db.py`, `views_setup.py`)
+
+Client topology (`Client.ad_target_device`/`sync_interval_hours`/`enabled_vendors`) and
+vendor credentials (`VendorCredential.credentials`, encrypted — see below) live in the
+DB, not `config.yaml`, so they can be managed through the setup page (`/setup/`)
+instead of hand-editing a committed file and restarting every process. Two symmetric
+functions are the entire boundary:
+
+- **`import_app_config(config: AppConfig)`** — upserts `Client`/`VendorCredential` rows
+  from an already-loaded `AppConfig`. Idempotent (`update_or_create`). Called by
+  `manage.py import_config` and the setup page's YAML upload view
+  (`views_setup.import_config_yaml`) — both just wrap `load_config()` + this.
+- **`build_app_config_from_db()`** — the inverse; what every production entrypoint
+  calls now. Returns the exact same `AppConfig`/`ClientConfig`/`VendorConfig` shape
+  `load_config()` does, so `credentials_for()`/`get_connector()`/`pick_ad_export_vendor()`
+  are reused completely unchanged and `agent_parity/` never learns the DB exists — the
+  Django/pipeline boundary at the top of this file stays intact. `stale_days` comes from
+  the `STALE_DAYS` Django setting and `storage` is built straight from `STORAGE_*`
+  env vars (`_storage_config_from_env()`) — **both are deliberately out of scope** for
+  this feature (global, not per-client) and were never moved to the DB; don't add DB
+  fields for them without a real reason to.
+- **`VENDOR_SCOPE`** (`agent_parity/config.py`, next to `AD_EXPORT_VENDOR_PREFERENCE`)
+  is the fixed global-vs-per-client fact both directions agree on — it's a real business
+  fact about how each vendor's API is provisioned, not something a setup-page form should
+  ever make user-editable per client.
+- **`VendorCredential.credentials`** is `dashboard/fields.py`'s `EncryptedJSONField`
+  (Fernet, keyed by `CREDENTIAL_ENCRYPTION_KEY`) — ORM-layer, not `pgcrypto`, because this
+  app runs on SQLite in demo mode and Postgres in scaled mode and the encryption has to
+  work on both. Admin's `VendorCredentialAdmin` makes the field read-only for exactly one
+  reason: the stock admin `Textarea` would round-trip the field's `str()` through
+  `get_prep_value` on save and silently corrupt it into non-JSON text — real editing is
+  `views_setup.py`'s per-vendor form (`forms.VendorCredentialForm`, one `CharField` per
+  `CONNECTOR_CLASSES[vendor].required_credentials`, always rendered blank so a stored
+  secret is never echoed back — a blank submitted field means "keep the current value,"
+  merged in the view, not the form).
+- `/setup/*` views are gated behind `staff_member_required` — the only dashboard views
+  that are (everything else is intentionally open, matching this portfolio project's
+  lack of a broader auth layer), because this is the one surface that writes credentials.
 
 ## Celery chord (`agent_parity_web/dashboard/tasks.py`)
 
@@ -278,10 +326,18 @@ only the smoke test can tell you the *transport* still works.
   `agent_parity/models.py`, `test_rest_adapter.py` ↔ `agent_parity/rest_adapter.py`,
   `test_dashboard_models.py` ↔ `dashboard/models.py`, `test_services.py` ↔ the parts of
   `dashboard/services.py` not already exercised by `test_pipeline_sync.py`/`test_tasks.py`,
-  `test_views.py` ↔ `dashboard/views.py`. When adding a new module with real logic in it,
+  `test_views.py` ↔ `dashboard/views.py`, `test_fields.py` ↔ `dashboard/fields.py`,
+  `test_config_db.py` ↔ `dashboard/config_db.py`, `test_setup_views.py` ↔
+  `dashboard/views_setup.py`. When adding a new module with real logic in it,
   add its test file alongside — don't rely on it being incidentally exercised by a
   higher-level pipeline test, which is exactly the gap `test_views.py` filled (the views
   had zero direct coverage before, only manual browser checks).
+- `tests/conftest.py`'s `db_config` fixture seeds the DB from the real config.yaml
+  (`import_app_config(load_config())`) before returning `build_app_config_from_db()` —
+  needed by any test that exercises a Celery task or management command directly (they
+  call `build_app_config_from_db()` internally now), not by tests that build a
+  `ClientConfig`/`AppConfig` themselves and pass it straight to `services.*` functions
+  (those still work with a plain `load_config()`, unchanged).
 - Deliberately not unit-tested: Django settings modules, `config/celery.py`/`wsgi.py`/
   `urls.py`, `dashboard/apps.py` — declarative framework wiring, not application logic.
   A failure there breaks every other test in the suite (which loads them just to run),

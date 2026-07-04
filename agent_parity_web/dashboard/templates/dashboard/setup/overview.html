@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+
+{% block title %}Setup — agent-parity{% endblock %}
+
+{% block content %}
+<h1>Setup</h1>
+<p class="muted">Client topology and vendor credentials live in the database
+    now, not config.yaml — add a client by hand below, or import an existing
+    config.yaml once. Credential values are encrypted at rest and are never
+    displayed once saved.</p>
+
+<div class="card">
+    <h2>Clients</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>Slug</th>
+            <th>Active</th>
+            <th>AD target device</th>
+            <th>Sync interval</th>
+            <th>Vendors</th>
+            <th></th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for client in clients %}
+        <tr>
+            <td>{{ client.name }}</td>
+            <td><code>{{ client.slug }}</code></td>
+            <td>{{ client.is_active|yesno:"yes,no" }}</td>
+            <td>{{ client.ad_target_device|default:"—" }}</td>
+            <td>{{ client.sync_interval_hours }}h</td>
+            <td>{{ client.enabled_vendors|join:", "|default:"—" }}</td>
+            <td><a href="{% url 'dashboard:client_edit' client.slug %}">Edit</a></td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="7" class="muted">No clients yet.</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <p style="margin-top: 1rem;">
+        <a href="{% url 'dashboard:client_create' %}">+ Add client</a>
+        &nbsp;·&nbsp;
+        <a href="{% url 'dashboard:import_config_yaml' %}">Import config.yaml</a>
+    </p>
+</div>
+
+<div class="card">
+    <h2>Global vendor credentials</h2>
+    <p class="muted">Shared across every client that enables them (one credential
+        set for the whole organization) — set once here, not per client.</p>
+    <table>
+        <thead>
+        <tr>
+            <th>Vendor</th>
+            <th>Configured</th>
+            <th></th>
+        </tr>
+        </thead>
+        <tbody>
+        {% for vendor in global_vendors %}
+        <tr>
+            <td>{{ vendor.name }}</td>
+            <td>{{ vendor.configured|yesno:"yes,no" }}</td>
+            <td><a href="{% url 'dashboard:vendor_credential_form' vendor.name %}">Edit</a></td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

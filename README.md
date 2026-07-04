@@ -41,7 +41,11 @@ uv run agent_parity_web/manage.py runserver
 Open http://127.0.0.1:8000/ — coverage overview, per-vendor breakdown, and a
 trend chart per client. `/devices/` is a filterable device list; each device
 links to its status history across every run. `manage.py createsuperuser`
-unlocks `/admin/` for raw model browsing.
+unlocks `/admin/` for raw model browsing, and `/setup/` (same staff login)
+for adding/editing clients and vendor credentials by hand instead of
+re-running `import_config` — see
+[Credentials](#credentials-db-backed-topology-configyaml-as-a-one-time-import)
+below.
 
 `seed_demo` runs the pipeline twice per client: once against the fixtures
 as-authored (backdated a day), once through a deterministic "drift" transform
@@ -52,7 +56,7 @@ plain run, use `uv run agent_parity_web/manage.py sync_and_correlate`
 (`--client <slug>` / `--all`).
 
 ```console
-uv run pytest        # 41 tests, all offline
+uv run pytest        # 200+ tests, all offline
 ```
 
 ## Architecture
@@ -82,6 +86,11 @@ uv run pytest        # 41 tests, all offline
                         (overview, list, history,     (optional HEC deltas)
                          Chart.js trend)
 ```
+
+(`config.yaml + .env` in the diagram is a one-time import now, not something
+read on every run — see
+[Credentials](#credentials-db-backed-topology-configyaml-as-a-one-time-import)
+below for what replaced it.)
 
 Two packages, one boundary:
 
@@ -344,34 +353,62 @@ parallel, and a chord is exactly its shape:
   callback is the backstop that marks a run `failed` instead of leaving it
   `pending` forever.
 - **Scheduling**: Celery beat ticks `dispatch_all_clients` hourly; each
-  client's `sync_interval_hours` in config.yaml decides whether it's due. A
-  second daily tick at 07:00 (`CELERY_TIMEZONE`, i.e. UTC) calls the same task
-  with `force=True`, bypassing the per-client interval so every active client
+  client's own `sync_interval_hours` decides whether it's due. A second daily
+  tick at 07:00 (`CELERY_TIMEZONE`, i.e. UTC) calls the same task with
+  `force=True`, bypassing the per-client interval so every active client
   gets a fresh correlation before the start of business each morning.
 
 The management command and the chord callback call the same functions in
 `dashboard/services.py` — the parallelism is additive infrastructure, not a
 rewrite of the pipeline.
 
-### Credentials: config.yaml is topology, .env is secrets
+### Credentials: DB-backed topology, config.yaml as a one-time import
 
 Vendors have genuinely different credential shapes: SentinelOne is one API
 token for the whole organization; Carbon Black needs a distinct API ID /
-secret / org key **per client**. A flat `.env` can't express that asymmetry,
-so it's split:
+secret / org key **per client**. Client topology (name, slug, AD target
+device, sync interval, enabled vendors) and vendor credentials both live in
+the database now — a `Client` row plus one `VendorCredential` row per
+(vendor, client) for per-client vendors, or per vendor alone (`client=None`)
+for global ones. `VendorCredential.credentials` is encrypted at the Django
+ORM layer (`dashboard/fields.py`'s `EncryptedJSONField`, built on
+`cryptography.fernet` and keyed by `CREDENTIAL_ENCRYPTION_KEY`) rather than
+a Postgres-only mechanism like `pgcrypto` — this app runs on SQLite in demo
+mode and Postgres in scaled mode, and the encryption has to work on both.
 
-- **`config.yaml`** (committed) declares each vendor's credential `scope`
-  (`global` or `per_client`) and each client's enabled vendors — with every
-  secret value a `${VAR}` reference, never a literal.
-- **`.env`** (gitignored; see `.env.example`) holds the actual values, plus
-  Django/infra secrets.
-- **`agent_parity/config.py`** resolves the references and answers the one
-  question everything else asks: *given (client, vendor), which connector
-  with which credentials?* Global scope returns the same token for every
-  client; per-client scope returns that client's block. A `${VAR}` pointing
-  at an unset variable resolves to `None`, which is precisely what puts a
-  connector into fixture mode — a fresh checkout with no `.env` runs the
-  entire pipeline on `sample_data/`.
+`config.yaml` (still committed, still `${VAR}`-referenced) is now purely a
+**one-time import source**, not something read at run time:
+
+- **`manage.py import_config`** (or the setup page's own upload form, at
+  `/setup/import/`) parses it exactly the way it always has
+  (`agent_parity.config.load_config()`, unchanged) and writes the resulting
+  `Client`/`VendorCredential` rows via `dashboard/config_db.py`'s
+  `import_app_config()`. Idempotent — re-importing an unchanged file updates
+  nothing.
+- **`agent_parity/config.py`**'s dataclasses (`AppConfig`, `ClientConfig`,
+  `VendorConfig`) stay the single contract the pipeline consumes —
+  `credentials_for()`/`get_connector()`/`pick_ad_export_vendor()` are all
+  reused completely unchanged. `dashboard/config_db.py`'s
+  `build_app_config_from_db()` is the DB-backed counterpart to
+  `load_config()`, used by every production entrypoint (management
+  commands, Celery tasks) instead. `agent_parity/` itself never learns the
+  DB exists — the Django/pipeline boundary from the Architecture section
+  above stays intact.
+- The **setup page** (`/setup/`, gated behind `staff_member_required` —
+  the same bar as `/admin/`, since this is the one surface that writes
+  credentials) is the ongoing way to add or edit a client and its
+  credentials by hand, without touching config.yaml again. Credential form
+  fields are always rendered blank, even when editing an existing value —
+  leaving a field blank on submit means "keep the current value," so a
+  stored secret is never echoed back into the page.
+- **`.env`** (gitignored; see `.env.example`) still holds `CREDENTIAL_ENCRYPTION_KEY`,
+  Django/infra secrets, and (explicitly out of scope for this feature —
+  global, not per-client, and not moved to the DB) `STALE_DAYS` and the
+  object-storage `STORAGE_*` variables.
+- A `${VAR}` pointing at an unset variable still resolves to `None` at
+  import time, which is precisely what puts a connector into fixture
+  mode — a fresh checkout's `seed_demo` imports config.yaml with no `.env`
+  and runs the entire pipeline on `sample_data/`, same as before.
 
 ## Sample data
 

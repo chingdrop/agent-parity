@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}{% if client %}Edit {{ client.name }}{% else %}Add client{% endif %} — agent-parity{% endblock %}
+
+{% block content %}
+<h1>{% if client %}Edit {{ client.name }}{% else %}Add client{% endif %}</h1>
+
+<form class="setup-form" method="post">
+    {% csrf_token %}
+    {% for field in form %}
+    <div class="field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<div class="help-text">{{ field.help_text }}</div>{% endif %}
+        {{ field.errors }}
+    </div>
+    {% endfor %}
+
+    {% for vendor, vendor_form in vendor_forms.items %}
+    <fieldset>
+        <legend>{{ vendor }} credentials</legend>
+        <p class="help-text">Only used if "{{ vendor }}" is checked above. Leave
+            blank to keep the current stored value.</p>
+        {% for field in vendor_form %}
+        <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {{ field.errors }}
+        </div>
+        {% endfor %}
+    </fieldset>
+    {% endfor %}
+
+    <button type="submit">Save</button>
+</form>
+{% endblock %}
