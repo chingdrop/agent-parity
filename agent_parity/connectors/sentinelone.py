@@ -47,7 +47,7 @@ class SentinelOneConnector(AgentConnector):
         devices: list[AgentDevice] = []
         cursor = None
         while True:
-            params = {"limit": 200}
+            params: dict[str, object] = {"limit": 200}
             if cursor:
                 params["cursor"] = cursor
             payload = self._request(

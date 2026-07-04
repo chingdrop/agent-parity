@@ -32,14 +32,14 @@ import logging
 from datetime import timedelta
 
 from celery import chord, shared_task
-from dashboard import services
-from dashboard.models import CorrelationRun
 from django.db import transaction
 from django.utils import timezone
 
 from agent_parity.ad_sync.parser import parse_ad_export
 from agent_parity.config import AppConfig, ClientConfig, load_config
 from agent_parity.models import AgentDevice
+from dashboard import services
+from dashboard.models import CorrelationRun
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +105,8 @@ def collect_ad_export(client_slug: str) -> dict:
 # --- fan-in: the chord callback ------------------------------------------------
 
 
-@shared_task(bind=True)
-def correlate_client(self, results: list[dict], run_id: int) -> dict:
+@shared_task
+def correlate_client(results: list[dict], run_id: int) -> dict:
     """Correlate one client's complete fan-out results and persist them.
 
     Runs once per client per run, against everything the group returned —
@@ -119,7 +119,7 @@ def correlate_client(self, results: list[dict], run_id: int) -> dict:
 
     config = load_config()
     vendor_status: dict[str, str] = {}
-    ad_csv = None
+    ad_csv: str | None = None
     agent_records: list[AgentDevice] = []
     for payload in results:
         source = payload["source"]
@@ -150,8 +150,13 @@ def correlate_client(self, results: list[dict], run_id: int) -> dict:
 
 
 @shared_task
-def mark_run_failed(request, exc, traceback, run_id: int) -> None:
-    """link_error backstop: never leave a run stuck in PENDING."""
+def mark_run_failed(_request, exc, _traceback, run_id: int) -> None:
+    """link_error backstop: never leave a run stuck in PENDING.
+
+    Celery invokes error callbacks with ``(request, exc, traceback)``; only
+    the exception is used here, but all three must stay in the signature to
+    match what Celery calls.
+    """
     updated = CorrelationRun.objects.filter(
         pk=run_id, status=CorrelationRun.RunStatus.PENDING
     ).update(status=CorrelationRun.RunStatus.FAILED, finished_at=timezone.now())

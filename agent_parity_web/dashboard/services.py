@@ -1,7 +1,7 @@
 """Shared pipeline plumbing between the two entrypoints.
 
 The management command (synchronous demo path) and the Celery chord callback
-(scaled path) both call these functions — collection, correlation, and
+(scaled path) both call these functions. Collection, correlation, and
 persistence live here exactly once, so the parallelism in tasks.py is purely
 additive infrastructure, not a second implementation of the pipeline.
 """
@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 
 import pandas as pd
-from dashboard.models import Client, CorrelationRun, CoverageSnapshot, Device
 from django.db import transaction
 from django.utils import timezone
 
@@ -21,6 +20,7 @@ from agent_parity.correlation.engine import CorrelationResult, agents_to_frame, 
 from agent_parity.deployment.script_runner import run_ad_export
 from agent_parity.models import AgentDevice
 from agent_parity.reporting import splunk_export
+from dashboard.models import Client, CorrelationRun, CoverageSnapshot, Device
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,9 @@ def collect_vendor_inventory(
 
 
 def _first_valid(*values):
+    """Return the first non-null value in ``values`` (all expected scalar)."""
     for value in values:
-        if value is not None and not pd.isna(value):
+        if value is not None and not bool(pd.isna(value)):
             return value
     return None
 
@@ -100,7 +101,7 @@ def persist_correlation(
     for row in frame.itertuples(index=False):
         seen = _first_valid(getattr(row, "last_seen", None), getattr(row, "last_logon", None))
         info = device_rows.setdefault(
-            row.join_key,
+            str(row.join_key),
             {"hostname": None, "os": None, "last_seen": None},
         )
         info["hostname"] = info["hostname"] or _first_valid(
@@ -115,7 +116,11 @@ def persist_correlation(
     for join_key, info in device_rows.items():
         hostname = str(info["hostname"] or join_key)
         os_name = str(info["os"] or "")
-        last_seen = info["last_seen"].to_pydatetime() if info["last_seen"] is not None else None
+        last_seen = (
+            pd.Timestamp(info["last_seen"]).to_pydatetime()
+            if info["last_seen"] is not None
+            else None
+        )
         if join_key in existing:
             device = existing[join_key]
             device.hostname, device.os = hostname, os_name
@@ -144,7 +149,7 @@ def persist_correlation(
             vendor="" if pd.isna(row.vendor) else str(row.vendor),
             match_method=row.match_method,
             agent_last_seen=(
-                None if pd.isna(row.last_seen) else row.last_seen.to_pydatetime()
+                None if pd.isna(row.last_seen) else pd.Timestamp(row.last_seen).to_pydatetime()
             ),
         )
         for row in frame.itertuples(index=False)

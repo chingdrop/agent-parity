@@ -119,7 +119,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
     """Load config.yaml, resolving ``${VAR}`` secret references as we go."""
     config_path = Path(path or os.environ.get("AGENT_PARITY_CONFIG") or DEFAULT_CONFIG_PATH)
     with open(config_path) as fh:
-        raw = _resolve_env_refs(yaml.safe_load(fh))
+        raw: dict = _resolve_env_refs(yaml.safe_load(fh))
 
     vendors = {}
     for name, block in (raw.get("vendors") or {}).items():

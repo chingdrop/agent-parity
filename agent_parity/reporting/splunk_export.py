@@ -53,6 +53,7 @@ def send_deltas(deltas: list[dict], splunk: SplunkConfig) -> int:
     if not deltas:
         return 0
 
+    assert splunk.hec_url is not None  # guaranteed by splunk.enabled above
     url = splunk.hec_url.rstrip("/") + "/services/collector/event"
     headers = {"Authorization": f"Splunk {splunk.hec_token}"}
     sent = 0

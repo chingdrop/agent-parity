@@ -17,8 +17,7 @@
 Import-Module ActiveDirectory -ErrorAction Stop
 
 Get-ADComputer -Filter * -Properties DNSHostName, OperatingSystem, LastLogonTimestamp, Enabled |
-    Select-Object `
-        Name,
+    Select-Object Name,
         DNSHostName,
         @{Name = 'OperatingSystem'; Expression = { $_.OperatingSystem }},
         @{Name = 'LastLogonTimestamp'; Expression = {

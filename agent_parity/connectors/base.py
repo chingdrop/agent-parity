@@ -59,7 +59,7 @@ def rebase_timestamps(devices: list[AgentDevice]) -> list[AgentDevice]:
     (a device authored as 30 days stale stays 30 days stale).
     Only used in fixture mode — live API data is never touched.
     """
-    seen = [d.last_seen for d in devices if d.last_seen]
+    seen: list[datetime] = [d.last_seen for d in devices if d.last_seen is not None]
     if not seen:
         return devices
     shift = datetime.now(timezone.utc) - max(seen)
@@ -72,19 +72,21 @@ def rebase_timestamps(devices: list[AgentDevice]) -> list[AgentDevice]:
 def rebase_csv_timestamps(csv_text: str, column: str = "LastLogonTimestamp") -> str:
     """Same rebasing as above, for the fixture AD export CSV."""
     reader = csv.DictReader(io.StringIO(csv_text))
+    fieldnames = reader.fieldnames
     rows = list(reader)
-    if not rows or column not in (reader.fieldnames or []):
+    if not rows or not fieldnames or column not in fieldnames:
         return csv_text
     parsed = {i: parse_timestamp(row.get(column)) for i, row in enumerate(rows)}
-    stamps = [ts for ts in parsed.values() if ts]
+    stamps: list[datetime] = [ts for ts in parsed.values() if ts is not None]
     if not stamps:
         return csv_text
     shift = datetime.now(timezone.utc) - max(stamps)
     for i, row in enumerate(rows):
-        if parsed[i]:
-            row[column] = (parsed[i] + shift).isoformat()
+        ts = parsed[i]
+        if ts is not None:
+            row[column] = (ts + shift).isoformat()
     out = io.StringIO()
-    writer = csv.DictWriter(out, fieldnames=reader.fieldnames)
+    writer = csv.DictWriter(out, fieldnames=fieldnames)
     writer.writeheader()
     writer.writerows(rows)
     return out.getvalue()

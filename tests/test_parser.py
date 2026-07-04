@@ -25,8 +25,9 @@ def test_parses_rows_and_normalizes_join_key():
 def test_timestamps_are_tz_aware_and_missing_becomes_nat():
     frame = parse_ad_export(SAMPLE_CSV)
     # tz-aware datetime dtype (unit resolution varies by pandas version).
-    assert isinstance(frame["last_logon"].dtype, pd.DatetimeTZDtype)
-    assert str(frame["last_logon"].dtype.tz) == "UTC"
+    dtype = frame["last_logon"].dtype
+    assert isinstance(dtype, pd.DatetimeTZDtype)
+    assert str(dtype.tz) == "UTC"
     assert frame["last_logon"].isna().tolist() == [False, False, True]
 
 

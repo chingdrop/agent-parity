@@ -37,7 +37,7 @@ def parse_ad_export(raw_csv: str) -> pd.DataFrame:
     parsed = pd.DataFrame(
         {
             "hostname": frame["Name"].str.strip(),
-            "dns_hostname": frame.get("DNSHostName", "").astype(str) if "DNSHostName" in frame else "",
+            "dns_hostname": frame["DNSHostName"].astype(str) if "DNSHostName" in frame else "",
             "os": frame["OperatingSystem"] if "OperatingSystem" in frame else "",
             "last_logon": pd.to_datetime(
                 frame["LastLogonTimestamp"], errors="coerce", utc=True, format="ISO8601"

@@ -110,9 +110,11 @@ move, structured as a `.pipe()` chain so each stage is independently
 testable:
 
 ```python
-ad_df.pipe(add_join_key)  # hostname -> normalized join key
-.pipe(merge_with_agents, agents_df)  # outer merge, indicator=True
-.pipe(classify_coverage, stale_days=14)  # indicator + staleness -> status
+(
+    ad_df.pipe(add_join_key)  # hostname -> normalized join key
+    .pipe(merge_with_agents, agents_df)  # outer merge, indicator=True
+    .pipe(classify_coverage, stale_days=14)  # indicator + staleness -> status
+)
 ```
 
 The merge indicator *is* the classification: `left_only` → `missing_agent`,

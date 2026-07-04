@@ -87,6 +87,6 @@ class AgentDevice:
             agent_id=data["agent_id"],
             hostname=data["hostname"],
             os=data.get("os", ""),
-            last_seen=datetime.fromisoformat(last_seen) if last_seen else None,
+            last_seen=datetime.fromisoformat(str(last_seen)) if last_seen else None,
             agent_version=data.get("agent_version", ""),
         )

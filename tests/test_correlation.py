@@ -9,7 +9,7 @@ import pytest
 from agent_parity.correlation.engine import agents_to_frame, correlate
 from agent_parity.models import AgentDevice, CoverageStatus
 
-AS_OF = pd.Timestamp("2026-07-03T00:00:00Z")
+AS_OF: pd.Timestamp = pd.Timestamp("2026-07-03T00:00:00Z")
 RECENT = datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc)  # < 1 day old
 STALE = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)  # > 14 days old
 
@@ -24,7 +24,7 @@ def ad_frame(*hostnames: str) -> pd.DataFrame:
     )
 
 
-def agent(hostname: str, last_seen=RECENT, vendor="sentinelone") -> AgentDevice:
+def agent(hostname: str, last_seen: datetime | None = RECENT, vendor="sentinelone") -> AgentDevice:
     return AgentDevice(
         vendor=vendor, agent_id=f"id-{hostname}", hostname=hostname, last_seen=last_seen
     )

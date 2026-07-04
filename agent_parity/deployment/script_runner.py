@@ -2,7 +2,7 @@
 
 Rather than agent-parity holding its own domain credentials to query Active
 Directory, the AD export script is pushed to an already domain-joined,
-already-managed endpoint and executed through the security vendor's own
+already-managed endpoint. It executes there through the security vendor's own
 remote scripting capability — the same trust relationship that is already in
 place for the agent itself. Each connector implements the vendor mechanics
 (stage / execute / poll / retrieve); this module is the uniform entry point
