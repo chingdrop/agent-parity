@@ -32,18 +32,26 @@ def test_setup_overview_redirects_anonymous_users_to_login(client):
 # --- setup_overview -----------------------------------------------------------------
 
 
+def _accounts_by_name(global_vendors, vendor_name):
+    vendor = next(v for v in global_vendors if v["name"] == vendor_name)
+    return {a["name"]: a["configured"] for a in vendor["accounts"]}
+
+
 def test_setup_overview_lists_clients_and_global_vendor_status(staff_client):
     Client.objects.create(name="Acme Corp", slug="acme", enabled_vendors=["sentinelone"])
     VendorCredential.objects.create(
-        client=None, vendor="sentinelone", credentials={"api_url": "x", "api_token": "y"}
+        client=None,
+        vendor="sentinelone",
+        site_label="mssp",
+        credentials={"api_url": "x", "api_token": "y"},
     )
 
     response = staff_client.get(reverse("dashboard:setup_overview"))
     assert response.status_code == 200
     assert b"Acme Corp" in response.content
-    global_vendors = {v["name"]: v["configured"] for v in response.context["global_vendors"]}
-    assert global_vendors["sentinelone"] is True
-    assert global_vendors["bitdefender"] is False
+    accounts = _accounts_by_name(response.context["global_vendors"], "sentinelone")
+    assert accounts == {"mssp": True}
+    assert _accounts_by_name(response.context["global_vendors"], "bitdefender") == {}
 
 
 def test_setup_overview_treats_all_none_credentials_as_not_configured(staff_client):
@@ -51,12 +59,28 @@ def test_setup_overview_treats_all_none_credentials_as_not_configured(staff_clie
     ${VAR} refs were unset in the environment. That's still "not
     configured," the same as no row at all, not "yes"."""
     VendorCredential.objects.create(
-        client=None, vendor="sentinelone", credentials={"api_url": None, "api_token": None}
+        client=None,
+        vendor="sentinelone",
+        site_label="mssp",
+        credentials={"api_url": None, "api_token": None},
     )
 
     response = staff_client.get(reverse("dashboard:setup_overview"))
-    global_vendors = {v["name"]: v["configured"] for v in response.context["global_vendors"]}
-    assert global_vendors["sentinelone"] is False
+    accounts = _accounts_by_name(response.context["global_vendors"], "sentinelone")
+    assert accounts == {"mssp": False}
+
+
+def test_setup_overview_lists_every_configured_account_separately(staff_client):
+    VendorCredential.objects.create(
+        client=None, vendor="sentinelone", site_label="mssp", credentials={"api_token": "x"}
+    )
+    VendorCredential.objects.create(
+        client=None, vendor="sentinelone", site_label="dfir", credentials={}
+    )
+
+    response = staff_client.get(reverse("dashboard:setup_overview"))
+    accounts = _accounts_by_name(response.context["global_vendors"], "sentinelone")
+    assert accounts == {"mssp": True, "dfir": False}
 
 
 # --- client_form: create ------------------------------------------------------------
@@ -202,7 +226,9 @@ def test_client_edit_with_multiple_tenants_edits_the_first_without_crashing(staf
 
 
 def test_vendor_credential_form_rejects_per_client_vendor(staff_client):
-    response = staff_client.get(reverse("dashboard:vendor_credential_form", args=["carbonblack"]))
+    response = staff_client.get(
+        reverse("dashboard:vendor_credential_form", args=["carbonblack", "default"])
+    )
     assert response.status_code == 404
 
 
@@ -210,18 +236,69 @@ def test_vendor_credential_form_post_merges_over_existing_values(staff_client):
     VendorCredential.objects.create(
         client=None,
         vendor="sentinelone",
+        site_label="mssp",
         credentials={"api_url": "https://usea1.sentinelone.net", "api_token": "old-token"},
     )
 
     response = staff_client.post(
-        reverse("dashboard:vendor_credential_form", args=["sentinelone"]),
+        reverse("dashboard:vendor_credential_form", args=["sentinelone", "mssp"]),
         {"api_url": "", "api_token": "new-token"},
     )
     assert response.status_code == 302
 
-    cred = VendorCredential.objects.get(client=None, vendor="sentinelone")
+    cred = VendorCredential.objects.get(client=None, vendor="sentinelone", site_label="mssp")
     assert cred.credentials["api_url"] == "https://usea1.sentinelone.net"
     assert cred.credentials["api_token"] == "new-token"
+
+
+def test_vendor_credential_form_post_creates_a_brand_new_account(staff_client):
+    """Posting to an account name that doesn't exist yet creates it — this
+    is how vendor_account_create's redirect target actually gets saved."""
+    response = staff_client.post(
+        reverse("dashboard:vendor_credential_form", args=["sentinelone", "dfir"]),
+        {"api_url": "https://usea1-dfir.sentinelone.net", "api_token": "dfir-token"},
+    )
+    assert response.status_code == 302
+
+    cred = VendorCredential.objects.get(client=None, vendor="sentinelone", site_label="dfir")
+    assert cred.credentials["api_token"] == "dfir-token"
+
+
+def test_vendor_credential_form_edits_only_the_named_account(staff_client):
+    VendorCredential.objects.create(
+        client=None, vendor="sentinelone", site_label="mssp", credentials={"api_token": "mssp-token"}
+    )
+    VendorCredential.objects.create(
+        client=None, vendor="sentinelone", site_label="dfir", credentials={"api_token": "dfir-token"}
+    )
+
+    staff_client.post(
+        reverse("dashboard:vendor_credential_form", args=["sentinelone", "mssp"]),
+        {"api_url": "", "api_token": "mssp-token-rotated"},
+    )
+
+    mssp = VendorCredential.objects.get(vendor="sentinelone", site_label="mssp")
+    dfir = VendorCredential.objects.get(vendor="sentinelone", site_label="dfir")
+    assert mssp.credentials["api_token"] == "mssp-token-rotated"
+    assert dfir.credentials["api_token"] == "dfir-token"
+
+
+def test_vendor_account_create_redirects_to_the_credential_form(staff_client):
+    response = staff_client.post(
+        reverse("dashboard:vendor_account_create", args=["sentinelone"]), {"account": "dfir"}
+    )
+    assert response.status_code == 302
+    assert response.url == reverse(
+        "dashboard:vendor_credential_form", args=["sentinelone", "dfir"]
+    )
+
+
+def test_vendor_account_create_rejects_unsafe_names(staff_client):
+    response = staff_client.post(
+        reverse("dashboard:vendor_account_create", args=["sentinelone"]), {"account": "not safe!"}
+    )
+    assert response.status_code == 200
+    assert b"letters, numbers, hyphens" in response.content
 
 
 # --- import_config_yaml --------------------------------------------------------------
@@ -232,8 +309,10 @@ stale_days: 14
 vendors:
   sentinelone:
     scope: global
-    api_url: https://usea1.sentinelone.net
-    api_token: uploaded-token
+    accounts:
+      default:
+        api_url: https://usea1.sentinelone.net
+        api_token: uploaded-token
 clients:
   - name: Uploaded Co
     slug: uploadedco
@@ -241,7 +320,7 @@ clients:
       - UPLOADEDCO-DC01
     sync_interval_hours: 8
     vendors:
-      sentinelone: {}
+      sentinelone: []
 """
 
 
@@ -256,7 +335,7 @@ def test_import_config_yaml_creates_client_and_credentials(staff_client):
 
     client_row = Client.objects.get(slug="uploadedco")
     assert client_row.ad_target_devices == ["UPLOADEDCO-DC01"]
-    cred = VendorCredential.objects.get(client=None, vendor="sentinelone")
+    cred = VendorCredential.objects.get(client=None, vendor="sentinelone", site_label="default")
     assert cred.credentials["api_token"] == "uploaded-token"
 
 

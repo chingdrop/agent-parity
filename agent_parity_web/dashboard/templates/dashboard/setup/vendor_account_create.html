@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Add {{ vendor }} account — agent-parity{% endblock %}
+
+{% block content %}
+<h1>Add {{ vendor }} account</h1>
+<p class="muted">Name a new account before setting its credentials — e.g.
+    a second SentinelOne console for a different line of business.</p>
+
+<form class="setup-form" method="post">
+    {% csrf_token %}
+    {% for field in form %}
+    <div class="field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<div class="help-text">{{ field.help_text }}</div>{% endif %}
+        {{ field.errors }}
+    </div>
+    {% endfor %}
+    <button type="submit">Continue</button>
+</form>
+{% endblock %}

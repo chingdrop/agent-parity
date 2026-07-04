@@ -6,6 +6,8 @@ page's own YAML upload, both of which call
 
 from __future__ import annotations
 
+import re
+
 from django import forms
 
 from agent_parity.connectors import CONNECTOR_CLASSES
@@ -86,6 +88,44 @@ class VendorCredentialForm(forms.Form):
         """Only the fields the user actually typed something into — the
         view merges this over the existing stored credentials."""
         return {name: value for name, value in self.cleaned_data.items() if value}
+
+
+class GlobalVendorAccountForm(forms.Form):
+    """Which of a global vendor's named accounts a client uses — e.g.
+    SentinelOne's separate "mssp"/"dfir" consoles (see
+    ``agent_parity.config.VendorConfig.accounts``). Only meaningful once a
+    vendor has more than one account; left blank, a vendor with exactly one
+    account resolves to it implicitly (``AppConfig._resolve_account``).
+    """
+
+    def __init__(self, vendor: str, account_names: list[str], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.vendor = vendor
+        self.fields["account"] = forms.ChoiceField(
+            choices=[("", "(default — only matters with more than one account)")]
+            + [(name, name) for name in account_names],
+            required=False,
+            label=f"{vendor} account",
+        )
+
+
+class VendorAccountNameForm(forms.Form):
+    """Names a brand-new account for a global vendor (SentinelOne, BitDefender)
+    before handing off to the per-account credential form."""
+
+    account = forms.CharField(
+        max_length=64,
+        help_text='A short name for this account, e.g. "mssp" or "dfir" — '
+        "used in the URL, not shown anywhere else.",
+    )
+
+    def clean_account(self) -> str:
+        value = self.cleaned_data["account"].strip()
+        if not re.fullmatch(r"[a-zA-Z0-9_-]+", value):
+            raise forms.ValidationError(
+                "Use only letters, numbers, hyphens, and underscores."
+            )
+        return value
 
 
 class ConfigYAMLUploadForm(forms.Form):

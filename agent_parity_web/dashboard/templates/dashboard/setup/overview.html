@@ -49,26 +49,38 @@
 </div>
 
 <div class="card">
-    <h2>Global vendor credentials</h2>
-    <p class="muted">Shared across every client that enables them (one credential
-        set for the whole organization) — set once here, not per client.</p>
+    <h2>Global vendor accounts</h2>
+    <p class="muted">Each global vendor can have more than one named account
+        (e.g. separate SentinelOne consoles for different lines of business) —
+        shared across whichever clients use that account, set here rather than
+        per client. A client picks which account it uses on its own edit page.</p>
+    {% for vendor in global_vendors %}
+    <h3>{{ vendor.name }}</h3>
     <table>
         <thead>
         <tr>
-            <th>Vendor</th>
+            <th>Account</th>
             <th>Configured</th>
             <th></th>
         </tr>
         </thead>
         <tbody>
-        {% for vendor in global_vendors %}
+        {% for account in vendor.accounts %}
         <tr>
-            <td>{{ vendor.name }}</td>
-            <td>{{ vendor.configured|yesno:"yes,no" }}</td>
-            <td><a href="{% url 'dashboard:vendor_credential_form' vendor.name %}">Edit</a></td>
+            <td><code>{{ account.name }}</code></td>
+            <td>{{ account.configured|yesno:"yes,no" }}</td>
+            <td>
+                <a href="{% url 'dashboard:vendor_credential_form' vendor.name account.name %}">Edit</a>
+            </td>
+        </tr>
+        {% empty %}
+        <tr>
+            <td colspan="3" class="muted">No accounts configured yet.</td>
         </tr>
         {% endfor %}
         </tbody>
     </table>
+    <p><a href="{% url 'dashboard:vendor_account_create' vendor.name %}">+ Add {{ vendor.name }} account</a></p>
+    {% endfor %}
 </div>
 {% endblock %}

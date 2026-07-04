@@ -33,6 +33,24 @@
     </fieldset>
     {% endfor %}
 
+    {% for vendor, account_form in account_forms.items %}
+    <fieldset>
+        <legend>{{ vendor }} account</legend>
+        <p class="help-text">Only used if "{{ vendor }}" is checked above.
+            Which of {{ vendor }}'s accounts this client belongs to — only
+            matters once {{ vendor }} has more than one configured (see the
+            overview page). Credentials for each account are managed there,
+            not here.</p>
+        {% for field in account_form %}
+        <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {{ field.errors }}
+        </div>
+        {% endfor %}
+    </fieldset>
+    {% endfor %}
+
     <button type="submit">Save</button>
 </form>
 {% endblock %}

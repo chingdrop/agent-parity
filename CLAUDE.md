@@ -284,8 +284,9 @@ matches how each vendor's API is actually provisioned:
   pattern `collect_ad_frame` already established for AD domains.
 - **Global scope (SentinelOne, BitDefender)**: each entry is small — just an optional
   site filter (e.g. `{"site_ids": "..."}`, or `{}` for "the whole account," today's
-  default) — merged onto the vendor-level shared credentials in `sites_for()`, never
-  stored as if it were a secret. SentinelOne's `_in_scoped_sites`/`site_ids` mirrors a
+  default) — merged onto whichever named account it resolves to (see "Multiple named
+  accounts" below) in `sites_for()`, never stored as if it were a secret. SentinelOne's
+  `_in_scoped_sites`/`site_ids` mirrors a
   real, documented API filter (`GET /web/api/v2.1/agents?siteIds=...`); BitDefender's
   `_in_scoped_company`/`company_id` is modeled the same way but explicitly flagged in
   `connectors/bitdefender.py` as unverified against GravityZone's real multi-tenant
@@ -326,6 +327,49 @@ than one matching row that would raise `MultipleObjectsReturned`). Additional
 sites/tenants are added via config.yaml (re-)import or directly through admin;
 a full add/remove-site form is a real gap, not an oversight — flagged in code, not
 silently unsupported.
+
+## Multiple named accounts per global vendor (`VendorConfig.accounts`)
+
+A global vendor doesn't mean *one* credential set, either: `VendorConfig.accounts`
+(`agent_parity/config.py`) is `dict[str, dict]` — account name -> credentials —
+always named, even a lone one (BitDefender's `"default"` today), same
+"no special-cased single case" principle as `ad_target_devices`/per-client
+`vendors`. This is real, not hypothetical: there were two genuinely separate
+SentinelOne consoles in practice (`"mssp"` for ordinary managed-services clients,
+`"dfir"` for clients under active incident response) — a distinct engagement,
+a distinct console, not just a Site within one account (that's the previous
+section — orthogonal, and composable: a site dict can carry both `"account"`
+and a site filter like `site_ids` at once).
+
+`AppConfig._resolve_account(client_slug, vendor, site)` is where a site's
+`site.get("account")` gets resolved: explicit account name wins; omitted and the
+vendor has exactly one account, use it (today's implicit default, unchanged for
+every existing single-account setup); omitted and there's more than one,
+`ConfigError` — ambiguous is a config error, not a silent pick; unknown account
+name, `ConfigError` too. Don't special-case "just default to the first one
+alphabetically" here — that's exactly the kind of silent-pick bug
+`AD_EXPORT_VENDOR_PREFERENCE`/`pick_ad_export_vendor` already exists to avoid
+elsewhere in this file.
+
+**DB storage reuses `VendorCredential.site_label`** for global (`client=None`)
+rows too — there it means "account name" instead of "site/tenant label," same
+underlying purpose (distinguish multiple rows for one vendor), not a new field.
+The global uniqueness constraint became `(vendor, site_label)` (was `vendor`
+alone) to allow it. `import_app_config` loops `vendor_cfg.accounts.items()`
+instead of writing one unconditional row; `build_app_config_from_db` groups
+global rows by `site_label` into `VendorConfig.accounts`.
+
+**Setup page support here is not scoped down** the way per-client multi-tenant
+editing is — named accounts are meant to be independently, ongoingly managed:
+`vendor_credential_form` takes an `account` URL segment
+(`/setup/vendors/<vendor>/<account>/`, upserts either way — same view handles
+"first-ever credentials" and "rotate existing ones"), `vendor_account_create`
+names a brand-new one before handing off to it, and `setup_overview` lists every
+account per global vendor individually rather than one flat "configured: yes/no".
+`ClientForm` gained `GlobalVendorAccountForm` — one account-picker `<select>` per
+global vendor the client enables — since a client now has to say *which*
+account it's in once a vendor has more than one; it didn't need any field for
+global vendors at all before this.
 
 ## DB-backed config (`agent_parity_web/dashboard/config_db.py`, `views_setup.py`)
 

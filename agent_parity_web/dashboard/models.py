@@ -63,32 +63,40 @@ class Client(models.Model):
 class VendorCredential(models.Model):
     """A vendor's API credentials, encrypted at rest.
 
-    ``client`` is null for the one shared-secret row every global-scope
-    vendor (SentinelOne, BitDefender) has — one credential set for the whole
-    organization — and set for per-client vendors (Carbon Black — a distinct
-    credential set per client). Which vendors are global vs per-client is a
-    fixed business fact, not something this model or a setup form decides —
-    see ``agent_parity.config.VENDOR_SCOPE``.
+    ``client`` is null for a global-scope vendor's (SentinelOne, BitDefender)
+    named-account rows — a global vendor can have *more than one* account
+    (e.g. real, historically separate SentinelOne consoles for MSSP clients
+    vs. clients under active DFIR incident response), each a fully
+    independent credential set, distinguished by ``site_label`` doubling as
+    the account name for these rows. ``client`` is set for per-client vendors
+    (Carbon Black — a distinct credential set per client). Which vendors are
+    global vs per-client is a fixed business fact, not something this model
+    or a setup form decides — see ``agent_parity.config.VENDOR_SCOPE``.
 
-    A client can have *more than one* row for the same vendor, distinguished
-    by ``site_label`` — what that means depends on scope: for Carbon Black
-    (per_client) each such row is a fully separate, real tenant credential
-    set (a second CB org); for a global vendor each such row's ``client`` is
-    set even though the vendor itself is global-scoped, and its
-    ``credentials`` holds only a non-secret site filter (e.g.
-    ``{"site_ids": "..."}``) merged onto the one shared secret row at
-    ``build_app_config_from_db()`` time — see
+    A client can also have *more than one* row of its own for the same
+    vendor, likewise distinguished by ``site_label`` — what that means
+    depends on scope: for Carbon Black (per_client) each such row is a fully
+    separate, real tenant credential set (a second CB org); for a global
+    vendor each such row's ``client`` is set even though the vendor itself is
+    global-scoped, and its ``credentials`` holds only a non-secret site
+    filter (e.g. ``{"site_ids": "..."}`` or an ``"account"`` key picking
+    which of the vendor's named accounts to use) merged onto that chosen
+    account's row at ``build_app_config_from_db()`` time — see
     ``agent_parity.connectors.sentinelone``'s ``site_ids`` mechanism. A
-    client with no such row for a global vendor gets the whole account, no
-    filter — today's exact behavior, unchanged.
+    client with no such row for a global vendor gets the vendor's sole
+    account and the whole thing, no filter — today's exact behavior,
+    unchanged, as long as that vendor only has one account configured.
     """
 
     client = models.ForeignKey(
         Client, null=True, blank=True, on_delete=models.CASCADE, related_name="vendor_credentials"
     )
     vendor = models.CharField(max_length=32, choices=VENDOR_CHOICES)
-    # Distinguishes multiple sites/tenants within one (client, vendor) pair.
-    # Blank/default for the common single-site/single-tenant case.
+    # Distinguishes multiple rows for one (client-or-global, vendor) pair —
+    # a site/tenant label for a client's own rows (blank/default for the
+    # common single-site/single-tenant case), or an account name for a
+    # global vendor's shared-secret rows (client=None) — those are always
+    # named, even a lone "default" one, never blank (see VendorConfig.accounts).
     site_label = models.CharField(max_length=64, blank=True, default="")
     # Vendor-specific shape (e.g. {"api_url", "api_token"} for SentinelOne vs
     # {"api_url", "api_id", "api_key", "org_key"} for Carbon Black) — a
@@ -101,7 +109,9 @@ class VendorCredential(models.Model):
     class Meta:
         constraints = [
             models.UniqueConstraint(
-                fields=["vendor"], condition=Q(client__isnull=True), name="uniq_global_vendor_credential"
+                fields=["vendor", "site_label"],
+                condition=Q(client__isnull=True),
+                name="uniq_global_vendor_account_credential",
             ),
             models.UniqueConstraint(
                 fields=["client", "vendor", "site_label"],

@@ -13,7 +13,12 @@ urlpatterns = [
     path("setup/clients/new/", views_setup.client_form, name="client_create"),
     path("setup/clients/<slug:slug>/edit/", views_setup.client_form, name="client_edit"),
     path(
-        "setup/vendors/<str:vendor>/",
+        "setup/vendors/<str:vendor>/new/",
+        views_setup.vendor_account_create,
+        name="vendor_account_create",
+    ),
+    path(
+        "setup/vendors/<str:vendor>/<str:account>/",
         views_setup.vendor_credential_form,
         name="vendor_credential_form",
     ),

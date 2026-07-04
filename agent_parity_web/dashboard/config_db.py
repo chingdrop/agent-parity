@@ -60,12 +60,17 @@ def import_app_config(config: AppConfig) -> None:
     """Upsert Client/VendorCredential rows from an already-loaded AppConfig."""
     for vendor_name, vendor_cfg in config.vendors.items():
         if vendor_cfg.scope == "global":
-            VendorCredential.objects.update_or_create(
-                client=None,
-                vendor=vendor_name,
-                site_label="",
-                defaults={"credentials": vendor_cfg.credentials},
-            )
+            # One row per named account (see VendorConfig.accounts) —
+            # site_label doubles as the account name for these client=None
+            # rows, always named (even a lone "default"), unlike a client's
+            # own site rows where a blank label means "the common case."
+            for account_name, credentials in vendor_cfg.accounts.items():
+                VendorCredential.objects.update_or_create(
+                    client=None,
+                    vendor=vendor_name,
+                    site_label=account_name,
+                    defaults={"credentials": credentials},
+                )
 
     for slug, client_cfg in config.clients.items():
         client, _ = Client.objects.update_or_create(
@@ -104,17 +109,19 @@ def build_app_config_from_db() -> AppConfig:
     Every production entrypoint (management commands, Celery tasks) calls
     this instead of ``load_config()``.
     """
-    vendor_configs: dict[str, VendorConfig] = {
-        row.vendor: VendorConfig(name=row.vendor, scope="global", credentials=row.credentials)
-        for row in VendorCredential.objects.filter(client__isnull=True)
-    }
-    # A vendor with no global credential row yet (fresh install, nothing
-    # imported/added through the setup page) still needs an entry so any
-    # client enabling it resolves — credentials_for() only rejects vendors
-    # it's never heard of at all, not ones with empty credentials.
+    vendor_configs: dict[str, VendorConfig] = {}
+    for row in VendorCredential.objects.filter(client__isnull=True).order_by("vendor", "site_label"):
+        vendor_configs.setdefault(
+            row.vendor, VendorConfig(name=row.vendor, scope="global", accounts={})
+        ).accounts[row.site_label] = row.credentials
+    # A vendor with no global accounts configured yet (fresh install,
+    # nothing imported/added through the setup page) still needs an entry so
+    # any client enabling it resolves — sites_for() only rejects vendors it's
+    # never heard of at all, not ones with no accounts (see
+    # AppConfig._resolve_account, which treats that as fixture mode).
     for vendor_name, scope in VENDOR_SCOPE.items():
         vendor_configs.setdefault(
-            vendor_name, VendorConfig(name=vendor_name, scope=scope, credentials={})
+            vendor_name, VendorConfig(name=vendor_name, scope=scope, accounts={})
         )
 
     clients: dict[str, ClientConfig] = {}

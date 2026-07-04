@@ -33,9 +33,20 @@ def test_import_carries_topology_fields_onto_the_client_row():
     assert acme.sync_interval_hours == 6
 
 
-def test_global_vendor_gets_exactly_one_credential_row_with_no_client(imported):
-    row = VendorCredential.objects.get(vendor="sentinelone")
-    assert row.client is None
+def test_global_vendor_gets_one_credential_row_per_named_account(imported):
+    """SentinelOne has two named accounts in config.yaml (mssp/dfir) — both
+    are global (client=None) rows, distinguished by site_label doubling as
+    the account name."""
+    rows = VendorCredential.objects.filter(vendor="sentinelone", client__isnull=True)
+    assert {r.site_label for r in rows} == {"mssp", "dfir"}
+    assert all(r.client is None for r in rows)
+
+
+def test_global_vendor_with_a_single_account_still_gets_a_named_row(imported):
+    # BitDefender only has one account ("default") but it's still named,
+    # not blank — accounts are always named, unlike per-client site labels.
+    row = VendorCredential.objects.get(vendor="bitdefender", client__isnull=True)
+    assert row.site_label == "default"
 
 
 def test_per_client_vendor_gets_one_row_per_enabled_client(imported):
@@ -79,8 +90,8 @@ def test_build_app_config_from_db_round_trips_multiple_domains(imported):
 
 
 def test_build_app_config_from_db_resolves_credentials_the_same_way_as_yaml(monkeypatch):
-    monkeypatch.setenv("SENTINELONE_API_URL", "https://usea1.sentinelone.net")
-    monkeypatch.setenv("SENTINELONE_API_TOKEN", "s1-global-token")
+    monkeypatch.setenv("SENTINELONE_MSSP_API_URL", "https://usea1.sentinelone.net")
+    monkeypatch.setenv("SENTINELONE_MSSP_API_TOKEN", "s1-global-token")
     monkeypatch.setenv("ACME_CB_API_URL", "https://defense.conferdeploy.net")
     monkeypatch.setenv("ACME_CB_API_ID", "ACMEID")
     monkeypatch.setenv("ACME_CB_API_KEY", "acme-cb-secret")
@@ -90,9 +101,19 @@ def test_build_app_config_from_db_resolves_credentials_the_same_way_as_yaml(monk
     config = build_app_config_from_db()
 
     assert config.sites_for("acme", "sentinelone") == config.sites_for("globex", "sentinelone")
+    assert config.sites_for("acme", "sentinelone")[0]["api_token"] == "s1-global-token"
     creds = config.sites_for("acme", "carbonblack")[0]
     assert creds["api_id"] == "ACMEID"
     assert creds["org_key"] == "ACMEORG"
+
+
+def test_build_app_config_from_db_round_trips_a_clients_chosen_account(imported):
+    """Both demo clients pick the "mssp" SentinelOne account in config.yaml —
+    that choice must survive the DB round-trip as an "account" key."""
+    acme_site = imported.client("acme").vendors["sentinelone"][0]
+    globex_site = imported.client("globex").vendors["sentinelone"][0]
+    assert acme_site["account"] == "mssp"
+    assert globex_site["account"] == "mssp"
 
 
 def test_client_without_vendor_enabled_is_still_rejected_the_same_way(imported):

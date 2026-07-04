@@ -220,6 +220,44 @@ while SentinelOne/BitDefender site filtering has unit coverage
 (`tests/test_connectors.py`) without a full multi-site demo scenario wired
 into `sample_data/`.
 
+### Multiple named accounts per global vendor
+
+"Global scope" doesn't mean *one* credential set for a vendor, either — it
+means every client that uses the same account shares that account's secret.
+There were genuinely two separate SentinelOne consoles in practice: one for
+ordinary managed-services clients ("mssp"), one for clients under active
+DFIR incident response ("dfir") — a distinct engagement, a distinct console,
+by design, not just a Site within one account (that's the previous section).
+`VendorConfig.accounts` (`agent_parity/config.py`) is a dict of named
+credential sets, not a single block — always named, even when a vendor
+(BitDefender, today) only has one, the same "no special-cased single case"
+principle as everywhere else in this config layer:
+
+```yaml
+sentinelone:
+  scope: global
+  accounts:
+    mssp: { api_url: ..., api_token: ... }
+    dfir: { api_url: ..., api_token: ... }
+```
+
+A client's site dict gets an `"account"` key picking which one it's in
+(`config.yaml`'s `acme`/`globex` both pick `mssp`). Omitted, it resolves to
+the vendor's sole account when there's exactly one — still today's implicit
+default for a single-account vendor — or raises a clear `ConfigError` if
+there's more than one and no client made a choice (`AppConfig._resolve_account`);
+ambiguous is a config error, not a silent pick. `VendorCredential.site_label`
+(`dashboard/models.py`) does double duty: a site/tenant label for a client's
+own rows, an account name for a global vendor's shared-secret rows — same
+underlying purpose (distinguish multiple rows for one vendor), reused rather
+than adding a second field.
+
+Unlike per-client multi-tenant editing (deliberately left to config.yaml/admin
+for now, see above), named accounts get real setup-page support: the overview
+page lists every account per global vendor with its own edit link and an
+"add account" flow (`/setup/vendors/<vendor>/<account>/`), and a client's
+edit form gets an account picker for each global vendor it enables.
+
 ### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
 Vendor remote-execution output channels are not a reliable way to get a full
@@ -440,13 +478,14 @@ rewrite of the pipeline.
 ### Credentials: DB-backed topology, config.yaml as a one-time import
 
 Vendors have genuinely different credential shapes: SentinelOne is one API
-token for the whole organization; Carbon Black needs a distinct API ID /
-secret / org key **per client**. Client topology (name, slug, AD target
-devices, sync interval, enabled vendors) and vendor credentials both live in
-the database now — a `Client` row plus one `VendorCredential` row per
-(vendor, client) for per-client vendors, or per vendor alone (`client=None`)
-for global ones — or more than one of either, for a client with multiple
-sites/tenants within a vendor (see [Multi-site/tenant clients](#multi-sitetenant-clients-the-same-shape-applied-to-vendor-consoles)
+token per named account (see [Multiple named accounts](#multiple-named-accounts-per-global-vendor)
+above); Carbon Black needs a distinct API ID / secret / org key **per
+client**. Client topology (name, slug, AD target devices, sync interval,
+enabled vendors) and vendor credentials both live in the database now — a
+`Client` row plus one `VendorCredential` row per (vendor, client) for
+per-client vendors, or per (vendor, account) alone (`client=None`) for global
+ones — or more than one of either, for a client with multiple sites/tenants
+within a vendor (see [Multi-site/tenant clients](#multi-sitetenant-clients-the-same-shape-applied-to-vendor-consoles)
 above), distinguished by `site_label`. `VendorCredential.credentials` is
 encrypted at the Django ORM layer (`dashboard/fields.py`'s
 `EncryptedJSONField`, built on `cryptography.fernet` and keyed by

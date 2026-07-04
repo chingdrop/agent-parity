@@ -9,24 +9,39 @@
 stale_days: 14
 
 vendors:
-  # SentinelOne: one API token covers the whole organization, so its
-  # credentials live here at the vendor level (scope: global) and every
-  # client resolves to the same set.
+  # SentinelOne: global scope (one API token per named account, shared by
+  # whichever clients use that account) — historically two genuinely
+  # separate consoles, not just Sites within one: "mssp" for ordinary
+  # managed-services clients, "dfir" for clients under active incident
+  # response (a distinct engagement, distinct console, by design). Every
+  # global vendor's accounts are always named, even when there's only one
+  # (see bitdefender below) — a client's site entry picks which account via
+  # an "account" key, required once a vendor has more than one.
   sentinelone:
     scope: global
-    api_url: ${SENTINELONE_API_URL}
-    api_token: ${SENTINELONE_API_TOKEN}
+    accounts:
+      mssp:
+        api_url: ${SENTINELONE_MSSP_API_URL}
+        api_token: ${SENTINELONE_MSSP_API_TOKEN}
+      dfir:
+        api_url: ${SENTINELONE_DFIR_API_URL}
+        api_token: ${SENTINELONE_DFIR_API_TOKEN}
 
   # Carbon Black Cloud: each client environment has its own API ID / secret
   # key / org key, so credentials live on the client entries below.
   carbonblack:
     scope: per_client
 
-  # BitDefender GravityZone: one Control Center API key for the org.
+  # BitDefender GravityZone: one Control Center API key for the org — only
+  # ever had one account in practice, but still named ("default") rather
+  # than a bare flat block, so adding a second later (another client on a
+  # separate GravityZone tenant) needs no reshaping, just another entry here.
   bitdefender:
     scope: global
-    api_url: ${BITDEFENDER_API_URL}
-    api_key: ${BITDEFENDER_API_KEY}
+    accounts:
+      default:
+        api_url: ${BITDEFENDER_API_URL}
+        api_key: ${BITDEFENDER_API_KEY}
 
 clients:
   - name: Acme Corp
@@ -46,7 +61,8 @@ clients:
     # identifier, so "multiple tenants" is just this same mechanism applied
     # twice, not a new one.
     vendors:
-      sentinelone: [ { } ]
+      sentinelone:
+        - account: mssp
       carbonblack:
         - api_url: ${ACME_CB_API_URL}
           api_id: ${ACME_CB_API_ID}
@@ -70,7 +86,8 @@ clients:
       - GLOBEX-BR-DC01
     sync_interval_hours: 12
     vendors:
-      sentinelone: [ { } ]
+      sentinelone:
+        - account: mssp
       bitdefender: [ { } ]
 
 # Object-storage handoff for the AD export — required for any client with
