@@ -194,6 +194,21 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 #: vendor doesn't require touching this list.
 AD_EXPORT_VENDOR_PREFERENCE = ("sentinelone", "carbonblack")
 
+#: Whether each vendor's credentials are shared across every client
+#: ("global" — one API token for the whole organization, e.g. SentinelOne's
+#: management API) or distinct per client ("per_client", e.g. Carbon Black
+#: Cloud, where each environment has its own API ID/secret/org key). This is
+#: a fixed fact about how each vendor's API is provisioned, not something a
+#: config.yaml entry or a DB-backed setup form should be able to override —
+#: ``VendorConfig.scope`` (parsed from config.yaml) and
+#: ``dashboard.config_db`` (parsed from the DB) both agree with this table;
+#: it's the single place either one is checked against.
+VENDOR_SCOPE = {
+    "sentinelone": "global",
+    "carbonblack": "per_client",
+    "bitdefender": "global",
+}
+
 
 def pick_ad_export_vendor(client_cfg: ClientConfig) -> str:
     """Pick the vendor to carry ``client_cfg``'s AD export.

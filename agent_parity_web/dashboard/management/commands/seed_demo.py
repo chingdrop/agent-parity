@@ -28,6 +28,7 @@ from agent_parity.config import ConfigError, load_config
 from agent_parity.connectors.base import infer_machine_type
 from agent_parity.models import AgentDevice, normalize_hostname
 from dashboard import services
+from dashboard.config_db import build_app_config_from_db, import_app_config
 from dashboard.models import CorrelationRun
 
 
@@ -95,10 +96,16 @@ class Command(BaseCommand):
     help = "Seed two CorrelationRuns of demo history per client from the fixtures."
 
     def handle(self, *args, **options):
+        # Bootstrap the DB from config.yaml on every run (idempotent upsert)
+        # so a fresh checkout's `uv sync && migrate && seed_demo` keeps
+        # working turnkey, with no separate manual import step. Every other
+        # entrypoint assumes the DB is already populated (via this command,
+        # `manage.py import_config`, or the setup page).
         try:
-            config = load_config()
+            import_app_config(load_config())
         except (ConfigError, FileNotFoundError) as exc:
             raise CommandError(f"Could not load config.yaml: {exc}") from exc
+        config = build_app_config_from_db()
 
         for slug in sorted(config.clients):
             client_cfg = config.client(slug)

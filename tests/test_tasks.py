@@ -25,16 +25,15 @@ original_collect = services.collect_vendor_inventory
 
 
 def test_chord_produces_partial_run_when_one_vendor_fails(
-        eager_celery, monkeypatch, django_capture_on_commit_callbacks
+        eager_celery, monkeypatch, django_capture_on_commit_callbacks, db_config
 ):
     """One flaky vendor API must not prevent the CorrelationRun: the run
     completes as PARTIAL with the failure recorded, and the vendors that
     succeeded still produce snapshots."""
     monkeypatch.setattr(services, "collect_vendor_inventory", _fail_carbonblack)
-    config = load_config()
 
     with django_capture_on_commit_callbacks(execute=True):
-        run_id = tasks.dispatch_client(config, config.client("acme"))
+        run_id = tasks.dispatch_client(db_config, db_config.client("acme"))
 
     run = CorrelationRun.objects.get(pk=run_id)
     assert run.status == CorrelationRun.RunStatus.PARTIAL
@@ -48,11 +47,10 @@ def test_chord_produces_partial_run_when_one_vendor_fails(
 
 
 def test_chord_completes_cleanly_when_all_vendors_succeed(
-        eager_celery, django_capture_on_commit_callbacks
+        eager_celery, django_capture_on_commit_callbacks, db_config
 ):
-    config = load_config()
     with django_capture_on_commit_callbacks(execute=True):
-        run_id = tasks.dispatch_client(config, config.client("globex"))
+        run_id = tasks.dispatch_client(db_config, db_config.client("globex"))
 
     run = CorrelationRun.objects.get(pk=run_id)
     assert run.status == CorrelationRun.RunStatus.COMPLETE
@@ -102,12 +100,11 @@ def test_callback_is_idempotent_on_duplicate_delivery(eager_celery):
 
 
 def test_dispatch_all_clients_respects_per_client_cadence(
-        eager_celery, django_capture_on_commit_callbacks
+        eager_celery, django_capture_on_commit_callbacks, db_config
 ):
-    config = load_config()
     with django_capture_on_commit_callbacks(execute=True):
         first = tasks.dispatch_all_clients()
-    assert sorted(first) == sorted(config.clients)
+    assert sorted(first) == sorted(db_config.clients)
 
     # Immediately re-dispatching: nobody is due yet (acme=6h, globex=12h).
     with django_capture_on_commit_callbacks(execute=True):
@@ -117,4 +114,4 @@ def test_dispatch_all_clients_respects_per_client_cadence(
     # force=True overrides the cadence check.
     with django_capture_on_commit_callbacks(execute=True):
         forced = tasks.dispatch_all_clients(force=True)
-    assert sorted(forced) == sorted(config.clients)
+    assert sorted(forced) == sorted(db_config.clients)

@@ -118,6 +118,12 @@ STORAGES = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Global staleness threshold for coverage classification — mirrors
+# config.yaml's stale_days: 14 default. Deliberately global, not per-client,
+# and deliberately not moved into the DB-backed client config
+# (dashboard/config_db.py) — see CLAUDE.md.
+STALE_DAYS = int(os.environ.get("STALE_DAYS", "14"))
+
 # --- Celery (CELERY_ namespace, consumed by config/celery.py) ---------------
 
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

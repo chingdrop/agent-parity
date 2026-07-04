@@ -14,15 +14,16 @@ import requests
 from botocore.exceptions import ClientError
 from django.core.management.base import BaseCommand, CommandError
 
-from agent_parity.config import get_storage, load_config
+from agent_parity.config import get_storage
 from agent_parity.storage import StorageError
+from dashboard.config_db import build_app_config_from_db
 
 
 class Command(BaseCommand):
     help = "Smoke test only: round-trip a real object through object storage."
 
     def handle(self, *args, **options):
-        config = load_config()
+        config = build_app_config_from_db()
         storage = get_storage(config)
         if storage is None:
             raise CommandError(

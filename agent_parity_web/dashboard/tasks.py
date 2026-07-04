@@ -36,9 +36,10 @@ from django.db import transaction
 from django.utils import timezone
 
 from agent_parity.ad_sync.parser import parse_ad_export
-from agent_parity.config import AppConfig, ClientConfig, load_config
+from agent_parity.config import AppConfig, ClientConfig
 from agent_parity.models import AgentDevice
 from dashboard import services
+from dashboard.config_db import build_app_config_from_db
 from dashboard.models import CorrelationRun
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,9 @@ def _vendor_payload(client_slug: str, vendor_name: str) -> dict:
     autoretry; omitted to keep the failure semantics easy to follow.)
     """
     try:
-        records = services.collect_vendor_inventory(load_config(), client_slug, vendor_name)
+        records = services.collect_vendor_inventory(
+            build_app_config_from_db(), client_slug, vendor_name
+        )
         return {
             "source": vendor_name,
             "ok": True,
@@ -95,7 +98,7 @@ VENDOR_TASKS = {
 def collect_ad_export(client_slug: str) -> dict:
     """The AD export leg of the fan-out (remote script execution is slow)."""
     try:
-        raw_csv = services.collect_ad_csv(load_config(), client_slug)
+        raw_csv = services.collect_ad_csv(build_app_config_from_db(), client_slug)
         return {"source": "ad", "ok": True, "csv": raw_csv}
     except Exception as exc:  # noqa: BLE001
         logger.warning("AD export failed for %s: %s", client_slug, exc)
@@ -117,7 +120,6 @@ def correlate_client(results: list[dict], run_id: int) -> dict:
         logger.warning("Run %s already finalized; ignoring duplicate callback", run_id)
         return {"run_id": run_id, "status": run.status, "duplicate": True}
 
-    config = load_config()
     vendor_status: dict[str, str] = {}
     ad_csv: str | None = None
     agent_records: list[AgentDevice] = []
@@ -200,10 +202,10 @@ def _client_is_due(client_cfg: ClientConfig) -> bool:
 def dispatch_all_clients(force: bool = False) -> list[str]:
     """Beat entrypoint: kick off the group+chord for every client that is due.
 
-    Beat ticks hourly; each client's own ``sync_interval_hours`` from
-    config.yaml decides whether it actually runs this tick.
+    Beat ticks hourly; each client's own ``sync_interval_hours`` decides
+    whether it actually runs this tick.
     """
-    config = load_config()
+    config = build_app_config_from_db()
     dispatched = []
     for slug, client_cfg in sorted(config.clients.items()):
         if not force and not _client_is_due(client_cfg):

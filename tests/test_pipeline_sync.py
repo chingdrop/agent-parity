@@ -43,7 +43,10 @@ def test_known_scenario_devices_classify_as_authored():
     assert run.snapshots.filter(device__join_key="acme-dc02").count() == 2
 
 
-def test_sync_and_correlate_command_defaults_to_first_client(capsys=None):
+def test_sync_and_correlate_command_defaults_to_first_client(db_config, capsys=None):
+    # sync_and_correlate assumes the DB is already populated (via seed_demo,
+    # `manage.py import_config`, or the setup page) — it doesn't bootstrap
+    # from config.yaml itself.
     call_command("sync_and_correlate")
     run = CorrelationRun.objects.get()
     assert run.client.slug == "acme"  # first alphabetically

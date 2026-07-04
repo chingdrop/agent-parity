@@ -2,14 +2,14 @@
 
 Calls the exact same collection/correlation/persistence functions the Celery
 tasks call (``dashboard.services``); the only difference from scaled mode is
-that nothing goes through a task queue. With no credentials in the
-environment, every connector runs against ``sample_data/`` fixtures.
+that nothing goes through a task queue. With no credentials configured,
+every connector runs against ``sample_data/`` fixtures.
 """
 
 from django.core.management.base import BaseCommand, CommandError
 
-from agent_parity.config import ConfigError, load_config
 from dashboard import services
+from dashboard.config_db import build_app_config_from_db
 
 
 class Command(BaseCommand):
@@ -18,21 +18,21 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument(
             "--client",
-            help="Client slug from config.yaml (default: the first client).",
+            help="Client slug (default: the first client, alphabetically).",
         )
         parser.add_argument(
             "--all",
             action="store_true",
-            help="Run for every client in config.yaml instead of just one.",
+            help="Run for every client instead of just one.",
         )
 
     def handle(self, *args, **options):
-        try:
-            config = load_config()
-        except (ConfigError, FileNotFoundError) as exc:
-            raise CommandError(f"Could not load config.yaml: {exc}") from exc
+        config = build_app_config_from_db()
         if not config.clients:
-            raise CommandError("config.yaml declares no clients.")
+            raise CommandError(
+                "No clients configured — run `manage.py import_config` (from "
+                "config.yaml) or add one through the setup page first."
+            )
 
         if options["all"]:
             slugs = sorted(config.clients)
