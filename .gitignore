@@ -1,21 +1,40 @@
 # Python
 __pycache__/
 *.py[cod]
+*.pyo
 .venv/
 *.egg-info/
+dist/
+build/
 
 # Django
 db.sqlite3
+db.sqlite3-shm
+db.sqlite3-wal
 staticfiles/
+media/
+*.log
+local_settings.py
+
+# Celery
+celerybeat-schedule
+celerybeat-schedule.db
+celerybeat.pid
+celery_worker.pid
 
 # Secrets — config.yaml holds only ${VAR} references and is safe to commit;
 # .env holds the actual values and must never be.
 .env
+.env.*
+!.env.example
 
 # Tooling
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 .claude/
 .idea/
 .vscode/
 .DS_Store
-celerybeat-schedule*
