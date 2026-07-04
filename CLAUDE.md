@@ -212,11 +212,14 @@ bucket provisioning is out-of-band, so that stays smoke-test-only code).
 `load_config()` parses `config.yaml` (topology) + `.env` (secrets) into `AppConfig`/
 `ClientConfig`/`VendorConfig` dataclasses — every secret in `config.yaml` is a `${VAR}`
 reference; an unset variable resolves to `None` rather than raising, which is exactly
-what puts a connector into fixture mode. `credentials_for(client_slug, vendor_name)`
-is the one place that knows `global` vs `per_client` scope (`VENDOR_SCOPE`) —
+what puts a connector into fixture mode. `sites_for(client_slug, vendor_name)` returns
+one merged config dict per site/tenant (see "Multi-site/tenant clients" below) — it's
+the one place that knows `global` vs `per_client` scope (`VENDOR_SCOPE`) —
 SentinelOne/BitDefender are global (same credentials for every client), Carbon Black
 is per-client. When adding a vendor or a client, this is the function whose behavior
 actually matters; don't special-case scope logic in a connector or in `services.py`.
+`get_connectors(config, client_slug, vendor_name)` builds one connector per entry
+`sites_for()` returns — almost always a one-element tuple.
 
 **`load_config()` is no longer what production entrypoints call.** Client topology and
 vendor credentials are DB-backed now (`dashboard/config_db.py`'s `build_app_config_from_db()`,
@@ -266,6 +269,64 @@ Fixture mode picks the CSV by target device — `sample_data/<client>/ad_export_
 `sample_data/globex/`) so this path has real test/demo coverage; `acme` stays
 single-domain.
 
+## Multi-site/tenant clients (`ClientConfig.vendors`, `AppConfig.sites_for`)
+
+The vendor-side counterpart to multi-domain AD: `ClientConfig.vendors[vendor_name]` is
+`tuple[dict, ...]`, not a single credential dict — one "site" entry per tuple element.
+What a site dict *is* depends on `VENDOR_SCOPE`, and that split isn't arbitrary — it
+matches how each vendor's API is actually provisioned:
+
+- **Per-client scope (Carbon Black)**: each entry is a complete, independent credential
+  block (`api_url`/`api_id`/`api_key`/`org_key`) — a second entry is a second, fully
+  separate tenant. No connector changes needed at all — `CarbonBlackConnector` doesn't
+  know or care whether it's one of several tenants; multi-tenant support is purely
+  "call the existing single-tenant mechanism N times and concatenate," the same
+  pattern `collect_ad_frame` already established for AD domains.
+- **Global scope (SentinelOne, BitDefender)**: each entry is small — just an optional
+  site filter (e.g. `{"site_ids": "..."}`, or `{}` for "the whole account," today's
+  default) — merged onto the vendor-level shared credentials in `sites_for()`, never
+  stored as if it were a secret. SentinelOne's `_in_scoped_sites`/`site_ids` mirrors a
+  real, documented API filter (`GET /web/api/v2.1/agents?siteIds=...`); BitDefender's
+  `_in_scoped_company`/`company_id` is modeled the same way but explicitly flagged in
+  `connectors/bitdefender.py` as unverified against GravityZone's real multi-tenant
+  shape — same caution as the `createCustomScriptTask` removal earlier in that file;
+  don't remove the hedge without actually confirming it against docs or a tenant.
+
+An optional `"label"` key in a site dict names it — used for the DB row
+(`VendorCredential.site_label`) and for `vendor_status` keys
+(`services.site_status_key`), never for anything security-relevant. Critically, a
+site's `site_label` (DB storage identity, auto-index-assigned when there's more than
+one row and no explicit label) is **not** the same thing as its `"label"` key
+(config-authored, semantically meaningful) — `config_db.py` stores `credentials` (and
+therefore any `"label"` key) verbatim and never reintroduces `site_label` as a
+`"label"`. An earlier version of this code conflated the two and broke fixture-file
+lookup for unlabeled sites (see `test_config_db.py`'s dedicated regression test) — if
+you touch `import_app_config`/`build_app_config_from_db`, keep them separate.
+
+Fixture mode picks the inventory JSON by label the same way AD picks CSVs by target
+device — `sample_data/<client>/<vendor>_inventory_<label>.json` when a site has one,
+plain `<vendor>_inventory.json` when it doesn't (`connectors/base.py`'s
+`_fixture_fetch_inventory`) — but unlike AD domains (physically separate resources),
+SentinelOne/BitDefender sites are one account queried with a filter, so those two
+vendors are *not* demoed with real multi-site fixture data, only unit-tested
+(`tests/test_connectors.py`); Carbon Black tenants genuinely are separate
+resources, so the demo's `acme` client has two real tenant fixtures
+(`carbonblack_inventory.json` + `carbonblack_inventory_branch.json`).
+
+The Celery fan-out gains a third dimension: one task per (client, vendor, site index),
+with the `vendor_status` key precomputed at dispatch time
+(`tasks.dispatch_client`/`services.site_status_key`) and threaded through the task's
+JSON-safe payload rather than recomputed inside it — the task doesn't have (and
+shouldn't need) `len(sites)` to decide whether an index suffix is warranted.
+
+The setup page's manual form deliberately only edits the *first* site/tenant per
+vendor per client (`views_setup.client_form`'s `existing_rows` picks one row by
+`site_label`/`pk` order, and never uses `update_or_create` for the save — with more
+than one matching row that would raise `MultipleObjectsReturned`). Additional
+sites/tenants are added via config.yaml (re-)import or directly through admin;
+a full add/remove-site form is a real gap, not an oversight — flagged in code, not
+silently unsupported.
+
 ## DB-backed config (`agent_parity_web/dashboard/config_db.py`, `views_setup.py`)
 
 Client topology (`Client.ad_target_devices`/`sync_interval_hours`/`enabled_vendors`) and
@@ -280,7 +341,7 @@ functions are the entire boundary:
   (`views_setup.import_config_yaml`) — both just wrap `load_config()` + this.
 - **`build_app_config_from_db()`** — the inverse; what every production entrypoint
   calls now. Returns the exact same `AppConfig`/`ClientConfig`/`VendorConfig` shape
-  `load_config()` does, so `credentials_for()`/`get_connector()`/`pick_ad_export_vendor()`
+  `load_config()` does, so `sites_for()`/`get_connectors()`/`pick_ad_export_vendor()`
   are reused completely unchanged and `agent_parity/` never learns the DB exists — the
   Django/pipeline boundary at the top of this file stays intact. `stale_days` comes from
   the `STALE_DAYS` Django setting and `storage` is built straight from `STORAGE_*`
@@ -307,9 +368,10 @@ functions are the entire boundary:
 
 ## Celery chord (`agent_parity_web/dashboard/tasks.py`)
 
-One fan-out task per `(client, vendor)` inventory pull plus one AD-export task per
-client, feeding a chord callback (`correlate_client`) that runs the correlation once
-per client against the complete result set. Three things that are easy to break if
+One fan-out task per `(client, vendor, site/tenant)` inventory pull (see "Multi-site/tenant
+clients" above — almost always just `(client, vendor)`) plus one AD-export task per
+domain controller, feeding a chord callback (`correlate_client`) that runs the correlation
+once per client against the complete result set. Three things that are easy to break if
 touched carelessly:
 
 - Fan-out tasks **return** `{"ok": False, "error": ...}` on failure — they never raise.

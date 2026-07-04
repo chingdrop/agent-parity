@@ -1,10 +1,11 @@
 """Celery tasks: the scaled-mode pipeline.
 
 Shape: one *group* of fan-out tasks per client — one AD export task per
-domain controller (a client with multiple AD domains has more than one)
-plus one inventory pull per enabled vendor — feeding a *chord* callback that
-runs the pandas correlation exactly once, against that client's complete
-result set.
+domain controller (a client with multiple AD domains has more than one),
+one inventory-pull task per (vendor, site/tenant) the client has within
+that vendor (almost always just one), feeding a *chord* callback that runs
+the pandas correlation exactly once, against that client's complete result
+set.
 
 Three deliberate design points:
 
@@ -38,7 +39,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from agent_parity.ad_sync.parser import concat_ad_frames, parse_ad_export
-from agent_parity.config import AppConfig, ClientConfig
+from agent_parity.config import AppConfig, ClientConfig, get_connectors
 from agent_parity.models import AgentDevice
 from dashboard import services
 from dashboard.config_db import build_app_config_from_db
@@ -47,46 +48,51 @@ from dashboard.models import CorrelationRun
 logger = logging.getLogger(__name__)
 
 
-# --- fan-out: one task per (client, vendor) -----------------------------------
+# --- fan-out: one task per (client, vendor, site/tenant) -----------------------
 
 
-def _vendor_payload(client_slug: str, vendor_name: str) -> dict:
-    """Fetch one vendor's inventory, returning a JSON-safe result envelope.
+def _vendor_payload(client_slug: str, vendor_name: str, site_index: int, key: str) -> dict:
+    """Fetch one (vendor, site/tenant)'s inventory, returning a JSON-safe
+    result envelope. ``key`` is precomputed at dispatch time
+    (``dispatch_client``, via ``services.site_status_key``) since it needs
+    to know how many sites/tenants this vendor has in total to decide
+    whether an index suffix is even necessary — this task only needs to use
+    it, not recompute it.
 
     Failures are *returned*, not raised — the chord callback must always fire
     with whatever succeeded. (Transient-error retries would slot in here with
     autoretry; omitted to keep the failure semantics easy to follow.)
     """
     try:
-        records = services.collect_vendor_inventory(
-            build_app_config_from_db(), client_slug, vendor_name
-        )
+        connector = get_connectors(build_app_config_from_db(), client_slug, vendor_name)[site_index]
+        records = connector.fetch_inventory()
         return {
             "source": vendor_name,
+            "key": key,
             "ok": True,
             "records": [record.to_dict() for record in records],
         }
     except Exception as exc:  # noqa: BLE001
-        logger.warning("%s inventory failed for %s: %s", vendor_name, client_slug, exc)
-        return {"source": vendor_name, "ok": False, "error": str(exc)}
+        logger.warning("%s (%s) inventory failed for %s: %s", vendor_name, key, client_slug, exc)
+        return {"source": vendor_name, "key": key, "ok": False, "error": str(exc)}
 
 
 # Rate limits reflect each vendor's practical API budget: SentinelOne's
 # management API is generous; Carbon Black Live Response sessions are a
 # scarce per-org resource; GravityZone's JSON-RPC endpoint throttles hard.
 @shared_task(rate_limit="30/m")
-def fetch_sentinelone_inventory(client_slug: str) -> dict:
-    return _vendor_payload(client_slug, "sentinelone")
+def fetch_sentinelone_inventory(client_slug: str, site_index: int, key: str) -> dict:
+    return _vendor_payload(client_slug, "sentinelone", site_index, key)
 
 
 @shared_task(rate_limit="10/m")
-def fetch_carbonblack_inventory(client_slug: str) -> dict:
-    return _vendor_payload(client_slug, "carbonblack")
+def fetch_carbonblack_inventory(client_slug: str, site_index: int, key: str) -> dict:
+    return _vendor_payload(client_slug, "carbonblack", site_index, key)
 
 
 @shared_task(rate_limit="6/m")
-def fetch_bitdefender_inventory(client_slug: str) -> dict:
-    return _vendor_payload(client_slug, "bitdefender")
+def fetch_bitdefender_inventory(client_slug: str, site_index: int, key: str) -> dict:
+    return _vendor_payload(client_slug, "bitdefender", site_index, key)
 
 
 VENDOR_TASKS = {
@@ -134,9 +140,11 @@ def correlate_client(results: list[dict], run_id: int) -> dict:
     for payload in results:
         source = payload["source"]
         # AD payloads are keyed per domain (ad:<target_device>) since a
-        # client can have more than one — vendor payloads keep their plain
-        # vendor name, of which there's exactly one per client.
-        key = f"ad:{payload['target_device']}" if source == "ad" else source
+        # client can have more than one; vendor payloads carry their own
+        # precomputed key (services.site_status_key) — plain vendor name
+        # for the common single-site/tenant case, vendor:label or
+        # vendor:index when there's more than one.
+        key = f"ad:{payload['target_device']}" if source == "ad" else payload["key"]
         if not payload.get("ok"):
             vendor_status[key] = f"error: {payload.get('error', 'unknown')}"
             continue
@@ -181,12 +189,16 @@ def dispatch_client(config: AppConfig, client_cfg: ClientConfig) -> int | None:
 
     with transaction.atomic():
         run = CorrelationRun.objects.create(client=client, stale_days=config.stale_days)
+        vendor_tasks = []
+        for vendor in sorted(client_cfg.vendors):
+            sites = client_cfg.vendors[vendor]
+            for index, site in enumerate(sites):
+                key = services.site_status_key(vendor, site, index, len(sites))
+                vendor_tasks.append(VENDOR_TASKS[vendor].s(client_cfg.slug, index, key))
         header = [
             collect_ad_export.s(client_cfg.slug, target_device)
             for target_device in client_cfg.ad_target_devices
-        ] + [
-            VENDOR_TASKS[vendor].s(client_cfg.slug) for vendor in sorted(client_cfg.vendors)
-        ]
+        ] + vendor_tasks
         callback = correlate_client.s(run_id=run.pk).on_error(mark_run_failed.s(run_id=run.pk))
         # Dispatch only after the CorrelationRun row commits — otherwise a
         # worker can pick up the callback before the run it references exists.

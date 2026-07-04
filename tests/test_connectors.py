@@ -248,3 +248,74 @@ def test_as_text_coerces_bytes_and_rejects_dicts():
     assert connector._as_text(b"raw bytes") == "raw bytes"
     with pytest.raises(ConnectorError, match="expected text output"):
         connector._as_text({"unexpected": "dict"})
+
+
+# --- multi-site/tenant filtering (site_ids / company_id) ------------------------
+
+
+def _s1_item(agent_id: str, site_id: str) -> dict:
+    return {"id": agent_id, "computerName": f"HOST-{agent_id}", "siteId": site_id}
+
+
+def test_sentinelone_no_site_filter_returns_every_item():
+    connector = SentinelOneConnector(credentials={"api_url": "x", "api_token": "y"})
+    payload = {"data": [_s1_item("1", "site-a"), _s1_item("2", "site-b")]}
+    devices = connector._parse_inventory(payload)
+    assert {d.agent_id for d in devices} == {"1", "2"}
+
+
+def test_sentinelone_site_filter_narrows_to_matching_sites():
+    connector = SentinelOneConnector(
+        credentials={"api_url": "x", "api_token": "y", "site_ids": "site-a"}
+    )
+    payload = {
+        "data": [_s1_item("1", "site-a"), _s1_item("2", "site-b"), _s1_item("3", "site-a")]
+    }
+    devices = connector._parse_inventory(payload)
+    assert {d.agent_id for d in devices} == {"1", "3"}
+
+
+def test_sentinelone_site_filter_accepts_a_comma_separated_list():
+    connector = SentinelOneConnector(
+        credentials={"api_url": "x", "api_token": "y", "site_ids": "site-a,site-c"}
+    )
+    payload = {
+        "data": [_s1_item("1", "site-a"), _s1_item("2", "site-b"), _s1_item("3", "site-c")]
+    }
+    devices = connector._parse_inventory(payload)
+    assert {d.agent_id for d in devices} == {"1", "3"}
+
+
+def test_sentinelone_live_fetch_passes_site_ids_query_param(monkeypatch):
+    connector = SentinelOneConnector(
+        credentials={"api_url": "https://usea1.sentinelone.net", "api_token": "t", "site_ids": "site-a"}
+    )
+    captured = {}
+
+    def fake_request_json(method, url, headers=None, params=None):
+        captured["params"] = params
+        return {"data": [], "pagination": {"nextCursor": None}}
+
+    monkeypatch.setattr(connector, "_request_json", fake_request_json)
+    connector._live_fetch_inventory()
+    assert captured["params"]["siteIds"] == "site-a"
+
+
+def _bd_item(agent_id: str, company_id: str) -> dict:
+    return {"id": agent_id, "name": f"HOST-{agent_id}", "companyId": company_id}
+
+
+def test_bitdefender_no_company_filter_returns_every_item():
+    connector = BitDefenderConnector(credentials={"api_url": "x", "api_key": "y"})
+    payload = {"result": {"items": [_bd_item("1", "co-a"), _bd_item("2", "co-b")]}}
+    devices = connector._parse_inventory(payload)
+    assert {d.agent_id for d in devices} == {"1", "2"}
+
+
+def test_bitdefender_company_filter_narrows_to_matching_company():
+    connector = BitDefenderConnector(
+        credentials={"api_url": "x", "api_key": "y", "company_id": "co-a"}
+    )
+    payload = {"result": {"items": [_bd_item("1", "co-a"), _bd_item("2", "co-b")]}}
+    devices = connector._parse_inventory(payload)
+    assert {d.agent_id for d in devices} == {"1"}

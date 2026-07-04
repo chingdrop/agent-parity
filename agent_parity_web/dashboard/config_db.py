@@ -3,7 +3,7 @@
 
 ``agent_parity/config.py``'s dataclasses (``AppConfig``, ``ClientConfig``,
 ``VendorConfig``, ``StorageConfig``) stay the single contract the pipeline
-consumes: ``credentials_for()``, ``get_connector()``, ``get_storage()``, and
+consumes: ``sites_for()``, ``get_connectors()``, ``get_storage()``, and
 ``pick_ad_export_vendor()`` are all reused completely unchanged by every
 production entrypoint. This module is the only place that knows those
 dataclasses can also be built from the DB rather than parsed from YAML —
@@ -41,6 +41,21 @@ from agent_parity.config import (
 from dashboard.models import Client, VendorCredential
 
 
+def _site_label(site: dict, index: int, total: int) -> str:
+    """The DB row's site_label for one of a vendor's site/tenant entries —
+    purely a storage-identity key so multiple rows for the same (client,
+    vendor) don't collide; an explicit ``label`` key in the site dict wins,
+    otherwise an index only when there's more than one. This value is never
+    reintroduced as a ``label`` on read — ``credentials`` (stored verbatim,
+    "label" key included or not exactly as configured) is the only thing
+    that determines whether a site is "labeled" downstream (fixture
+    filenames, vendor_status keys) — see ``build_app_config_from_db``.
+    """
+    if "label" in site:
+        return str(site["label"])
+    return str(index) if total > 1 else ""
+
+
 def import_app_config(config: AppConfig) -> None:
     """Upsert Client/VendorCredential rows from an already-loaded AppConfig."""
     for vendor_name, vendor_cfg in config.vendors.items():
@@ -48,6 +63,7 @@ def import_app_config(config: AppConfig) -> None:
             VendorCredential.objects.update_or_create(
                 client=None,
                 vendor=vendor_name,
+                site_label="",
                 defaults={"credentials": vendor_cfg.credentials},
             )
 
@@ -61,10 +77,24 @@ def import_app_config(config: AppConfig) -> None:
                 "sync_interval_hours": client_cfg.sync_interval_hours,
             },
         )
-        for vendor_name, creds in client_cfg.vendors.items():
-            if VENDOR_SCOPE.get(vendor_name) == "per_client":
+        for vendor_name, sites in client_cfg.vendors.items():
+            scope = VENDOR_SCOPE.get(vendor_name)
+            for index, site in enumerate(sites):
+                # Per-client scope: every site entry is a real, distinct
+                # tenant credential, always worth a row. Global scope: only
+                # worth a row when there's an actual site filter to
+                # remember — a lone empty dict means "the whole account,"
+                # already covered by the shared global row above.
+                if scope != "per_client" and not site and len(sites) == 1:
+                    continue
+                # Stored verbatim -- including "label" if the site dict has
+                # one, excluding it otherwise -- so an unlabeled site never
+                # gains one through the DB round-trip (see build_app_config_from_db).
                 VendorCredential.objects.update_or_create(
-                    client=client, vendor=vendor_name, defaults={"credentials": creds}
+                    client=client,
+                    vendor=vendor_name,
+                    site_label=_site_label(site, index, len(sites)),
+                    defaults={"credentials": dict(site)},
                 )
 
 
@@ -89,13 +119,27 @@ def build_app_config_from_db() -> AppConfig:
 
     clients: dict[str, ClientConfig] = {}
     for client in Client.objects.all():
-        per_client_creds = {row.vendor: row.credentials for row in client.vendor_credentials.all()}
+        # Group this client's own VendorCredential rows by vendor. For a
+        # per_client vendor these are real, distinct tenant credentials; for
+        # a global vendor they're just site filters (see the model
+        # docstring) merged onto the shared secret in sites_for(). No rows
+        # at all -- for either scope -- means one default site with an
+        # empty dict, exactly today's single-site/single-tenant behavior.
+        rows_by_vendor: dict[str, list] = {}
+        for row in client.vendor_credentials.order_by("site_label", "pk"):
+            rows_by_vendor.setdefault(row.vendor, []).append(row)
+
         vendors = {}
         for vendor_name in client.enabled_vendors:
-            if VENDOR_SCOPE.get(vendor_name) == "per_client":
-                vendors[vendor_name] = per_client_creds.get(vendor_name, {})
+            rows = rows_by_vendor.get(vendor_name)
+            if not rows:
+                vendors[vendor_name] = ({},)
             else:
-                vendors[vendor_name] = {}
+                # credentials was stored verbatim (see import_app_config) —
+                # a "label" key survives here only if the site was actually
+                # configured with one; site_label itself (which may be an
+                # auto-assigned index) never leaks into this shape.
+                vendors[vendor_name] = tuple(dict(row.credentials) for row in rows)
         clients[client.slug] = ClientConfig(
             name=client.name,
             slug=client.slug,

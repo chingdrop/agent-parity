@@ -49,10 +49,21 @@ def setup_overview(request):
 
 @staff_member_required
 def client_form(request, slug: str | None = None):
+    """Manages exactly one site/tenant per vendor per client — a client with
+    more than one (see agent_parity.config's multi-site/tenant support) can
+    have several VendorCredential rows for the same (client, vendor) pair,
+    distinguished by site_label. This form only ever touches the first one
+    (by site_label/pk order); additional sites/tenants are added via
+    config.yaml (re-)import or directly through admin. Not using
+    update_or_create's (client, vendor) lookup here on purpose — with more
+    than one matching row it would raise MultipleObjectsReturned.
+    """
     client = get_object_or_404(Client, slug=slug) if slug else None
-    existing_creds = (
-        {row.vendor: row.credentials for row in client.vendor_credentials.all()} if client else {}
-    )
+    existing_rows: dict[str, VendorCredential] = {}
+    if client:
+        for row in client.vendor_credentials.order_by("site_label", "pk"):
+            existing_rows.setdefault(row.vendor, row)
+    existing_creds = {vendor: row.credentials for vendor, row in existing_rows.items()}
 
     if request.method == "POST":
         form = ClientForm(request.POST, instance=client)
@@ -66,9 +77,14 @@ def client_form(request, slug: str | None = None):
                 if vendor not in saved_client.enabled_vendors:
                     continue
                 merged = {**existing_creds.get(vendor, {}), **vendor_form.credentials()}
-                VendorCredential.objects.update_or_create(
-                    client=saved_client, vendor=vendor, defaults={"credentials": merged}
-                )
+                row = existing_rows.get(vendor)
+                if row:
+                    row.credentials = merged
+                    row.save(update_fields=["credentials"])
+                else:
+                    VendorCredential.objects.create(
+                        client=saved_client, vendor=vendor, credentials=merged
+                    )
             return redirect("dashboard:setup_overview")
     else:
         form = ClientForm(instance=client)

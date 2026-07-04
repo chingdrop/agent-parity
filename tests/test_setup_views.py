@@ -156,6 +156,48 @@ def test_client_edit_never_echoes_stored_credentials_into_the_page(staff_client)
     assert b"super-secret-value" not in response.content
 
 
+def test_client_edit_with_multiple_tenants_edits_the_first_without_crashing(staff_client):
+    """A client with more than one VendorCredential row for the same vendor
+    (multiple Carbon Black tenants) must not raise MultipleObjectsReturned —
+    the form edits only the first (by site_label/pk order); the second
+    tenant's row is left untouched."""
+    client_row = Client.objects.create(
+        name="Acme Corp", slug="acme", enabled_vendors=["carbonblack"]
+    )
+    first = VendorCredential.objects.create(
+        client=client_row, vendor="carbonblack", site_label="0", credentials={"org_key": "FIRST"}
+    )
+    second = VendorCredential.objects.create(
+        client=client_row,
+        vendor="carbonblack",
+        site_label="branch",
+        credentials={"org_key": "SECOND"},
+    )
+
+    response = staff_client.post(
+        reverse("dashboard:client_edit", args=["acme"]),
+        {
+            "name": "Acme Corp",
+            "slug": "acme",
+            "is_active": "on",
+            "ad_target_devices": "ACME-DC01",
+            "sync_interval_hours": "6",
+            "enabled_vendors": ["carbonblack"],
+            "carbonblack-api_url": "",
+            "carbonblack-api_id": "",
+            "carbonblack-api_key": "",
+            "carbonblack-org_key": "FIRST-ROTATED",
+        },
+    )
+    assert response.status_code == 302
+    assert VendorCredential.objects.filter(client=client_row, vendor="carbonblack").count() == 2
+
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.credentials["org_key"] == "FIRST-ROTATED"
+    assert second.credentials["org_key"] == "SECOND"
+
+
 # --- vendor_credential_form (global) -------------------------------------------------
 
 

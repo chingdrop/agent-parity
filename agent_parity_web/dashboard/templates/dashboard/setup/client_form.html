@@ -20,7 +20,9 @@
     <fieldset>
         <legend>{{ vendor }} credentials</legend>
         <p class="help-text">Only used if "{{ vendor }}" is checked above. Leave
-            blank to keep the current stored value.</p>
+            blank to keep the current stored value. If this client has more
+            than one {{ vendor }} tenant, this only edits the first —
+            additional tenants are added via config.yaml import or admin.</p>
         {% for field in vendor_form %}
         <div class="field">
             <label for="{{ field.id_for_label }}">{{ field.label }}</label>

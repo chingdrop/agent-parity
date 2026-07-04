@@ -6,7 +6,7 @@ import pytest
 from agent_parity.config import (
     ClientConfig,
     ConfigError,
-    get_connector,
+    get_connectors,
     get_storage,
     load_config,
     pick_ad_export_vendor,
@@ -21,7 +21,7 @@ def _client(vendors: tuple[str, ...]) -> ClientConfig:
         slug="test",
         ad_target_devices=("TEST-DC01",),
         sync_interval_hours=24,
-        vendors={v: {} for v in vendors},
+        vendors={v: ({},) for v in vendors},
     )
 
 
@@ -33,53 +33,70 @@ def config_with_creds(monkeypatch):
     monkeypatch.setenv("ACME_CB_API_ID", "ACMEID")
     monkeypatch.setenv("ACME_CB_API_KEY", "acme-cb-secret")
     monkeypatch.setenv("ACME_CB_ORG_KEY", "ACMEORG")
+    monkeypatch.setenv("ACME_CB2_API_URL", "https://defense.conferdeploy.net")
+    monkeypatch.setenv("ACME_CB2_API_ID", "ACMEBRANCHID")
+    monkeypatch.setenv("ACME_CB2_API_KEY", "acme-branch-secret")
+    monkeypatch.setenv("ACME_CB2_ORG_KEY", "ACMEBRANCHORG")
     return load_config()
 
 
 def test_global_scope_returns_same_credentials_for_every_client(config_with_creds):
-    acme = config_with_creds.credentials_for("acme", "sentinelone")
-    globex = config_with_creds.credentials_for("globex", "sentinelone")
-    assert acme == globex == {
-        "api_url": "https://usea1.sentinelone.net",
-        "api_token": "s1-global-token",
-    }
+    acme = config_with_creds.sites_for("acme", "sentinelone")
+    globex = config_with_creds.sites_for("globex", "sentinelone")
+    assert acme == globex == (
+        {"api_url": "https://usea1.sentinelone.net", "api_token": "s1-global-token"},
+    )
 
 
 def test_per_client_scope_returns_that_clients_block(config_with_creds):
-    creds = config_with_creds.credentials_for("acme", "carbonblack")
+    sites = config_with_creds.sites_for("acme", "carbonblack")
+    creds = sites[0]
     assert creds["api_id"] == "ACMEID"
     assert creds["api_key"] == "acme-cb-secret"
     assert creds["org_key"] == "ACMEORG"
 
 
+def test_per_client_scope_returns_every_tenant_acme_has(config_with_creds):
+    """Acme has two Carbon Black tenants in config.yaml (its primary org
+    plus a labeled "branch" one) — both must come back, as fully
+    independent credential blocks, not merged with each other."""
+    sites = config_with_creds.sites_for("acme", "carbonblack")
+    assert len(sites) == 2
+    assert sites[0]["org_key"] == "ACMEORG"
+    assert sites[1]["org_key"] == "ACMEBRANCHORG"
+    assert sites[1]["label"] == "branch"
+
+
 def test_client_without_vendor_enabled_is_rejected(config_with_creds):
     # Globex doesn't declare carbonblack at all.
     with pytest.raises(ConfigError, match="does not enable"):
-        config_with_creds.credentials_for("globex", "carbonblack")
+        config_with_creds.sites_for("globex", "carbonblack")
 
 
 def test_unset_env_vars_resolve_to_none_enabling_fixture_mode(monkeypatch):
     for var in ("SENTINELONE_API_URL", "SENTINELONE_API_TOKEN"):
         monkeypatch.delenv(var, raising=False)
     config = load_config()
-    connector = get_connector(config, "acme", "sentinelone")
+    connector = get_connectors(config, "acme", "sentinelone")[0]
     assert isinstance(connector, SentinelOneConnector)
     assert not connector.is_live
     assert connector.fixture_dir.name == "acme"
 
 
-def test_get_connector_wires_live_credentials(config_with_creds):
-    connector = get_connector(config_with_creds, "acme", "carbonblack")
-    assert isinstance(connector, CarbonBlackConnector)
-    assert connector.is_live
-    assert connector.credentials["org_key"] == "ACMEORG"
+def test_get_connectors_wires_live_credentials_for_every_tenant(config_with_creds):
+    connectors = get_connectors(config_with_creds, "acme", "carbonblack")
+    assert len(connectors) == 2
+    assert all(isinstance(c, CarbonBlackConnector) for c in connectors)
+    assert all(c.is_live for c in connectors)
+    assert connectors[0].credentials["org_key"] == "ACMEORG"
+    assert connectors[1].credentials["org_key"] == "ACMEBRANCHORG"
 
 
 def test_unknown_client_and_vendor_raise(config_with_creds):
     with pytest.raises(ConfigError, match="Unknown client"):
-        config_with_creds.credentials_for("nope", "sentinelone")
+        config_with_creds.sites_for("nope", "sentinelone")
     with pytest.raises(ConfigError, match="Unknown vendor"):
-        config_with_creds.credentials_for("acme", "nope")
+        config_with_creds.sites_for("acme", "nope")
 
 
 def test_ad_export_prefers_sentinelone_over_carbonblack():

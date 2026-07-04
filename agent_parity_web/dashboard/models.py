@@ -63,22 +63,39 @@ class Client(models.Model):
 class VendorCredential(models.Model):
     """A vendor's API credentials, encrypted at rest.
 
-    ``client`` is null for global-scope vendors (SentinelOne, BitDefender —
-    one credential set for the whole organization) and set for per-client
-    vendors (Carbon Black — a distinct credential set per client). Which
-    vendors are global vs per-client is a fixed business fact, not something
-    this model or a setup form decides — see
-    ``agent_parity.config.VENDOR_SCOPE``.
+    ``client`` is null for the one shared-secret row every global-scope
+    vendor (SentinelOne, BitDefender) has — one credential set for the whole
+    organization — and set for per-client vendors (Carbon Black — a distinct
+    credential set per client). Which vendors are global vs per-client is a
+    fixed business fact, not something this model or a setup form decides —
+    see ``agent_parity.config.VENDOR_SCOPE``.
+
+    A client can have *more than one* row for the same vendor, distinguished
+    by ``site_label`` — what that means depends on scope: for Carbon Black
+    (per_client) each such row is a fully separate, real tenant credential
+    set (a second CB org); for a global vendor each such row's ``client`` is
+    set even though the vendor itself is global-scoped, and its
+    ``credentials`` holds only a non-secret site filter (e.g.
+    ``{"site_ids": "..."}``) merged onto the one shared secret row at
+    ``build_app_config_from_db()`` time — see
+    ``agent_parity.connectors.sentinelone``'s ``site_ids`` mechanism. A
+    client with no such row for a global vendor gets the whole account, no
+    filter — today's exact behavior, unchanged.
     """
 
     client = models.ForeignKey(
         Client, null=True, blank=True, on_delete=models.CASCADE, related_name="vendor_credentials"
     )
     vendor = models.CharField(max_length=32, choices=VENDOR_CHOICES)
+    # Distinguishes multiple sites/tenants within one (client, vendor) pair.
+    # Blank/default for the common single-site/single-tenant case.
+    site_label = models.CharField(max_length=64, blank=True, default="")
     # Vendor-specific shape (e.g. {"api_url", "api_token"} for SentinelOne vs
     # {"api_url", "api_id", "api_key", "org_key"} for Carbon Black) — a
     # single encrypted blob rather than per-vendor columns, same as
     # VendorConfig.credentials/ClientConfig.vendors in agent_parity/config.py.
+    # For a global vendor's per-client site rows this holds a non-secret site
+    # filter instead of real credentials — still encrypted, harmlessly.
     credentials = EncryptedJSONField(default=dict, blank=True)
 
     class Meta:
@@ -87,14 +104,15 @@ class VendorCredential(models.Model):
                 fields=["vendor"], condition=Q(client__isnull=True), name="uniq_global_vendor_credential"
             ),
             models.UniqueConstraint(
-                fields=["client", "vendor"],
+                fields=["client", "vendor", "site_label"],
                 condition=Q(client__isnull=False),
-                name="uniq_per_client_vendor_credential",
+                name="uniq_per_client_vendor_site_credential",
             ),
         ]
 
     def __str__(self):
-        return f"{self.client.slug if self.client else 'global'}/{self.vendor}"
+        scope = self.client.slug if self.client else "global"
+        return f"{scope}/{self.vendor}" + (f"/{self.site_label}" if self.site_label else "")
 
 
 class Device(models.Model):

@@ -18,7 +18,7 @@ from agent_parity.ad_sync.parser import concat_ad_frames, parse_ad_export
 from agent_parity.config import (
     AppConfig,
     ClientConfig,
-    get_connector,
+    get_connectors,
     get_storage,
     pick_ad_export_vendor,
 )
@@ -60,7 +60,11 @@ def collect_ad_csv(config: AppConfig, client_slug: str, target_device: str) -> s
     """
     client_cfg = config.client(client_slug)
     vendor_name = pick_ad_export_vendor(client_cfg)
-    connector = get_connector(config, client_slug, vendor_name)
+    # Remote execution runs against an explicit target_device, not a
+    # site/tenant-scoped query — any of this vendor's connectors (they
+    # differ only by site filter/tenant, not by whether they can reach the
+    # target) can carry the script, so the first is as good as any other.
+    connector = get_connectors(config, client_slug, vendor_name)[0]
     storage = get_storage(config)
     return run_ad_export(connector, target_device, storage=storage)
 
@@ -93,11 +97,42 @@ def collect_ad_frame(config: AppConfig, client_slug: str) -> tuple[pd.DataFrame 
     return concat_ad_frames(frames), status
 
 
+def site_status_key(vendor_name: str, site: dict, index: int, total: int) -> str:
+    """The ``vendor_status`` key for one of a vendor's site/tenant entries.
+
+    A real ``label`` (see ``ClientConfig.vendors``) wins; otherwise an index
+    only when there's more than one site/tenant to distinguish — the common
+    single-site case keeps today's plain vendor-name key unchanged. Shared
+    between the synchronous path (``collect_vendor_inventory``) and the
+    Celery fan-out (``tasks.dispatch_client``/``_vendor_payload``) so both
+    compute the exact same key for the exact same site.
+    """
+    label = site.get("label") or (str(index) if total > 1 else None)
+    return f"{vendor_name}:{label}" if label else vendor_name
+
+
 def collect_vendor_inventory(
         config: AppConfig, client_slug: str, vendor_name: str
-) -> list[AgentDevice]:
-    connector = get_connector(config, client_slug, vendor_name)
-    return connector.fetch_inventory()
+) -> tuple[list[AgentDevice], dict[str, str]]:
+    """Fetch and concatenate this vendor's inventory across every
+    site/tenant the client has (see ``AppConfig.sites_for``) — almost
+    always exactly one. Tolerant of partial failure the same way
+    ``collect_ad_frame`` already is for AD domains: one site/tenant failing
+    doesn't sink the others.
+    """
+    sites = config.client(client_slug).vendors[vendor_name]
+    connectors = get_connectors(config, client_slug, vendor_name)
+    records: list[AgentDevice] = []
+    status: dict[str, str] = {}
+    for index, (site, connector) in enumerate(zip(sites, connectors)):
+        key = site_status_key(vendor_name, site, index, len(sites))
+        try:
+            records.extend(connector.fetch_inventory())
+            status[key] = "ok"
+        except Exception as exc:  # noqa: BLE001 — one site/tenant down must not sink the others
+            logger.warning("%s inventory failed for %s (%s): %s", vendor_name, client_slug, key, exc)
+            status[key] = f"error: {exc}"
+    return records, status
 
 
 # --- persistence --------------------------------------------------------------
@@ -260,12 +295,9 @@ def run_pipeline_for_client(
 
     agent_records: list[AgentDevice] = []
     for vendor_name in sorted(client_cfg.vendors):
-        try:
-            agent_records.extend(collect_vendor_inventory(config, client_cfg.slug, vendor_name))
-            vendor_status[vendor_name] = "ok"
-        except Exception as exc:  # noqa: BLE001 — one vendor down must not sink the run
-            logger.warning("%s inventory failed for %s: %s", vendor_name, client_cfg.slug, exc)
-            vendor_status[vendor_name] = f"error: {exc}"
+        records, site_status = collect_vendor_inventory(config, client_cfg.slug, vendor_name)
+        agent_records.extend(records)
+        vendor_status.update(site_status)
 
     if drift is not None:
         ad_df, agent_records = drift(ad_df, agent_records)

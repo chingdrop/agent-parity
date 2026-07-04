@@ -110,6 +110,57 @@ def test_collect_ad_frame_returns_none_when_every_domain_fails():
     assert all(v.startswith("error") for v in status.values())
 
 
+# --- site_status_key -------------------------------------------------------------
+
+
+def test_site_status_key_is_plain_vendor_name_for_a_single_site():
+    assert services.site_status_key("sentinelone", {}, 0, 1) == "sentinelone"
+
+
+def test_site_status_key_uses_an_explicit_label_when_present():
+    assert services.site_status_key("carbonblack", {"label": "branch"}, 1, 2) == "carbonblack:branch"
+
+
+def test_site_status_key_falls_back_to_index_when_unlabeled_but_multiple():
+    assert services.site_status_key("carbonblack", {}, 0, 2) == "carbonblack:0"
+
+
+# --- collect_vendor_inventory: multi-tenant concatenation + partial failure ------
+
+
+def test_collect_vendor_inventory_concatenates_acmes_two_carbonblack_tenants():
+    """Acme has two Carbon Black tenants in config.yaml — both fixture
+    exports must be collected and concatenated."""
+    config = load_config()
+    records, status = services.collect_vendor_inventory(config, "acme", "carbonblack")
+
+    assert status == {"carbonblack:0": "ok", "carbonblack:branch": "ok"}
+    hostnames = {r.hostname for r in records}
+    assert "ACME-DC02" in hostnames  # from the primary (unlabeled) tenant
+    assert "ACME-BR-WS01" in hostnames  # from the branch tenant
+
+
+def test_collect_vendor_inventory_tolerates_one_tenant_failing():
+    config = load_config()
+    broken_acme = replace(
+        config.client("acme"),
+        vendors={
+            **config.client("acme").vendors,
+            "carbonblack": (
+                config.client("acme").vendors["carbonblack"][0],
+                {**config.client("acme").vendors["carbonblack"][1], "label": "nonexistent"},
+            ),
+        },
+    )
+    config = replace(config, clients={**config.clients, "acme": broken_acme})
+
+    records, status = services.collect_vendor_inventory(config, "acme", "carbonblack")
+
+    assert status["carbonblack:0"] == "ok"
+    assert status["carbonblack:nonexistent"].startswith("error")
+    assert any(r.hostname == "ACME-DC02" for r in records)
+
+
 # --- finalize_run: no-AD-data handling ------------------------------------------
 
 

@@ -167,11 +167,58 @@ rather than each re-implementing it. Per-domain outcomes show up in a run's
 `vendor_status` keyed `ad:<target_device>` (e.g. `ad:GLOBEX-DC01`), alongside
 the plain vendor-name keys for agent inventory.
 
-Vendor agent inventories are unaffected by any of this — agents in every
-domain still report to the same per-client vendor console, so only the AD
-side of collection fans out. The demo's `globex` client models this: it has
-two domains (`GLOBEX-DC01` and a branch office `GLOBEX-BR-DC01`) in
-`config.yaml`/`sample_data/globex/`, while `acme` stays single-domain.
+Vendor agent inventories aren't affected by *this specific* fan-out — a
+client's domains are purely an AD-side concept — but a client's vendor-side
+coverage can itself span more than one site or tenant within a console, which
+works the same way; see the next section. The demo's `globex` client models
+multi-domain: it has two domains (`GLOBEX-DC01` and a branch office
+`GLOBEX-BR-DC01`) in `config.yaml`/`sample_data/globex/`, while `acme` stays
+single-domain.
+
+### Multi-site/tenant clients: the same shape, applied to vendor consoles
+
+A client's coverage isn't always all under one vendor tenant either:
+SentinelOne organizes endpoints into Sites within a single account, and
+Carbon Black Cloud tenants (`org_key`) are fully separate orgs — some clients
+run more than one. `ClientConfig.vendors[vendor_name]` (`agent_parity/config.py`)
+is a tuple of "site" dicts, not a single credential block, for exactly the
+same reason `ad_target_devices` is a list — a client with one site/tenant is
+just the one-element case.
+
+What "multiple" means differs by `VENDOR_SCOPE`, and that's not an arbitrary
+split — it mirrors how each vendor's API is actually provisioned:
+
+- **Per-client scope (Carbon Black)**: each additional tenant is a fully
+  separate, already-real credential set (its own `api_url`/`api_id`/`api_key`/
+  `org_key`). Multi-tenant support here needed zero connector changes — it's
+  the existing single-tenant mechanism, just invoked once per tenant and
+  concatenated, the same way `collect_ad_frame` concatenates AD domains.
+- **Global scope (SentinelOne, BitDefender)**: credentials are shared
+  org-wide, so "site" means filtering *that one account's* query down to the
+  sites a client owns — SentinelOne's `GET /web/api/v2.1/agents` takes a
+  real, documented `siteIds` filter; a client's site dict carries
+  `{"site_ids": "..."}`, merged onto the shared credentials at connector-build
+  time (`AppConfig.sites_for`) rather than stored as if it were a secret.
+  BitDefender's equivalent (`company_id`) is modeled the same way but flagged
+  in `connectors/bitdefender.py` as unverified against GravityZone's real
+  multi-tenant API shape — this project already removed one fabricated
+  GravityZone capability (`createCustomScriptTask`) rather than guess, and
+  the same caution applies here.
+
+Fetching is tolerant of partial failure the same way AD-domain collection is:
+one site/tenant failing doesn't sink the others (`services.collect_vendor_inventory`),
+and the Celery path fans out one task per (client, vendor, site) instead of
+per (client, vendor). `vendor_status` keys stay the plain vendor name for the
+common single-site case — unlike a domain's `target_device` (always a real
+hostname), a vendor's default site has no meaningful name, so an index or
+label suffix (`carbonblack:branch`, `carbonblack:0`) only appears once
+there's more than one to distinguish (`services.site_status_key`). The
+demo's `acme` client has two Carbon Black tenants (its primary org plus a
+`label: branch` one, each with its own fixture file since they're genuinely
+separate accounts — see `connectors/base.py`'s label-aware fixture lookup),
+while SentinelOne/BitDefender site filtering has unit coverage
+(`tests/test_connectors.py`) without a full multi-site demo scenario wired
+into `sample_data/`.
 
 ### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
@@ -395,14 +442,17 @@ rewrite of the pipeline.
 Vendors have genuinely different credential shapes: SentinelOne is one API
 token for the whole organization; Carbon Black needs a distinct API ID /
 secret / org key **per client**. Client topology (name, slug, AD target
-device, sync interval, enabled vendors) and vendor credentials both live in
+devices, sync interval, enabled vendors) and vendor credentials both live in
 the database now — a `Client` row plus one `VendorCredential` row per
 (vendor, client) for per-client vendors, or per vendor alone (`client=None`)
-for global ones. `VendorCredential.credentials` is encrypted at the Django
-ORM layer (`dashboard/fields.py`'s `EncryptedJSONField`, built on
-`cryptography.fernet` and keyed by `CREDENTIAL_ENCRYPTION_KEY`) rather than
-a Postgres-only mechanism like `pgcrypto` — this app runs on SQLite in demo
-mode and Postgres in scaled mode, and the encryption has to work on both.
+for global ones — or more than one of either, for a client with multiple
+sites/tenants within a vendor (see [Multi-site/tenant clients](#multi-sitetenant-clients-the-same-shape-applied-to-vendor-consoles)
+above), distinguished by `site_label`. `VendorCredential.credentials` is
+encrypted at the Django ORM layer (`dashboard/fields.py`'s
+`EncryptedJSONField`, built on `cryptography.fernet` and keyed by
+`CREDENTIAL_ENCRYPTION_KEY`) rather than a Postgres-only mechanism like
+`pgcrypto` — this app runs on SQLite in demo mode and Postgres in scaled
+mode, and the encryption has to work on both.
 
 `config.yaml` (still committed, still `${VAR}`-referenced) is now purely a
 **one-time import source**, not something read at run time:
@@ -415,7 +465,7 @@ mode and Postgres in scaled mode, and the encryption has to work on both.
   nothing.
 - **`agent_parity/config.py`**'s dataclasses (`AppConfig`, `ClientConfig`,
   `VendorConfig`) stay the single contract the pipeline consumes —
-  `credentials_for()`/`get_connector()`/`pick_ad_export_vendor()` are all
+  `sites_for()`/`get_connectors()`/`pick_ad_export_vendor()` are all
   reused completely unchanged. `dashboard/config_db.py`'s
   `build_app_config_from_db()` is the DB-backed counterpart to
   `load_config()`, used by every production entrypoint (management

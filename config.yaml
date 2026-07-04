@@ -36,14 +36,28 @@ clients:
     ad_target_devices:
       - ACME-DC01
     sync_interval_hours: 6
+    # Each vendor's value is a list of site/tenant entries (see
+    # agent_parity/config.py's ClientConfig.vendors) — almost always one.
+    # Acme has *two* Carbon Black tenants: its primary org (unlabeled — the
+    # common case, no "label" needed) plus a second, fully separate org for
+    # a branch office. Each entry's own credentials are independent real
+    # tenants, not a filter over one account (unlike SentinelOne's site
+    # concept below) — Carbon Black's org_key already *is* the tenant
+    # identifier, so "multiple tenants" is just this same mechanism applied
+    # twice, not a new one.
     vendors:
-      sentinelone: { }
+      sentinelone: [ { } ]
       carbonblack:
-        api_url: ${ACME_CB_API_URL}
-        api_id: ${ACME_CB_API_ID}
-        api_key: ${ACME_CB_API_KEY}
-        org_key: ${ACME_CB_ORG_KEY}
-      bitdefender: { }
+        - api_url: ${ACME_CB_API_URL}
+          api_id: ${ACME_CB_API_ID}
+          api_key: ${ACME_CB_API_KEY}
+          org_key: ${ACME_CB_ORG_KEY}
+        - label: branch
+          api_url: ${ACME_CB2_API_URL}
+          api_id: ${ACME_CB2_API_ID}
+          api_key: ${ACME_CB2_API_KEY}
+          org_key: ${ACME_CB2_ORG_KEY}
+      bitdefender: [ { } ]
 
   - name: Globex
     slug: globex
@@ -56,8 +70,8 @@ clients:
       - GLOBEX-BR-DC01
     sync_interval_hours: 12
     vendors:
-      sentinelone: { }
-      bitdefender: { }
+      sentinelone: [ { } ]
+      bitdefender: [ { } ]
 
 # Object-storage handoff for the AD export — required for any client with
 # live vendor credentials. Vendor remote-execution output channels

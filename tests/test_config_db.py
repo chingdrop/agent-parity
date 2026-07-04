@@ -3,7 +3,7 @@ build_app_config_from_db pair that replaced load_config() as the source of
 truth for every production entrypoint. These prove the round trip: an
 AppConfig built from the DB must behave identically to one parsed straight
 from config.yaml for everything the pipeline actually uses
-(credentials_for/get_connector/pick_ad_export_vendor), since agent_parity/
+(sites_for/get_connectors/pick_ad_export_vendor), since agent_parity/
 itself never learns the DB exists.
 """
 
@@ -40,9 +40,15 @@ def test_global_vendor_gets_exactly_one_credential_row_with_no_client(imported):
 
 def test_per_client_vendor_gets_one_row_per_enabled_client(imported):
     # BitDefender is global, not per-client — only Carbon Black (acme only,
-    # per config.yaml) should produce a per-client row.
+    # per config.yaml) should produce per-client rows: two, since acme has
+    # two Carbon Black tenants (its primary org plus a "branch" one).
     rows = VendorCredential.objects.filter(vendor="carbonblack")
-    assert [r.client.slug for r in rows] == ["acme"]
+    assert [r.client.slug for r in rows] == ["acme", "acme"]
+    # The unlabeled tenant still gets a storage-identity site_label ("0")
+    # since there's more than one row to distinguish — but that's purely
+    # internal bookkeeping, never surfaced as a "label" (see
+    # build_app_config_from_db and its dedicated round-trip test).
+    assert {r.site_label for r in rows} == {"0", "branch"}
 
 
 def test_build_app_config_from_db_round_trips_client_topology(imported):
@@ -51,6 +57,20 @@ def test_build_app_config_from_db_round_trips_client_topology(imported):
     assert acme.ad_target_devices == ("ACME-DC01",)
     assert acme.sync_interval_hours == 6
     assert set(acme.vendors) == {"sentinelone", "carbonblack", "bitdefender"}
+
+
+def test_build_app_config_from_db_round_trips_two_carbonblack_tenants(imported):
+    """Acme's two CB tenants must both come back as independent credential
+    blocks, and — critically — the unlabeled (primary) one must not gain a
+    spurious "label" from its storage-only site_label ("0"): VendorCredential
+    auto-assigns an index for DB row identity when there's more than one row,
+    but that index is never real config, and reintroducing it as a "label"
+    previously broke fixture-file lookup (fixture mode picks
+    ad_export/inventory files by label — see connectors/base.py)."""
+    sites = imported.client("acme").vendors["carbonblack"]
+    assert len(sites) == 2
+    assert "label" not in sites[0]
+    assert sites[1]["label"] == "branch"
 
 
 def test_build_app_config_from_db_round_trips_multiple_domains(imported):
@@ -69,10 +89,8 @@ def test_build_app_config_from_db_resolves_credentials_the_same_way_as_yaml(monk
     import_app_config(load_config())
     config = build_app_config_from_db()
 
-    assert config.credentials_for("acme", "sentinelone") == config.credentials_for(
-        "globex", "sentinelone"
-    )
-    creds = config.credentials_for("acme", "carbonblack")
+    assert config.sites_for("acme", "sentinelone") == config.sites_for("globex", "sentinelone")
+    creds = config.sites_for("acme", "carbonblack")[0]
     assert creds["api_id"] == "ACMEID"
     assert creds["org_key"] == "ACMEORG"
 
@@ -81,7 +99,7 @@ def test_client_without_vendor_enabled_is_still_rejected_the_same_way(imported):
     # Globex doesn't declare carbonblack at all — same ConfigError as the
     # YAML-backed path (tests/test_config.py).
     with pytest.raises(ConfigError, match="does not enable"):
-        imported.credentials_for("globex", "carbonblack")
+        imported.sites_for("globex", "carbonblack")
 
 
 def test_reimporting_an_unchanged_config_is_idempotent():
@@ -97,8 +115,8 @@ def test_reimporting_an_unchanged_config_is_idempotent():
 
 def test_vendor_with_no_credential_row_yet_still_resolves_to_an_empty_dict():
     """A fresh DB (nothing imported, nothing added through the setup page)
-    must not make credentials_for() raise for a known vendor — an unset
+    must not make sites_for() raise for a known vendor — an unset
     credential is exactly what puts a connector into fixture mode."""
     Client.objects.create(name="Acme Corp", slug="acme", enabled_vendors=["sentinelone"])
     config = build_app_config_from_db()
-    assert config.credentials_for("acme", "sentinelone") == {}
+    assert config.sites_for("acme", "sentinelone") == ({},)

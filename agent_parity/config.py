@@ -79,8 +79,17 @@ class ClientConfig:
     # of this same tuple, not a special case.
     ad_target_devices: tuple[str, ...]
     sync_interval_hours: int
-    # vendor name -> that client's credential block (empty dict for
-    # global-scoped vendors, which carry credentials at the vendor level).
+    # vendor name -> one dict per site/tenant this client has within that
+    # vendor's console (almost always a single-element tuple). What the
+    # dict holds depends on VENDOR_SCOPE: for a per_client vendor (Carbon
+    # Black) each entry is a complete, independent credential block — a
+    # second entry means a second, fully separate CB org/tenant. For a
+    # global vendor (SentinelOne, BitDefender) each entry is just an
+    # optional site filter (e.g. {"site_ids": "..."}), merged onto the
+    # shared vendor-level credentials in AppConfig.sites_for — an empty
+    # dict (the common case) means "the whole account, no site filter."
+    # An optional "label" key names a site/tenant for display and for the
+    # DB row it maps to; omitted for the common single-site case.
     vendors: dict = field(default_factory=dict)
 
 
@@ -121,11 +130,16 @@ class AppConfig:
         except KeyError:
             raise ConfigError(f"Unknown client {slug!r} in config.yaml") from None
 
-    def credentials_for(self, client_slug: str, vendor_name: str) -> dict:
-        """Return the credential dict for a (client, vendor) pair.
+    def sites_for(self, client_slug: str, vendor_name: str) -> tuple[dict, ...]:
+        """Return one merged config dict per site/tenant for a (client, vendor) pair.
 
-        ``global`` scope ignores the client and returns the vendor-level
-        block; ``per_client`` scope requires the client to declare its own.
+        ``global`` scope merges each of the client's site filters (if any)
+        on top of the shared vendor-level credentials — every site shares
+        the same secret, just scoped to a different slice of the account
+        (e.g. SentinelOne's Sites). ``per_client`` scope returns each of the
+        client's tenant blocks as-is: unlike global scope these are already
+        complete, independent credential sets (e.g. separate Carbon Black
+        orgs), so there's nothing to merge them with.
         """
         try:
             vendor = self.vendors[vendor_name]
@@ -137,9 +151,10 @@ class AppConfig:
             raise ConfigError(
                 f"Client {client_slug!r} does not enable vendor {vendor_name!r}"
             )
+        sites = client.vendors[vendor_name]
         if vendor.scope == "global":
-            return dict(vendor.credentials)
-        return dict(client.vendors[vendor_name])
+            return tuple({**vendor.credentials, **site} for site in sites)
+        return tuple(dict(site) for site in sites)
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
@@ -159,12 +174,20 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
     clients = {}
     for entry in raw.get("clients") or []:
+        # Each vendor's value is a list of site/tenant dicts — one element
+        # for the common single-site case, more for a client spanning
+        # multiple sites (global scope) or tenants (per_client scope). An
+        # empty/missing list still means "enabled, one default site."
+        client_vendors = {
+            v: tuple((site or {}) for site in (sites or [{}]))
+            for v, sites in (entry.get("vendors") or {}).items()
+        }
         client = ClientConfig(
             name=entry["name"],
             slug=entry["slug"],
             ad_target_devices=tuple(entry.get("ad_target_devices") or ()),
             sync_interval_hours=int(entry.get("sync_interval_hours", 24)),
-            vendors={v: (creds or {}) for v, creds in (entry.get("vendors") or {}).items()},
+            vendors=client_vendors,
         )
         for vendor_name in client.vendors:
             if vendor_name not in vendors:
@@ -250,13 +273,15 @@ def pick_ad_export_vendor(client_cfg: ClientConfig) -> str:
     return min(capable, key=preference_key)
 
 
-def get_connector(config: AppConfig, client_slug: str, vendor_name: str):
-    """Build a configured connector for a (client, vendor) pair.
+def get_connectors(config: AppConfig, client_slug: str, vendor_name: str) -> tuple:
+    """Build one configured connector per site/tenant for a (client, vendor) pair.
 
     This is the single place that knows how credentials map onto connectors,
     and it is what both the management command and the Celery fan-out tasks
-    call. Connectors with no usable credentials fall back to the client's
-    fixtures under ``sample_data/<client_slug>/``.
+    call. Almost always a one-element tuple; more than one for a client with
+    multiple sites (global scope) or tenants (per_client scope) — see
+    ``AppConfig.sites_for``. Connectors with no usable credentials fall back
+    to the client's fixtures under ``sample_data/<client_slug>/``.
     """
     # Imported here to keep config loading importable without the connector
     # dependency chain (requests) in contexts that only need topology.
@@ -267,9 +292,11 @@ def get_connector(config: AppConfig, client_slug: str, vendor_name: str):
     except KeyError:
         raise ConfigError(f"No connector implemented for vendor {vendor_name!r}") from None
 
-    credentials = config.credentials_for(client_slug, vendor_name)
     fixture_dir = SAMPLE_DATA_DIR / client_slug
-    return connector_cls(credentials=credentials, fixture_dir=fixture_dir)
+    return tuple(
+        connector_cls(credentials=credentials, fixture_dir=fixture_dir)
+        for credentials in config.sites_for(client_slug, vendor_name)
+    )
 
 
 def get_storage(config: AppConfig):

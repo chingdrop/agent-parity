@@ -30,7 +30,7 @@ class VendorCredentialAdmin(admin.ModelAdmin):
     # the field's str() through get_prep_value on save and silently corrupt
     # it into "{'api_url': ...}" instead of decryptable JSON. Real editing is
     # the setup page's per-vendor form (dashboard/forms.py), not admin.
-    list_display = ("vendor", "client")
+    list_display = ("vendor", "client", "site_label")
     list_filter = ("vendor", "client")
     readonly_fields = ("credentials",)
 

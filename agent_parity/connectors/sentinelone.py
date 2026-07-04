@@ -8,7 +8,16 @@ Live mode is shaped after the Management Console API v2.1 (public docs):
   ``/web/api/v2.1/remote-scripts/status``, then fetch the result artifact.
 
 SentinelOne credentials are *global* scope: one API token covers every site
-in the organization, so every client resolves to the same credential set.
+in the organization, so every client resolves to the same credential set —
+but a client's endpoints don't have to be the *whole* account. Sites are a
+real, documented S1 concept (endpoints are organized into Sites within an
+account), and the public API's ``GET /web/api/v2.1/agents`` accepts a
+``siteIds`` filter; a client can be scoped to one or more of them via an
+optional ``site_ids`` key merged onto the shared credentials (see
+``AppConfig.sites_for``) — a comma-separated string of site IDs, matched
+against each inventory item's own ``siteId`` field, applied identically in
+live and fixture mode. Unset (the common case) means the whole account, same
+as before this existed.
 
 Inventory records also carry an ``osRevision``-style field with the agent's
 exact Windows build number — reported separately from ``osName``'s coarse
@@ -38,9 +47,21 @@ class SentinelOneConnector(AgentConnector):
     def _headers(self) -> dict:
         return {"Authorization": f"ApiToken {self.credentials['api_token']}"}
 
+    def _in_scoped_sites(self, item: dict) -> bool:
+        """True unless this client's ``site_ids`` is set and ``item`` belongs
+        to a different site — applied in both live and fixture mode so the
+        same filter behaves identically regardless of whether the server or
+        this method actually does the narrowing."""
+        site_ids = self.credentials.get("site_ids")
+        if not site_ids:
+            return True
+        return str(item.get("siteId")) in site_ids.split(",")
+
     def _parse_inventory(self, payload: dict) -> list[AgentDevice]:
         devices = []
         for item in payload.get("data", []):
+            if not self._in_scoped_sites(item):
+                continue
             devices.append(
                 AgentDevice(
                     vendor=self.vendor,
@@ -66,6 +87,8 @@ class SentinelOneConnector(AgentConnector):
             params: dict[str, object] = {"limit": 200}
             if cursor:
                 params["cursor"] = cursor
+            if self.credentials.get("site_ids"):
+                params["siteIds"] = self.credentials["site_ids"]
             payload = self._request_json(
                 "GET", f"{base}/web/api/v2.1/agents", headers=self._headers, params=params
             )

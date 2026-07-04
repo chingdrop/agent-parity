@@ -8,6 +8,7 @@ run ID as idempotency key) are identical either way.
 import pytest
 
 from agent_parity.config import load_config
+from agent_parity.connectors import CarbonBlackConnector
 from agent_parity.connectors.base import ConnectorError
 from dashboard import services, tasks
 from dashboard.models import CorrelationRun, CoverageSnapshot
@@ -15,13 +16,8 @@ from dashboard.models import CorrelationRun, CoverageSnapshot
 pytestmark = pytest.mark.django_db
 
 
-def _fail_carbonblack(config, client_slug, vendor_name):
-    if vendor_name == "carbonblack":
-        raise ConnectorError("carbonblack: API returned 503")
-    return original_collect(config, client_slug, vendor_name)
-
-
-original_collect = services.collect_vendor_inventory
+def _raise_connector_error(self):
+    raise ConnectorError("carbonblack: API returned 503")
 
 
 def test_chord_produces_partial_run_when_one_vendor_fails(
@@ -29,15 +25,17 @@ def test_chord_produces_partial_run_when_one_vendor_fails(
 ):
     """One flaky vendor API must not prevent the CorrelationRun: the run
     completes as PARTIAL with the failure recorded, and the vendors that
-    succeeded still produce snapshots."""
-    monkeypatch.setattr(services, "collect_vendor_inventory", _fail_carbonblack)
+    succeeded still produce snapshots. Acme has two Carbon Black tenants
+    (see config.yaml) — both fail identically here, independently keyed."""
+    monkeypatch.setattr(CarbonBlackConnector, "fetch_inventory", _raise_connector_error)
 
     with django_capture_on_commit_callbacks(execute=True):
         run_id = tasks.dispatch_client(db_config, db_config.client("acme"))
 
     run = CorrelationRun.objects.get(pk=run_id)
     assert run.status == CorrelationRun.RunStatus.PARTIAL
-    assert run.vendor_status["carbonblack"].startswith("error")
+    assert run.vendor_status["carbonblack:0"].startswith("error")
+    assert run.vendor_status["carbonblack:branch"].startswith("error")
     assert run.vendor_status["sentinelone"] == "ok"
     assert run.vendor_status["ad:ACME-DC01"] == "ok"
     # SentinelOne/BitDefender results were still correlated and persisted.
@@ -75,7 +73,7 @@ def test_run_failed_when_ad_export_is_missing(eager_celery):
             "ok": False,
             "error": "target endpoint offline",
         },
-        {"source": "sentinelone", "ok": True, "records": []},
+        {"source": "sentinelone", "key": "sentinelone", "ok": True, "records": []},
     ]
     tasks.correlate_client(results, run_id=run.pk)
 
@@ -92,10 +90,15 @@ def test_callback_is_idempotent_on_duplicate_delivery(eager_celery):
     run = CorrelationRun.objects.create(client=client, stale_days=config.stale_days)
 
     csv_text = services.collect_ad_csv(config, "globex", "GLOBEX-DC01")
-    records = services.collect_vendor_inventory(config, "globex", "sentinelone")
+    records, _ = services.collect_vendor_inventory(config, "globex", "sentinelone")
     results = [
         {"source": "ad", "target_device": "GLOBEX-DC01", "ok": True, "csv": csv_text},
-        {"source": "sentinelone", "ok": True, "records": [r.to_dict() for r in records]},
+        {
+            "source": "sentinelone",
+            "key": "sentinelone",
+            "ok": True,
+            "records": [r.to_dict() for r in records],
+        },
     ]
 
     first = tasks.correlate_client(results, run_id=run.pk)
