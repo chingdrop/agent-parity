@@ -50,12 +50,3 @@ clients:
     vendors:
       sentinelone: { }
       bitdefender: { }
-
-# Optional reporting sink. The Django database is always the system of
-# record; when both values below resolve, coverage *deltas* (state
-# transitions since the previous run) are forwarded to Splunk HEC.
-splunk:
-  hec_url: ${SPLUNK_HEC_URL}
-  hec_token: ${SPLUNK_HEC_TOKEN}
-  index: security_coverage
-  sourcetype: agent_parity:coverage_delta

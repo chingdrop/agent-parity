@@ -19,7 +19,6 @@ from agent_parity.config import AppConfig, ClientConfig, get_connector
 from agent_parity.correlation.engine import CorrelationResult, agents_to_frame, correlate
 from agent_parity.deployment.script_runner import run_ad_export
 from agent_parity.models import AgentDevice
-from agent_parity.reporting import splunk_export
 from dashboard.models import Client, CorrelationRun, CoverageSnapshot, Device
 
 logger = logging.getLogger(__name__)
@@ -175,59 +174,10 @@ def finalize_run(
         ad_df: pd.DataFrame,
         agent_records: list[AgentDevice],
         vendor_status: dict[str, str],
-        splunk_config=None,
 ) -> int:
-    """Correlate + persist + (optionally) forward deltas — the shared fan-in."""
+    """Correlate + persist — the shared fan-in."""
     result = correlate(ad_df, agents_to_frame(agent_records), stale_days=run.stale_days)
-    count = persist_correlation(run, result, vendor_status)
-    if count and splunk_config is not None:
-        try:
-            export_deltas_to_splunk(run, splunk_config)
-        except splunk_export.SplunkExportError:
-            # A reporting sink outage must never fail the run itself.
-            logger.exception("Splunk delta export failed for run %s", run.pk)
-    return count
-
-
-# --- Splunk delta export -------------------------------------------------------
-
-
-def export_deltas_to_splunk(run: CorrelationRun, splunk_config) -> int:
-    """Diff this run against the client's previous run and forward transitions."""
-    if not splunk_config.enabled:
-        return 0
-    previous = (
-        CorrelationRun.objects.filter(client=run.client, started_at__lt=run.started_at)
-        .exclude(status=CorrelationRun.RunStatus.PENDING)
-        .order_by("-started_at")
-        .first()
-    )
-
-    def snapshot_map(r) -> dict:
-        return {
-            (s.device_id, s.vendor): s
-            for s in r.snapshots.select_related("device")
-        }
-
-    before = snapshot_map(previous) if previous else {}
-    deltas = []
-    for key, snap in snapshot_map(run).items():
-        old = before.get(key)
-        if old is not None and old.status == snap.status:
-            continue
-        deltas.append(
-            {
-                "client": run.client.slug,
-                "join_key": snap.device.join_key,
-                "hostname": snap.device.hostname,
-                "vendor": snap.vendor or None,
-                "previous_status": old.status if old else None,
-                "status": snap.status,
-                "run_id": run.pk,
-                "run_started_at": run.started_at.isoformat(),
-            }
-        )
-    return splunk_export.send_deltas(deltas, splunk_config)
+    return persist_correlation(run, result, vendor_status)
 
 
 # --- the synchronous path -------------------------------------------------------
@@ -266,6 +216,6 @@ def run_pipeline_for_client(
     if drift is not None:
         ad_df, agent_records = drift(ad_df, agent_records)
 
-    finalize_run(run, ad_df, agent_records, vendor_status, splunk_config=config.splunk)
+    finalize_run(run, ad_df, agent_records, vendor_status)
     run.refresh_from_db()
     return run

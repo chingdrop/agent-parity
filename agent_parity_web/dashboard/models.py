@@ -1,10 +1,8 @@
 """Relational schema for correlation results.
 
-This is the structure the data actually has (and what putting it in Splunk
-flattened away): a Client owns Devices; every pipeline execution is a
-CorrelationRun; each run produces one CoverageSnapshot per device/vendor
-observation, FK'd to both — so per-device history and per-run aggregates are
-both plain queries.
+A Client owns Devices; every pipeline execution is a CorrelationRun; each run
+produces one CoverageSnapshot per device/vendor observation, FK'd to both —
+so per-device history and per-run aggregates are both plain queries.
 """
 
 from django.db import models

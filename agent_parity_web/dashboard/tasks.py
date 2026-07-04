@@ -143,7 +143,6 @@ def correlate_client(results: list[dict], run_id: int) -> dict:
 
     count = services.finalize_run(
         run, parse_ad_export(ad_csv), agent_records, vendor_status,
-        splunk_config=config.splunk,
     )
     run.refresh_from_db()
     return {"run_id": run_id, "status": run.status, "snapshots": count}
