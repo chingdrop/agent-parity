@@ -26,6 +26,20 @@ class Vendor(StrEnum):
     BITDEFENDER = "bitdefender"
 
 
+class OSLifecycleStatus(StrEnum):
+    """Where an OS sits relative to its vendor-published end-of-life date
+    (see ``agent_parity.os_eol``) — an extra, independent prioritization
+    signal alongside coverage status and machine_type: an uncovered,
+    end-of-life server is a very different priority than a covered,
+    actively-supported one.
+    """
+
+    UNKNOWN = "unknown"
+    SUPPORTED = "supported"
+    EOL_SOON = "eol_soon"
+    END_OF_LIFE = "end_of_life"
+
+
 def normalize_hostname(hostname: str | None) -> str:
     """Build the correlation join key from a raw hostname.
 
