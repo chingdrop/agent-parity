@@ -58,9 +58,24 @@ before assuming the imports are actually broken.
 This is the analytical core and is deliberately a `.pipe()` chain, not one function:
 `add_join_key` → `merge_with_agents` (`pd.merge(..., how="outer", indicator=True)`) →
 `classify_coverage` (turns the merge indicator + a `last_seen` staleness check into
-`CoverageStatus`). Each stage is independently testable; keep it that way rather than
-inlining. `join_key` normalization (strip DNS suffix, lowercase, trim) is the only
-matching logic — there's no fuzzy matching, by design (noted as future work).
+`CoverageStatus`) → `backfill_machine_type`. Each stage is independently testable;
+keep it that way rather than inlining. `join_key` normalization (strip DNS suffix,
+lowercase, trim) is the only matching logic — there's no fuzzy matching, by design
+(noted as future work).
+
+**`backfill_machine_type` exists for one reason**: `machine_type` (see
+`AgentDevice`'s docstring) only ever comes from the agent side of the merge, so a
+`missing_agent` row — no agent record at all — would otherwise carry no criticality
+signal whatsoever. That's backwards for a coverage tool whose whole point (see
+README's "High-value assets" section — this project's original purpose was a
+quarterly client report prioritizing exactly this) is flagging a missing Domain
+Controller *harder* than a missing workstation. It backfills from AD's own OS text
+via `infer_machine_type()` (`agent_parity/models.py`) — the same heuristic
+Carbon Black/BitDefender's connectors use — but only for rows where `machine_type`
+isn't already set; an agent-reported value always wins. Don't try to infer
+criticality from the hostname — that's exactly the unreliable signal this design
+deliberately avoids (file/storage servers can be named anything; a Windows Server
+SKU can't fake being one).
 
 Tests for this module assert on classification outcomes and merge-invariants (row
 count = union of join keys), not on `pd.merge` itself — follow that pattern for new
@@ -104,10 +119,16 @@ underlying `requests.Session.request`, not by hitting a live API.
 `_parse_inventory` in each connector sets them: SentinelOne passes its own
 `osType`/`machineType` straight through; Carbon Black lowercases its uppercase
 `os` enum for `platform` and infers `machine_type` from OS text
-(`infer_machine_type`, `connectors/base.py`) since it has no equivalent field;
+(`infer_machine_type`, defined in `agent_parity/models.py`, re-exported from
+`connectors/base.py` for existing call sites) since it has no equivalent field;
 BitDefender maps its numeric `machineType` enum to S1's string wording
 (`_MACHINE_TYPES` in `connectors/bitdefender.py`) and infers `platform` from OS
-text (`infer_platform`) since it has no equivalent field. If a 4th vendor is
+text (`infer_platform`) since it has no equivalent field. `infer_platform`/
+`infer_machine_type` live in `models.py`, not `connectors/base.py`, specifically
+so `correlation/engine.py` can use them too (for AD-only rows — see
+`backfill_machine_type`) without pulling in the connector stack's
+`requests`/`RestAdapter` dependency chain just for two pure string functions.
+If a 4th vendor is
 added, decide per-field whether it reports something directly-mappable
 (prefer a direct map, like BitDefender's `machineType`) or needs inference
 (like Carbon Black's `machine_type`) — don't guess when the vendor's raw API

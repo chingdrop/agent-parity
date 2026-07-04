@@ -37,6 +37,38 @@ def normalize_hostname(hostname: str | None) -> str:
     return hostname.strip().split(".", 1)[0].lower()
 
 
+def infer_platform(os_text: str | None) -> str:
+    """Best-effort ``platform`` derivation from a free-text OS name, for
+    sources with no equivalent to SentinelOne's ``osType`` field (Carbon
+    Black/BitDefender's connectors; AD's own export has no such field
+    either, so ``correlation.engine`` uses this too, for AD-only rows).
+
+    Wording matches SentinelOne's own lowercase convention (``"windows"``,
+    ``"linux"``, ``"macos"``) so a device's platform reads the same
+    regardless of which vendor — or AD itself — actually reported it.
+    """
+    text = (os_text or "").lower()
+    if "windows" in text:
+        return "windows"
+    if "mac" in text or "darwin" in text:
+        return "macos"
+    if any(name in text for name in ("linux", "ubuntu", "centos", "rhel", "debian")):
+        return "linux"
+    return ""
+
+
+def infer_machine_type(os_text: str | None) -> str:
+    """Best-effort ``machine_type`` derivation from a free-text OS name, for
+    sources with no equivalent to SentinelOne's ``machineType`` field.
+
+    Standing in for asset criticality: a Windows Server SKU is the reliable
+    signal, not hostname naming conventions (a file/storage server can be
+    named anything; a Windows Server SKU can't lie about being one). Wording
+    matches SentinelOne's own convention (``"server"`` / ``"desktop"``).
+    """
+    return "server" if "server" in (os_text or "").lower() else "desktop"
+
+
 @dataclass(frozen=True)
 class ADDevice:
     """One computer object from the Active Directory export."""

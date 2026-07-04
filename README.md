@@ -17,6 +17,14 @@ credentials are involved; vendor API interactions are shaped from public API
 documentation, and **everything runs against local fixtures by default** —
 no live credentials required.
 
+The original tool existed to feed a quarterly report sent to clients: show
+that agent coverage was trending upward over time, and flag high-value
+assets (Domain Controllers, file/storage servers) specifically, so gaps
+there got prioritized over a missing agent on a random workstation. Both of
+those are first-class in this rebuild, not just implied by the raw data —
+see [High-value assets](#high-value-assets-servers-as-the-prioritization-signal)
+below.
+
 ## Quick start (demo mode — no Docker, no Redis, no Celery)
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+.
@@ -181,7 +189,7 @@ same wording:
 - **Carbon Black** reports `os: "WINDOWS"` (uppercase) directly — lowercased
   to match S1's casing, no inference needed. It has no equivalent to `machineType`
   at all, so that's inferred from the OS name text instead
-  (`connectors/base.py`'s `infer_machine_type`).
+  (`agent_parity/models.py`'s `infer_machine_type`).
 - **BitDefender** reports `machineType` as a numeric enum (its own API
   convention) — mapped to S1's string wording (`_MACHINE_TYPES` in
   `connectors/bitdefender.py`). It has no equivalent to `osType`, so `platform`
@@ -193,6 +201,40 @@ software. There's no honest way to make Carbon Black's sensor version look
 like a SentinelOne agent version — that would be fabricating a number, not
 normalizing one, so `AgentDevice.agent_version` stays exactly what each
 vendor actually reports.
+
+### High-value assets: servers as the prioritization signal
+
+The reason this project exists in the first place: the correlated data fed a
+quarterly report sent to clients, showing that agent coverage was improving
+over time, and calling out high-value assets specifically — Domain
+Controllers, file/storage servers — so gaps on those got prioritized over a
+missing agent on a random workstation.
+
+Domain Controllers are reliably identifiable (a distinctive OU in
+`DistinguishedName`), but file/storage servers aren't — they can be named
+anything, so a hostname-pattern heuristic would be guessing. The reliable
+signal is simpler: **is it a Windows Server SKU at all**, via the same
+`machine_type` field ("server"/"desktop") built for cross-vendor wording
+congruence above. A storage server can be named anything; it can't fake
+being a Windows Server.
+
+One gap that needed closing to make this honest: `machine_type` only ever
+came from the *agent* side of the merge (see `AgentDevice`'s docstring) — a
+`missing_agent` row has no agent record at all, so it would have carried no
+criticality signal whatsoever, which is backwards for a coverage tool (a
+missing Domain Controller is exactly the row that most needs to stand out).
+`correlation/engine.py`'s `backfill_machine_type` stage closes it: AD's own
+OS text gets the same `infer_machine_type()` heuristic, so *every* row —
+matched or not — gets a `machine_type`, without ever trying to infer
+anything from a hostname.
+
+This flows all the way through: `summarize()` reports `server_coverage_pct`
+alongside the overall `coverage_pct`; the overview page shows both, plus a
+second trend line so "coverage is improving" and "the assets that matter
+most are covered" are both visible as trends, not just point-in-time
+snapshots; the device list is filterable by `machine_type` so pulling
+"every missing or stale server, across every client" for a report is one
+filter, not a manual search.
 
 ### The correlation: a pandas merge, kept honest
 
@@ -364,7 +406,10 @@ release, not on every commit.
 
 - **Correlation**: one test per `CoverageStatus` outcome, the
   merged-row-count-equals-union-of-join-keys invariant, FQDN/case
-  normalization, configurable staleness, multi-vendor rows.
+  normalization, configurable staleness, multi-vendor rows, and the
+  high-value-asset backfill (a missing Domain Controller must be
+  classified as `machine_type="server"` from AD's OS text alone, with zero
+  agent data, and an agent-reported machine_type must never be overridden).
 - **Chord semantics** (eager mode): one vendor failing yields a `partial`
   run with the other vendors' snapshots intact; duplicate callback delivery
   doesn't double-count (idempotency); per-client cadence gating.

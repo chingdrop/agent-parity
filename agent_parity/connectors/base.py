@@ -33,39 +33,20 @@ from typing import Callable, ClassVar
 
 import requests
 
-from agent_parity.models import AgentDevice
+from agent_parity.models import AgentDevice, infer_machine_type, infer_platform
 from agent_parity.rest_adapter import RestAdapter, RestAdapterConfig
+
+# infer_platform/infer_machine_type are re-exported here (not just imported
+# for internal use) for existing call sites (carbonblack.py, bitdefender.py,
+# seed_demo.py, tests) — the definitions live in agent_parity.models since
+# correlation/engine.py needs them too, for AD-only rows, without pulling in
+# this module's requests/RestAdapter dependency chain just for two pure
+# string-processing functions.
+__all__ = ["AgentConnector", "ConnectorError", "infer_machine_type", "infer_platform"]
 
 
 class ConnectorError(Exception):
     """A vendor API call or remote execution failed."""
-
-
-def infer_platform(os_text: str) -> str:
-    """Best-effort ``platform`` derivation from a free-text OS name, for
-    vendors whose API has no equivalent to SentinelOne's ``osType`` field.
-
-    Wording matches SentinelOne's own lowercase convention (``"windows"``,
-    ``"linux"``, ``"macos"``) so a device's platform reads the same
-    regardless of which vendor actually reported it.
-    """
-    text = (os_text or "").lower()
-    if "windows" in text:
-        return "windows"
-    if "mac" in text or "darwin" in text:
-        return "macos"
-    if any(name in text for name in ("linux", "ubuntu", "centos", "rhel", "debian")):
-        return "linux"
-    return ""
-
-
-def infer_machine_type(os_text: str) -> str:
-    """Best-effort ``machine_type`` derivation from a free-text OS name, for
-    vendors whose API has no equivalent to SentinelOne's ``machineType``
-    field. Wording matches SentinelOne's own convention (``"server"`` /
-    ``"desktop"``).
-    """
-    return "server" if "server" in (os_text or "").lower() else "desktop"
 
 
 def parse_timestamp(value) -> datetime | None:

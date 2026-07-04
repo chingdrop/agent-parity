@@ -46,6 +46,27 @@ def test_overview_shows_coverage_card_after_a_run(client, acme_run):
     assert vendor_names == {"sentinelone", "carbonblack", "bitdefender"}
 
 
+def test_overview_server_coverage_is_scoped_to_servers_only(client, acme_run):
+    """acme has both a missing server (acme-sql02) and missing workstations
+    (acme-ws-021/022) — server_coverage_pct must reflect only the former."""
+    response = client.get(reverse("dashboard:overview"))
+    card = response.context["cards"][0]
+
+    assert card["server_coverage_pct"] is not None
+    total_servers = sum(card["server_counts"].values())
+    total_overall = sum(card["counts"][s] for s in ("covered", "missing_agent", "stale_coverage"))
+    assert 0 < total_servers < total_overall
+
+
+def test_overview_known_missing_server_counts_toward_servers_missing(client, acme_run):
+    snapshot = acme_run.snapshots.get(device__join_key="acme-sql02")
+    assert snapshot.machine_type == "server"
+
+    response = client.get(reverse("dashboard:overview"))
+    card = response.context["cards"][0]
+    assert card["server_counts"].get("missing_agent", 0) >= 1
+
+
 def test_overview_omits_inactive_clients(client, acme_run):
     acme_run.client.is_active = False
     acme_run.client.save()
@@ -75,6 +96,15 @@ def test_device_list_filters_by_vendor(client, acme_run):
     page = response.context["page"]
     assert len(page.object_list) > 0
     assert all(s.vendor == "bitdefender" for s in page.object_list)
+
+
+def test_device_list_filters_by_machine_type(client, acme_run):
+    response = client.get(reverse("dashboard:device_list"), {"machine_type": "server"})
+    page = response.context["page"]
+    assert len(page.object_list) > 0
+    assert all(s.machine_type == "server" for s in page.object_list)
+    # The known missing server must be reachable through this filter alone.
+    assert any(s.device.join_key == "acme-sql02" for s in page.object_list)
 
 
 def test_device_list_filters_by_client_slug(client, acme_run):
@@ -125,6 +155,8 @@ def test_trend_data_returns_json_with_one_point_per_run(client, acme_run):
     assert len(payload["labels"]) == 1
     assert len(payload["coverage_pct"]) == 1
     assert 0 <= payload["coverage_pct"][0] <= 100
+    assert len(payload["server_coverage_pct"]) == 1
+    assert 0 <= payload["server_coverage_pct"][0] <= 100
 
 
 def test_trend_data_404s_for_unknown_client_slug(client):
@@ -139,4 +171,6 @@ def test_trend_data_empty_before_any_run(client):
     response = client.get(reverse("dashboard:trend_data", args=["emptyco"]))
     assert response.status_code == 200
     payload = json.loads(response.content)
-    assert payload == {"client": "emptyco", "labels": [], "coverage_pct": []}
+    assert payload == {
+        "client": "emptyco", "labels": [], "coverage_pct": [], "server_coverage_pct": [],
+    }

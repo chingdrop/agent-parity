@@ -14,11 +14,11 @@ RECENT = datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc)  # < 1 day old
 STALE = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)  # > 14 days old
 
 
-def ad_frame(*hostnames: str) -> pd.DataFrame:
+def ad_frame(*hostnames: str, os: str = "Windows 11") -> pd.DataFrame:
     return pd.DataFrame(
         {
             "hostname": list(hostnames),
-            "os": ["Windows 11"] * len(hostnames),
+            "os": [os] * len(hostnames),
             "last_logon": [AS_OF - timedelta(days=1)] * len(hostnames),
         }
     )
@@ -149,8 +149,79 @@ def test_platform_and_machine_type_survive_the_merge():
     assert row["machine_type"] == "desktop"
 
 
-def test_missing_agent_rows_have_no_platform_or_machine_type():
-    result = correlate(ad_frame("WS-01"), agents_to_frame([]), as_of=AS_OF)
+def test_missing_agent_rows_have_no_platform_but_get_a_backfilled_machine_type():
+    """platform has no AD-side equivalent to derive from, so it stays blank
+    for missing_agent rows; machine_type does — a missing Domain Controller
+    must still show up as a server, not as "no criticality signal at all"."""
+    result = correlate(ad_frame("WS-01", os="Windows 11 Enterprise"), agents_to_frame([]), as_of=AS_OF)
     row = result.frame.iloc[0]
     assert pd.isna(row["platform"])
-    assert pd.isna(row["machine_type"])
+    assert row["machine_type"] == "desktop"
+
+
+def test_missing_agent_server_is_backfilled_as_a_server():
+    """The actual point: a missing Domain Controller (or any Windows Server
+    SKU) must be identifiable as high-value even with zero agent data —
+    that's the whole reason backfill_machine_type exists."""
+    result = correlate(
+        ad_frame("ACME-DC01", os="Windows Server 2022 Datacenter"),
+        agents_to_frame([]),
+        as_of=AS_OF,
+    )
+    row = result.frame.iloc[0]
+    assert row["status"] == CoverageStatus.MISSING_AGENT
+    assert row["machine_type"] == "server"
+
+
+def test_backfill_never_overwrites_an_agent_reported_machine_type():
+    """A matched device's machine_type comes from the agent (already
+    vendor-normalized); AD's OS text must never override it, even if they
+    somehow disagreed."""
+    device = AgentDevice(
+        vendor="sentinelone",
+        agent_id="id-WS-01",
+        hostname="WS-01",
+        last_seen=RECENT,
+        machine_type="desktop",
+    )
+    # AD says "Server" in the OS text; the agent's own report must win.
+    result = correlate(
+        ad_frame("WS-01", os="Windows Server 2022 Datacenter"),
+        agents_to_frame([device]),
+        as_of=AS_OF,
+    )
+    assert result.frame.iloc[0]["machine_type"] == "desktop"
+
+
+def test_orphaned_agent_keeps_its_own_machine_type_with_no_ad_row_to_backfill_from():
+    device = AgentDevice(
+        vendor="bitdefender", agent_id="id-ghost", hostname="GHOST-9",
+        last_seen=RECENT, machine_type="server",
+    )
+    result = correlate(ad_frame("WS-01"), agents_to_frame([device]), as_of=AS_OF)
+    orphan = result.frame[result.frame["join_key"] == "ghost-9"].iloc[0]
+    assert orphan["status"] == CoverageStatus.ORPHANED_AGENT
+    assert orphan["machine_type"] == "server"
+
+
+def test_server_coverage_pct_is_scoped_to_servers_only():
+    ad = pd.concat(
+        [
+            ad_frame("DC01", os="Windows Server 2022 Datacenter"),  # missing -> server
+            ad_frame("WS-01", os="Windows 11 Enterprise"),  # covered -> desktop
+        ],
+        ignore_index=True,
+    )
+    agents = agents_to_frame([agent("WS-01")])
+    summary = correlate(ad, agents, as_of=AS_OF).summary
+
+    assert summary["server_status_counts"] == {CoverageStatus.MISSING_AGENT: 1}
+    assert summary["server_coverage_pct"] == pytest.approx(0.0)
+    # Overall coverage_pct still blends both machine types together.
+    assert summary["coverage_pct"] == pytest.approx(50.0)
+
+
+def test_server_coverage_pct_is_zero_when_there_are_no_servers():
+    result = correlate(ad_frame("WS-01", os="Windows 11 Enterprise"), agents_to_frame([agent("WS-01")]), as_of=AS_OF)
+    assert result.summary["server_status_counts"] == {}
+    assert result.summary["server_coverage_pct"] == 0.0

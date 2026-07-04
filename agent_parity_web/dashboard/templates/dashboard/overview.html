@@ -50,6 +50,32 @@
         </div>
     </div>
 
+    <div class="metrics">
+        <div class="metric">
+            <div class="value">
+                {% if card.server_coverage_pct is not None %}{{ card.server_coverage_pct }}%{% else %}—{% endif %}
+            </div>
+            <div class="label">Server coverage</div>
+        </div>
+        <div class="metric">
+            <div class="value">{{ card.server_counts.covered|default:0 }}</div>
+            <div class="label">Servers covered</div>
+        </div>
+        <div class="metric">
+            <div class="value">{{ card.server_counts.missing_agent|default:0 }}</div>
+            <div class="label">Servers missing agent</div>
+        </div>
+        <div class="metric">
+            <div class="value">{{ card.server_counts.stale_coverage|default:0 }}</div>
+            <div class="label">Servers stale</div>
+        </div>
+    </div>
+    <p class="muted">
+        "Server" stands in for high-value asset (Domain Controllers, file/storage
+        servers, ...) — identified by OS SKU, not hostname, since a storage
+        server can be named anything but can't fake being a Windows Server.
+    </p>
+
     <table>
         <thead>
         <tr>
@@ -74,6 +100,9 @@
     </table>
 
     <h3>Coverage % over time</h3>
+    <p class="muted">Overall coverage alongside server-only coverage — the
+        two numbers a quarterly report needs: is coverage improving, and are
+        the highest-value assets covered.</p>
     <canvas class="trend" data-url="{% url 'dashboard:trend_data' card.client.slug %}"></canvas>
     {% else %}
     <p class="muted">No completed runs yet for this client.</p>
@@ -88,18 +117,30 @@
             type: "line",
             data: {
                 labels: data.labels,
-                datasets: [{
-                    label: "Coverage %",
-                    data: data.coverage_pct,
-                    borderColor: "#059669",
-                    backgroundColor: "rgba(5, 150, 105, 0.1)",
-                    fill: true,
-                    tension: 0.2,
-                }],
+                datasets: [
+                    {
+                        label: "Overall coverage %",
+                        data: data.coverage_pct,
+                        borderColor: "#059669",
+                        backgroundColor: "rgba(5, 150, 105, 0.1)",
+                        fill: true,
+                        tension: 0.2,
+                    },
+                    {
+                        label: "Server coverage %",
+                        data: data.server_coverage_pct,
+                        borderColor: "#b45309",
+                        backgroundColor: "rgba(180, 83, 9, 0.1)",
+                        borderDash: [6, 4],
+                        fill: false,
+                        tension: 0.2,
+                        spanGaps: true,
+                    },
+                ],
             },
             options: {
                 scales: {y: {suggestedMin: 0, suggestedMax: 100}},
-                plugins: {legend: {display: false}},
+                plugins: {legend: {display: true}},
             },
         });
     });

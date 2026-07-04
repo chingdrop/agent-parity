@@ -47,6 +47,16 @@ def overview(request):
             row["status"]: row["n"]
             for row in run.snapshots.values("status").annotate(n=Count("id"))
         }
+        # Servers stand in for "high-value assets" (Domain Controllers,
+        # file/storage servers, ...) — a Windows Server SKU is a reliable
+        # signal on its own; hostname naming conventions aren't, so
+        # machine_type (not a name pattern) is what this filters on.
+        server_counts = {
+            row["status"]: row["n"]
+            for row in run.snapshots.filter(machine_type="server")
+            .values("status")
+            .annotate(n=Count("id"))
+        }
         vendors = []
         vendor_rows = (
             run.snapshots.exclude(vendor="")
@@ -76,6 +86,8 @@ def overview(request):
                 "run": run,
                 "counts": counts,
                 "coverage_pct": _coverage_pct(counts),
+                "server_counts": server_counts,
+                "server_coverage_pct": _coverage_pct(server_counts),
                 "vendors": vendors,
             }
         )
@@ -100,6 +112,7 @@ def device_list(request):
         "client": request.GET.get("client", ""),
         "status": request.GET.get("status", ""),
         "vendor": request.GET.get("vendor", ""),
+        "machine_type": request.GET.get("machine_type", ""),
     }
     if selected["client"]:
         snapshots = snapshots.filter(device__client__slug=selected["client"])
@@ -107,6 +120,8 @@ def device_list(request):
         snapshots = snapshots.filter(status=selected["status"])
     if selected["vendor"]:
         snapshots = snapshots.filter(vendor=selected["vendor"])
+    if selected["machine_type"]:
+        snapshots = snapshots.filter(machine_type=selected["machine_type"])
 
     page = Paginator(snapshots, 50).get_page(request.GET.get("page"))
     vendor_names = (
@@ -114,6 +129,12 @@ def device_list(request):
         .values_list("vendor", flat=True)
         .distinct()
         .order_by("vendor")
+    )
+    machine_types = (
+        CoverageSnapshot.objects.exclude(machine_type="")
+        .values_list("machine_type", flat=True)
+        .distinct()
+        .order_by("machine_type")
     )
     return render(
         request,
@@ -123,6 +144,7 @@ def device_list(request):
             "clients": clients,
             "statuses": CoverageStatus.choices,
             "vendors": vendor_names,
+            "machine_types": machine_types,
             "selected": selected,
         },
     )
@@ -139,7 +161,13 @@ def device_detail(request, pk: int):
 
 
 def trend_data(request, slug: str):
-    """Coverage % per CorrelationRun, consumed by the overview Chart.js chart."""
+    """Coverage % per CorrelationRun, consumed by the overview Chart.js chart.
+
+    Reports overall coverage and server-only coverage (the high-value-asset
+    stand-in) as two parallel series — a quarterly report needs to show both
+    "coverage is improving overall" and "the assets that matter most are
+    covered" as trends, not just a single point-in-time snapshot.
+    """
     client = get_object_or_404(Client, slug=slug)
     runs = (
         client.runs.exclude(status=CorrelationRun.RunStatus.PENDING)
@@ -148,13 +176,40 @@ def trend_data(request, slug: str):
             covered=Count("snapshots", filter=Q(snapshots__status=CoverageStatus.COVERED)),
             stale=Count("snapshots", filter=Q(snapshots__status=CoverageStatus.STALE_COVERAGE)),
             missing=Count("snapshots", filter=Q(snapshots__status=CoverageStatus.MISSING_AGENT)),
+            server_covered=Count(
+                "snapshots",
+                filter=Q(snapshots__status=CoverageStatus.COVERED, snapshots__machine_type="server"),
+            ),
+            server_stale=Count(
+                "snapshots",
+                filter=Q(
+                    snapshots__status=CoverageStatus.STALE_COVERAGE, snapshots__machine_type="server"
+                ),
+            ),
+            server_missing=Count(
+                "snapshots",
+                filter=Q(
+                    snapshots__status=CoverageStatus.MISSING_AGENT, snapshots__machine_type="server"
+                ),
+            ),
         )
     )
-    labels, values = [], []
+    labels, values, server_values = [], [], []
     for run in runs:
         denominator = run.covered + run.stale + run.missing
         if not denominator:
             continue
         labels.append(run.started_at.strftime("%Y-%m-%d %H:%M"))
         values.append(round(100.0 * run.covered / denominator, 1))
-    return JsonResponse({"client": client.slug, "labels": labels, "coverage_pct": values})
+        server_denominator = run.server_covered + run.server_stale + run.server_missing
+        server_values.append(
+            round(100.0 * run.server_covered / server_denominator, 1) if server_denominator else None
+        )
+    return JsonResponse(
+        {
+            "client": client.slug,
+            "labels": labels,
+            "coverage_pct": values,
+            "server_coverage_pct": server_values,
+        }
+    )

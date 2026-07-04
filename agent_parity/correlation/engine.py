@@ -30,7 +30,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 
-from agent_parity.models import AgentDevice, CoverageStatus, normalize_hostname
+from agent_parity.models import AgentDevice, CoverageStatus, infer_machine_type, normalize_hostname
 
 #: Columns every agents frame carries into the merge. platform/machine_type
 #: are worded to match SentinelOne's own vocabulary regardless of which
@@ -129,6 +129,30 @@ def classify_coverage(
     return out
 
 
+def backfill_machine_type(classified: pd.DataFrame) -> pd.DataFrame:
+    """Stage 4: give every row a ``machine_type``, even a ``missing_agent`` one.
+
+    ``machine_type`` normally only comes from the agent side (see
+    ``AgentDevice``'s docstring) — a ``missing_agent`` row has no agent
+    record at all, so without this it would carry no criticality signal
+    whatsoever. That's exactly backwards for a coverage tool: a missing
+    Domain Controller is the row that most needs to stand out. AD's own OS
+    text gets the same ``infer_machine_type()`` heuristic connectors already
+    use for vendors with no native ``machineType`` field — a Windows Server
+    SKU is a reliable signal on its own; hostname naming conventions (what a
+    file/storage server might be called) are not, so this deliberately
+    doesn't try to guess from the hostname at all.
+    """
+    out = classified.copy()
+    has_machine_type = out["machine_type"].notna() & (out["machine_type"] != "")
+    if "os_ad" in out.columns:
+        inferred = out["os_ad"].map(
+            lambda text: infer_machine_type(text) if isinstance(text, str) else ""
+        )
+        out["machine_type"] = out["machine_type"].where(has_machine_type, inferred)
+    return out
+
+
 def summarize(frame: pd.DataFrame) -> dict:
     """Aggregates for reporting — plain value_counts/groupby, nothing clever."""
     status_counts = frame["status"].value_counts().to_dict()
@@ -143,12 +167,28 @@ def summarize(frame: pd.DataFrame) -> dict:
         for vendor, group in matched.groupby("vendor")
     }
 
+    # Servers stand in for "high-value assets" (Domain Controllers, file/
+    # storage servers, ...) — reliably identifiable by OS SKU, unlike
+    # hostname naming conventions. Reported the same shape as the overall
+    # coverage stats so a quarterly report can show "coverage is improving"
+    # and "the assets that matter most are covered" side by side.
+    servers = frame[frame["machine_type"] == "server"]
+    server_status_counts = servers["status"].value_counts().to_dict()
+    server_covered = server_status_counts.get(CoverageStatus.COVERED.value, 0)
+    server_stale = server_status_counts.get(CoverageStatus.STALE_COVERAGE.value, 0)
+    server_missing = server_status_counts.get(CoverageStatus.MISSING_AGENT.value, 0)
+    server_denominator = server_covered + server_stale + server_missing
+
     return {
         "total_rows": int(len(frame)),
         "unique_devices": int(frame["join_key"].nunique()),
         "status_counts": {k: int(v) for k, v in status_counts.items()},
         "coverage_pct": round(100.0 * covered / denominator, 1) if denominator else 0.0,
         "by_vendor": by_vendor,
+        "server_status_counts": {k: int(v) for k, v in server_status_counts.items()},
+        "server_coverage_pct": round(100.0 * server_covered / server_denominator, 1)
+        if server_denominator
+        else 0.0,
     }
 
 
@@ -163,5 +203,6 @@ def correlate(
         ad_df.pipe(add_join_key)
         .pipe(merge_with_agents, agents_df)
         .pipe(classify_coverage, stale_days=stale_days, as_of=as_of)
+        .pipe(backfill_machine_type)
     )
     return CorrelationResult(frame=frame, summary=summarize(frame))

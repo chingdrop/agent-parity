@@ -36,6 +36,17 @@
             {% endfor %}
         </select>
     </div>
+    <div>
+        <label for="machine_type">Machine type</label>
+        <select name="machine_type" id="machine_type">
+            <option value="">All</option>
+            {% for machine_type in machine_types %}
+            <option value="{{ machine_type }}" {% if selected.machine_type == machine_type %}selected{% endif %}>
+                {{ machine_type }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
     <button type="submit">Filter</button>
 </form>
 
@@ -46,6 +57,7 @@
         <th>Client</th>
         <th>Status</th>
         <th>Vendor</th>
+        <th>Machine type</th>
         <th>Agent last seen</th>
         <th>OS</th>
     </tr>
@@ -57,12 +69,13 @@
         <td>{{ snapshot.device.client.name }}</td>
         <td><span class="badge {{ snapshot.status }}">{{ snapshot.get_status_display }}</span></td>
         <td>{{ snapshot.vendor|default:"—" }}</td>
+        <td>{{ snapshot.machine_type|default:"—" }}</td>
         <td>{{ snapshot.agent_last_seen|date:"Y-m-d H:i"|default:"—" }}</td>
         <td>{{ snapshot.device.os|default:"—" }}</td>
     </tr>
     {% empty %}
     <tr>
-        <td colspan="6" class="muted">No snapshots match these filters.</td>
+        <td colspan="7" class="muted">No snapshots match these filters.</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -70,12 +83,12 @@
 
 <div class="pagination">
     {% if page.has_previous %}
-    <a href="?client={{ selected.client }}&status={{ selected.status }}&vendor={{ selected.vendor }}&page={{ page.previous_page_number }}">&laquo;
+    <a href="?client={{ selected.client }}&status={{ selected.status }}&vendor={{ selected.vendor }}&machine_type={{ selected.machine_type }}&page={{ page.previous_page_number }}">&laquo;
         previous</a>
     {% endif %}
     page {{ page.number }} of {{ page.paginator.num_pages }}
     {% if page.has_next %}
-    <a href="?client={{ selected.client }}&status={{ selected.status }}&vendor={{ selected.vendor }}&page={{ page.next_page_number }}">next
+    <a href="?client={{ selected.client }}&status={{ selected.status }}&vendor={{ selected.vendor }}&machine_type={{ selected.machine_type }}&page={{ page.next_page_number }}">next
         &raquo;</a>
     {% endif %}
 </div>
