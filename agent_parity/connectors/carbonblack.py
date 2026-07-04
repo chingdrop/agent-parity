@@ -61,7 +61,22 @@ class CarbonBlackConnector(AgentConnector):
             if start >= payload.get("num_found", 0):
                 return devices
 
-    def _live_deploy_and_run(self, script_path: Path, target_id: str) -> str:
+    @staticmethod
+    def _powershell_args(script_args: dict[str, str]) -> str:
+        """Render ``script_args`` as ``-Name 'value'`` pairs for a raw command
+        line (Live Response's ``create process`` takes one, unlike
+        SentinelOne's structured ``inputParams``). Single quotes in a value
+        are doubled per PowerShell's own quoting rules, not backslash-escaped.
+        """
+        if not script_args:
+            return ""
+        quote = "'"
+        parts = (f"-{name} {quote}{value.replace(quote, quote * 2)}{quote}" for name, value in script_args.items())
+        return " " + " ".join(parts)
+
+    def _live_deploy_and_run(
+        self, script_path: Path, target_id: str, script_args: dict[str, str]
+    ) -> str:
         base = self.credentials["api_url"].rstrip("/")
         org = self.credentials["org_key"]
         lr = f"{base}/appservices/v6/orgs/{org}/liveresponse"
@@ -94,13 +109,17 @@ class CarbonBlackConnector(AgentConnector):
             )
 
             # 3. Run PowerShell against it and wait for the command to finish.
+            # Live Response's "create process" takes a raw command line, so
+            # script_args (e.g. the presigned upload URL) are appended
+            # directly as -Name 'value' parameters rather than through any
+            # structured input-parameters field.
             command = self._request_json(
                 "POST", f"{lr}/sessions/{session_id}/commands", headers=self._headers,
                 json={
                     "name": "create process",
                     "path": (
                         "powershell.exe -ExecutionPolicy Bypass -NonInteractive "
-                        f"-File {remote_path}"
+                        f"-File {remote_path}{self._powershell_args(script_args)}"
                     ),
                     "wait_for_completion": True,
                     "wait_for_output": True,

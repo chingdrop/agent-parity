@@ -20,6 +20,8 @@ x-app: &app
       condition: service_healthy
     redis:
       condition: service_healthy
+    minio:
+      condition: service_healthy
 
 services:
   db:
@@ -44,6 +46,23 @@ services:
       timeout: 3s
       retries: 10
 
+  # S3-compatible object storage for the AD-export handoff (see
+  # agent_parity/storage.py). Same code talks to real AWS S3 in production —
+  # just set STORAGE_ENDPOINT_URL to nothing and point creds/bucket at S3.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-agent_parity}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-agent_parity_minio}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   web:
     <<: *app
     ports:
@@ -59,3 +78,4 @@ services:
 
 volumes:
   pgdata:
+  miniodata:

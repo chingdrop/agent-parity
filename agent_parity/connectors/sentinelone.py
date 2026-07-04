@@ -58,7 +58,9 @@ class SentinelOneConnector(AgentConnector):
             if not cursor:
                 return devices
 
-    def _live_deploy_and_run(self, script_path: Path, target_id: str) -> str:
+    def _live_deploy_and_run(
+        self, script_path: Path, target_id: str, script_args: dict[str, str]
+    ) -> str:
         base = self.credentials["api_url"].rstrip("/")
 
         # 1. Upload the script to the script library.
@@ -72,14 +74,21 @@ class SentinelOneConnector(AgentConnector):
             )
         script_id = upload["data"]["id"]
 
-        # 2. Execute it against the target agent.
+        # 2. Execute it against the target agent. RSO scripts can declare
+        # user-facing input parameters in the script library; "inputParams"
+        # models passing values for those (e.g. the presigned upload URL for
+        # the object-storage handoff — see deployment.script_runner).
         execution = self._request_json(
             "POST",
             f"{base}/web/api/v2.1/remote-scripts/execute",
             headers=self._headers,
             json={
                 "filter": {"ids": [target_id]},
-                "data": {"scriptId": script_id, "outputDestination": "SentinelCloud"},
+                "data": {
+                    "scriptId": script_id,
+                    "outputDestination": "SentinelCloud",
+                    "inputParams": script_args,
+                },
             },
         )
         task_id = execution["data"]["parentTaskId"]

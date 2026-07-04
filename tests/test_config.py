@@ -3,8 +3,16 @@ the vendor that carries a client's AD export."""
 
 import pytest
 
-from agent_parity.config import ClientConfig, ConfigError, get_connector, load_config, pick_ad_export_vendor
+from agent_parity.config import (
+    ClientConfig,
+    ConfigError,
+    get_connector,
+    get_storage,
+    load_config,
+    pick_ad_export_vendor,
+)
 from agent_parity.connectors import CarbonBlackConnector, SentinelOneConnector
+from agent_parity.storage import ObjectStorage
 
 
 def _client(vendors: tuple[str, ...]) -> ClientConfig:
@@ -96,3 +104,37 @@ def test_ad_export_vendor_selection_matches_committed_topology(config_with_creds
     # bitdefender for both, which doesn't genuinely support remote execution.
     assert pick_ad_export_vendor(config_with_creds.client("acme")) == "sentinelone"
     assert pick_ad_export_vendor(config_with_creds.client("globex")) == "sentinelone"
+
+
+def test_storage_unconfigured_by_default(monkeypatch):
+    for var in ("STORAGE_BUCKET", "STORAGE_ACCESS_KEY", "STORAGE_SECRET_KEY"):
+        monkeypatch.delenv(var, raising=False)
+    config = load_config()
+    assert not config.storage.enabled
+    assert get_storage(config) is None
+
+
+def test_storage_enabled_when_fully_configured(monkeypatch):
+    monkeypatch.setenv("STORAGE_ENDPOINT_URL", "http://minio:9000")
+    monkeypatch.setenv("STORAGE_BUCKET", "agent-parity-ad-exports")
+    monkeypatch.setenv("STORAGE_ACCESS_KEY", "minio-access")
+    monkeypatch.setenv("STORAGE_SECRET_KEY", "minio-secret")
+    config = load_config()
+
+    assert config.storage.enabled
+    storage = get_storage(config)
+    assert isinstance(storage, ObjectStorage)
+    assert storage.bucket == "agent-parity-ad-exports"
+
+
+def test_storage_rejects_unsupported_backend(monkeypatch):
+    monkeypatch.setenv("STORAGE_BUCKET", "b")
+    monkeypatch.setenv("STORAGE_ACCESS_KEY", "a")
+    monkeypatch.setenv("STORAGE_SECRET_KEY", "s")
+    config = load_config()
+    # dataclasses are frozen; build a copy with an unsupported backend value.
+    from dataclasses import replace
+
+    bad_config = replace(config, storage=replace(config.storage, backend="azure_blob"))
+    with pytest.raises(ConfigError, match="Unsupported storage backend"):
+        get_storage(bad_config)

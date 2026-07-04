@@ -50,3 +50,21 @@ clients:
     vendors:
       sentinelone: { }
       bitdefender: { }
+
+# Optional object-storage handoff for the AD export. Vendor remote-execution
+# channels (SentinelOne RSO, Carbon Black Live Response) have real output-size
+# limits a full AD export can exceed; when configured, the remote script
+# uploads its CSV directly to object storage via a short-lived presigned URL
+# instead of returning it through the vendor channel. Built against the S3
+# API (boto3): point endpoint_url at a self-hosted MinIO instance (the Docker
+# Compose stack runs one) for local/dev/demo use, or leave it unset to use
+# real AWS S3 in production — same code either way. Unconfigured (the uv demo
+# default, since these all resolve to null with no .env) falls back to
+# fetching the script's output directly through the vendor's own channel.
+storage:
+  backend: s3
+  endpoint_url: ${STORAGE_ENDPOINT_URL}
+  bucket: ${STORAGE_BUCKET}
+  access_key: ${STORAGE_ACCESS_KEY}
+  secret_key: ${STORAGE_SECRET_KEY}
+  region: ${STORAGE_REGION}

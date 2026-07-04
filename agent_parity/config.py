@@ -12,6 +12,11 @@ The credential model is split in two on purpose:
 ``${VAR}`` references that point at an unset environment variable resolve to
 ``None``, which is what puts a connector into fixture mode — so a fresh
 checkout with no ``.env`` runs the entire pipeline against ``sample_data/``.
+
+The same file also declares an optional ``storage:`` section (object storage
+for the AD-export handoff — see ``agent_parity.storage``), resolved the same
+way: unset ``${VAR}``s mean unconfigured, and ``get_storage()`` returns
+``None`` rather than raising.
 """
 
 from __future__ import annotations
@@ -70,10 +75,33 @@ class ClientConfig:
 
 
 @dataclass(frozen=True)
+class StorageConfig:
+    """Optional S3-compatible object storage for the AD-export handoff.
+
+    Unconfigured by default (every field ``None``) — the uv demo path never
+    sets these, so ``enabled`` is False and the pipeline falls back to
+    fetching the script's output directly through the vendor's own
+    remote-execution channel, exactly as if this feature didn't exist.
+    """
+
+    backend: str = "s3"
+    endpoint_url: str | None = None  # unset -> real AWS S3; set for MinIO/other S3-compatible services
+    bucket: str | None = None
+    access_key: str | None = None
+    secret_key: str | None = None
+    region: str = "us-east-1"
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.bucket and self.access_key and self.secret_key)
+
+
+@dataclass(frozen=True)
 class AppConfig:
     stale_days: int
     vendors: dict  # name -> VendorConfig
     clients: dict  # slug -> ClientConfig
+    storage: StorageConfig
 
     def client(self, slug: str) -> ClientConfig:
         try:
@@ -133,10 +161,21 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                 )
         clients[client.slug] = client
 
+    storage_raw = raw.get("storage") or {}
+    storage = StorageConfig(
+        backend=storage_raw.get("backend") or "s3",
+        endpoint_url=storage_raw.get("endpoint_url") or None,
+        bucket=storage_raw.get("bucket") or None,
+        access_key=storage_raw.get("access_key") or None,
+        secret_key=storage_raw.get("secret_key") or None,
+        region=storage_raw.get("region") or "us-east-1",
+    )
+
     return AppConfig(
         stale_days=int(raw.get("stale_days", 14)),
         vendors=vendors,
         clients=clients,
+        storage=storage,
     )
 
 
@@ -204,3 +243,33 @@ def get_connector(config: AppConfig, client_slug: str, vendor_name: str):
     credentials = config.credentials_for(client_slug, vendor_name)
     fixture_dir = SAMPLE_DATA_DIR / client_slug
     return connector_cls(credentials=credentials, fixture_dir=fixture_dir)
+
+
+def get_storage(config: AppConfig):
+    """Build the object-storage client for the AD-export handoff, or None.
+
+    None means "not configured" — the same fallback-by-omission pattern used
+    for vendor credentials: ``deployment.script_runner.run_ad_export`` treats
+    it as "fetch the script's output directly through the vendor channel,"
+    exactly like before this feature existed. A fresh checkout with no
+    STORAGE_* variables in .env never touches this at all.
+    """
+    if not config.storage.enabled:
+        return None
+
+    # Imported here, not at module level, for the same reason as in
+    # get_connector: keep topology-only config loading free of the boto3
+    # dependency chain for callers that don't need it.
+    from agent_parity.storage import ObjectStorage
+
+    if config.storage.backend != "s3":
+        raise ConfigError(
+            f"Unsupported storage backend {config.storage.backend!r}; only 's3' is implemented"
+        )
+    return ObjectStorage(
+        bucket=config.storage.bucket,
+        endpoint_url=config.storage.endpoint_url,
+        access_key=config.storage.access_key,
+        secret_key=config.storage.secret_key,
+        region=config.storage.region,
+    )

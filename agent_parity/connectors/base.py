@@ -152,8 +152,19 @@ class AgentConnector(ABC):
 
     # -- remote script execution -------------------------------------------
 
-    def deploy_and_run(self, script_path: str | Path, target_id: str) -> str:
+    def deploy_and_run(
+        self,
+        script_path: str | Path,
+        target_id: str,
+        script_args: dict[str, str] | None = None,
+    ) -> str:
         """Push a script to ``target_id``, execute it, and return its stdout.
+
+        ``script_args`` are passed through to the script itself — currently
+        just the presigned upload URL when the AD export is handed off via
+        object storage instead of the vendor's own output channel (see
+        ``deployment.script_runner.run_ad_export``); ignored in fixture mode,
+        where there's no real script execution to parameterize.
 
         Checked before the live/fixture fork so a vendor without genuine
         remote-execution capability can't produce a misleadingly successful
@@ -165,7 +176,7 @@ class AgentConnector(ABC):
                 f"(fetch_inventory-only vendor)"
             )
         if self.is_live:
-            return self._live_deploy_and_run(Path(script_path), target_id)
+            return self._live_deploy_and_run(Path(script_path), target_id, script_args or {})
         # Fixture mode: the canned AD export stands in for the script output.
         path = self._fixture_path("ad_export.csv")
         return rebase_csv_timestamps(path.read_text())
@@ -229,7 +240,9 @@ class AgentConnector(ABC):
     def _live_fetch_inventory(self) -> list[AgentDevice]:
         ...
 
-    def _live_deploy_and_run(self, script_path: Path, target_id: str) -> str:
+    def _live_deploy_and_run(
+        self, script_path: Path, target_id: str, script_args: dict[str, str]
+    ) -> str:
         """Default for vendors with ``supports_remote_execution = False``.
 
         The public ``deploy_and_run`` already refuses before reaching here;

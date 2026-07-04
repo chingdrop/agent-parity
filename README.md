@@ -126,6 +126,44 @@ to add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
 `_request_json()`/`_as_text()` helpers narrow that `dict | str | bytes` result
 for call sites that know which one they expect.
 
+### AD-export handoff: object storage instead of the vendor channel (optional)
+
+Vendor remote-execution channels have real output-size limits — fine for a
+console command, not necessarily fine for a full AD computer export from a
+large environment. When object storage is configured (`agent_parity/storage.py`),
+the handoff changes shape entirely:
+
+1. agent-parity generates a short-lived, single-object **presigned PUT URL**
+   (default 15-minute expiry) — the remote endpoint never holds a standing
+   storage credential, only a URL that can write exactly one key before it
+   expires.
+2. That URL is passed to the script as an argument (SentinelOne via RSO's
+   `inputParams`, Carbon Black by appending it to the raw PowerShell command
+   line — see each connector's `_live_deploy_and_run`). The script
+   (`Export-ADDevices.ps1 -UploadUrl ...`) uploads its CSV directly there
+   instead of printing it to stdout.
+3. The vendor's remote-execution call only needs to report that the script
+   *ran*; its stdout is ignored entirely.
+4. agent-parity downloads the object with a plain authenticated GET (its own
+   credentials, not the presigned URL) and deletes it — best-effort cleanup
+   that never fails an export that already succeeded.
+
+This is built against the **S3 API** (`boto3`), not a specific product:
+`agent_parity/storage.py`'s `ObjectStorage` talks to a self-hosted **MinIO**
+instance (the Docker Compose stack runs one) for local/dev/demo use, or real
+**AWS S3** in production, with `endpoint_url` as the only thing that changes.
+It is *not* Azure Blob Storage capable — Blob doesn't speak the S3 API, so
+that would need a second implementation with a different SDK, not just
+different credentials.
+
+Unconfigured (the uv demo default — `STORAGE_BUCKET`/`STORAGE_ACCESS_KEY`/
+`STORAGE_SECRET_KEY` all resolve to `null` with no `.env`), `run_ad_export`
+falls back to fetching the script's output directly through the vendor's own
+channel, exactly as if this feature didn't exist. It's also never engaged for
+a non-live (fixture-mode) connector — there's no real endpoint to upload
+anything from, so fixture mode always returns the canned `sample_data/`
+CSV directly, regardless of whether storage happens to be configured.
+
 ### The correlation: a pandas merge, kept honest
 
 `correlation/engine.py` reduces the whole reconciliation to one analytical
@@ -249,8 +287,10 @@ docker compose up --build                   # dev: runserver, bind mounts, DEBUG
 ```
 
 The base file defines `web`, `worker` (scale with `--scale worker=N`),
-`beat`, `redis`, and `db` (Postgres); `docker-compose.override.yml` is
-applied automatically for development. Seed data inside the stack:
+`beat`, `redis`, `db` (Postgres), and `minio` (S3-compatible object storage
+for the AD-export handoff — console at http://localhost:9001 in dev, login
+with `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`); `docker-compose.override.yml`
+is applied automatically for development. Seed data inside the stack:
 
 ```console
 docker compose exec web python manage.py seed_demo
@@ -279,6 +319,10 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
   fixture-mode fallback on unset secrets.
 - **Connectors and parser**: fixture normalization, timestamp rebasing,
   live-mode gating on complete credentials.
+- **Object storage and AD-export handoff**: presigned-URL round trip against
+  a mocked S3 backend (`moto` — no real MinIO/AWS S3 needed); the
+  storage-vs-direct-channel branch in `script_runner.run_ad_export`, including
+  that fixture mode never touches storage even when it's configured.
 - **Fixture scenarios**: named tests pin the authored gap scenarios
   (`acme-sql02` is missing, `acme-fs-old` is orphaned, …) so a fixture edit
   that breaks a scenario fails loudly.
