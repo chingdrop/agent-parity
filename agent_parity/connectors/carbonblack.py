@@ -50,12 +50,12 @@ class CarbonBlackConnector(AgentConnector):
         devices: list[AgentDevice] = []
         start, page = 0, 200
         while True:
-            payload = self._request(
+            payload = self._request_json(
                 "POST",
                 f"{base}/appservices/v6/orgs/{org}/devices/_search",
                 headers=self._headers,
                 json={"criteria": {}, "start": start, "rows": page},
-            ).json()
+            )
             devices.extend(self._parse_inventory(payload))
             start += page
             if start >= payload.get("num_found", 0):
@@ -67,15 +67,15 @@ class CarbonBlackConnector(AgentConnector):
         lr = f"{base}/appservices/v6/orgs/{org}/liveresponse"
 
         # 1. Open a Live Response session against the device.
-        session = self._request(
+        session = self._request_json(
             "POST", f"{lr}/sessions", headers=self._headers, json={"device_id": int(target_id)}
-        ).json()
+        )
         session_id = session["id"]
 
         def session_ready() -> str | None:
-            state = self._request(
+            state = self._request_json(
                 "GET", f"{lr}/sessions/{session_id}", headers=self._headers
-            ).json()
+            )
             return "ready" if state.get("status") == "ACTIVE" else None
 
         self._poll_until(session_ready, f"Live Response session on device {target_id}")
@@ -84,17 +84,17 @@ class CarbonBlackConnector(AgentConnector):
         try:
             # 2. Stage the script on the endpoint (put file).
             with open(script_path, "rb") as fh:
-                uploaded = self._request(
+                uploaded = self._request_json(
                     "POST", f"{lr}/sessions/{session_id}/files", headers=self._headers,
                     files={"file": (script_path.name, fh)},
-                ).json()
+                )
             self._request(
                 "POST", f"{lr}/sessions/{session_id}/commands", headers=self._headers,
                 json={"name": "put file", "file_id": uploaded["id"], "path": remote_path},
             )
 
             # 3. Run PowerShell against it and wait for the command to finish.
-            command = self._request(
+            command = self._request_json(
                 "POST", f"{lr}/sessions/{session_id}/commands", headers=self._headers,
                 json={
                     "name": "create process",
@@ -105,14 +105,14 @@ class CarbonBlackConnector(AgentConnector):
                     "wait_for_completion": True,
                     "wait_for_output": True,
                 },
-            ).json()
+            )
             command_id = command["id"]
 
             def command_output() -> str | None:
-                state = self._request(
+                state = self._request_json(
                     "GET", f"{lr}/sessions/{session_id}/commands/{command_id}",
                     headers=self._headers,
-                ).json()
+                )
                 status = state.get("status")
                 if status == "ERROR":
                     raise ConnectorError(f"{self.vendor}: Live Response command failed")

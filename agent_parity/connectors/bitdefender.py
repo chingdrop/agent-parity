@@ -34,7 +34,7 @@ class BitDefenderConnector(AgentConnector):
 
     def _rpc(self, service: str, method: str, params: dict) -> dict:
         base = self.credentials["api_url"].rstrip("/")
-        payload = self._request(
+        payload = self._request_json(
             "POST",
             f"{base}/api/v1.0/jsonrpc/{service}",
             headers=self._headers,
@@ -44,7 +44,7 @@ class BitDefenderConnector(AgentConnector):
                 "method": method,
                 "params": params,
             },
-        ).json()
+        )
         if payload.get("error"):
             raise ConnectorError(f"{self.vendor}: RPC {method} failed: {payload['error']}")
         return payload.get("result") or {}

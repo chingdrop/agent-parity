@@ -20,6 +20,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 import time
 from abc import ABC, abstractmethod
 from dataclasses import replace
@@ -30,6 +31,7 @@ from typing import Callable, ClassVar
 import requests
 
 from agent_parity.models import AgentDevice
+from agent_parity.rest_adapter import RestAdapter, RestAdapterConfig
 
 
 class ConnectorError(Exception):
@@ -110,7 +112,13 @@ class AgentConnector(ABC):
     def __init__(self, credentials: dict | None = None, fixture_dir: str | Path | None = None):
         self.credentials = credentials or {}
         self.fixture_dir = Path(fixture_dir) if fixture_dir else None
-        self.session = requests.Session()
+        # Call sites always pass fully-qualified URLs, so base_url is never
+        # actually joined against — it only matters that RestAdapterConfig
+        # requires one.
+        self.session = RestAdapter(
+            RestAdapterConfig(base_url=self.credentials.get("api_url") or ""),
+            logger=logging.getLogger(f"agent_parity.connectors.{self.vendor}"),
+        )
 
     @property
     def is_live(self) -> bool:
@@ -161,13 +169,32 @@ class AgentConnector(ABC):
             time.sleep(self.poll_interval)
         raise ConnectorError(f"{self.vendor}: timed out waiting for {what}")
 
-    def _request(self, method: str, url: str, **kwargs) -> requests.Response:
+    def _request(self, method: str, url: str, **kwargs) -> dict | str | bytes:
+        """Issue a request through the shared RestAdapter (retries included).
+
+        Returns already-parsed content — a dict for JSON responses, str for
+        text/html, raw bytes otherwise — not a ``requests.Response``.
+        """
         try:
-            response = self.session.request(method, url, timeout=30, **kwargs)
-            response.raise_for_status()
+            return self.session.request(method, url, timeout=30, **kwargs)
         except requests.RequestException as exc:
             raise ConnectorError(f"{self.vendor}: API request failed: {exc}") from exc
-        return response
+
+    @staticmethod
+    def _as_text(payload: dict | str | bytes) -> str:
+        """Coerce a ``_request`` result into text, for script-output call sites."""
+        if isinstance(payload, bytes):
+            return payload.decode("utf-8", errors="replace")
+        if isinstance(payload, str):
+            return payload
+        raise ConnectorError(f"expected text output, got parsed JSON: {payload!r}")
+
+    def _request_json(self, method: str, url: str, **kwargs) -> dict:
+        """Like ``_request``, but for endpoints that always return a JSON object."""
+        payload = self._request(method, url, **kwargs)
+        if not isinstance(payload, dict):
+            raise ConnectorError(f"{self.vendor}: expected a JSON object, got {payload!r}")
+        return payload
 
     # -- vendor-specific -----------------------------------------------------
 

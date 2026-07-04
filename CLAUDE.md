@@ -78,6 +78,17 @@ client's `ad_export.csv`, with all timestamps rebased so the newest check-in is 
 stale/recent split in `sample_data/` stable regardless of when the demo is run. Don't
 add credential-checking logic anywhere else; it belongs in `is_live` alone.
 
+Live mode goes through `agent_parity/rest_adapter.py` (`RestAdapter`, ported from a
+sibling project) rather than a bare `requests.Session` — retries/backoff on
+429/5xx are configured there once, shared by all three vendors. `RestAdapter.request()`
+returns already-parsed content (`dict` for JSON, `str` for text/html, `bytes`
+otherwise), not a `Response` object, so connector call sites use `self._request_json(...)`
+when they know the endpoint returns a JSON object, or `self._as_text(...)` on the raw
+`_request(...)` result when they need guaranteed text (e.g. SentinelOne's fetch-files
+script output). No test exercises real network I/O; `tests/test_connectors.py` proves
+the RestAdapter wiring (retry config, JSON/text parsing) by monkeypatching the
+underlying `requests.Session.request`, not by hitting a live API.
+
 ## Credential resolution (`agent_parity/config.py`)
 
 `config.yaml` (topology, committed) + `.env` (secrets, gitignored) are resolved together

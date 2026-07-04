@@ -50,9 +50,9 @@ class SentinelOneConnector(AgentConnector):
             params: dict[str, object] = {"limit": 200}
             if cursor:
                 params["cursor"] = cursor
-            payload = self._request(
+            payload = self._request_json(
                 "GET", f"{base}/web/api/v2.1/agents", headers=self._headers, params=params
-            ).json()
+            )
             devices.extend(self._parse_inventory(payload))
             cursor = (payload.get("pagination") or {}).get("nextCursor")
             if not cursor:
@@ -63,17 +63,17 @@ class SentinelOneConnector(AgentConnector):
 
         # 1. Upload the script to the script library.
         with open(script_path, "rb") as fh:
-            upload = self._request(
+            upload = self._request_json(
                 "POST",
                 f"{base}/web/api/v2.1/remote-scripts",
                 headers=self._headers,
                 files={"file": (script_path.name, fh)},
                 data={"scriptType": "action", "osTypes": "windows"},
-            ).json()
+            )
         script_id = upload["data"]["id"]
 
         # 2. Execute it against the target agent.
-        execution = self._request(
+        execution = self._request_json(
             "POST",
             f"{base}/web/api/v2.1/remote-scripts/execute",
             headers=self._headers,
@@ -81,17 +81,17 @@ class SentinelOneConnector(AgentConnector):
                 "filter": {"ids": [target_id]},
                 "data": {"scriptId": script_id, "outputDestination": "SentinelCloud"},
             },
-        ).json()
+        )
         task_id = execution["data"]["parentTaskId"]
 
         # 3. Poll task status until the run finishes, then fetch the output.
         def check() -> str | None:
-            status = self._request(
+            status = self._request_json(
                 "GET",
                 f"{base}/web/api/v2.1/remote-scripts/status",
                 headers=self._headers,
                 params={"parentTaskId": task_id},
-            ).json()
+            )
             tasks = status.get("data", [])
             if not tasks:
                 return None
@@ -106,6 +106,6 @@ class SentinelOneConnector(AgentConnector):
                 headers=self._headers,
                 params={"taskId": tasks[0]["id"]},
             )
-            return result.text
+            return self._as_text(result)
 
         return self._poll_until(check, f"remote script on agent {target_id}")

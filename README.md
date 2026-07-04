@@ -103,6 +103,14 @@ agent itself:
 `deploy_and_run()` implements the vendor mechanics. AD collection and agent
 inventory both flow through the same authenticated channel per vendor.
 
+All three connectors share one HTTP transport — `agent_parity/rest_adapter.py`
+(`RestAdapter`) — instead of a bare `requests.Session`: automatic retries with
+backoff on 429/5xx, content-type-aware parsing (JSON responses come back as
+`dict`, text/HTML as `str`, everything else as raw `bytes`), and a single place
+to add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
+`_request_json()`/`_as_text()` helpers narrow that `dict | str | bytes` result
+for call sites that know which one they expect.
+
 ### The correlation: a pandas merge, kept honest
 
 `correlation/engine.py` reduces the whole reconciliation to one analytical
