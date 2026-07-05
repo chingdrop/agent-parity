@@ -9,13 +9,12 @@ return its stdout. This is how the AD export is collected: the script runs
 on an already domain-joined, already-managed endpoint, so agent-parity never
 needs its own domain credentials or LDAP bind. Not every EDR vendor's real
 API exposes an equivalent to "run an arbitrary script" though — connectors
-that don't (see ``supports_remote_execution`` below) are fetch_inventory-only,
-and ``agent_parity.config.pick_ad_export_vendor`` is what picks a client's
-AD-export vendor from among the ones that actually can.
+that don't (see ``supports_remote_execution`` below) are fetch_inventory-only;
+``pipeline.collect_ad_csv`` raises a clear error if the configured vendor
+can't carry the AD export.
 
 When a connector has no usable credentials it falls back to local fixtures
-under ``sample_data/<client>/`` so the whole pipeline runs with zero live
-API access.
+under ``sample_data/`` so the whole pipeline runs with zero live API access.
 """
 
 from __future__ import annotations
@@ -121,9 +120,8 @@ CONNECTOR_REGISTRY: dict[str, type["AgentConnector"]] = {}
 
 def register_connector(cls: type["AgentConnector"]) -> type["AgentConnector"]:
     """Class decorator: adds a connector to ``CONNECTOR_REGISTRY`` keyed by
-    its own ``vendor`` attribute — the single source of truth for what
-    vendor name it handles, its scope, and its AD-export priority is the
-    class itself, not a separately maintained table."""
+    its own ``vendor`` attribute — adding vendor support is "write a class
+    decorated with this," not editing a separately maintained table."""
     CONNECTOR_REGISTRY[cls.vendor] = cls
     return cls
 
@@ -138,24 +136,6 @@ class AgentConnector(ABC):
 
     vendor: ClassVar[str]
     required_credentials: ClassVar[tuple[str, ...]]
-
-    #: Whether this vendor's credentials are shared across every client
-    #: ("global" — one API token for the whole organization, e.g.
-    #: SentinelOne) or distinct per client ("per_client", e.g. Carbon Black
-    #: Cloud, where each environment has its own API ID/secret/org key). A
-    #: real, fixed fact about how each vendor's API is provisioned — not
-    #: something a config file should be able to override.
-    scope: ClassVar[str] = "global"
-
-    #: Tie-break priority among supports_remote_execution=True vendors when
-    #: picking who carries a client's AD export (see
-    #: agent_parity.config.pick_ad_export_vendor) — lower sorts first. Not
-    #: just a technical preference: it reflects real deployment prevalence
-    #: (SentinelOne covered the bulk of the original client base, Carbon
-    #: Black a handful). The default leaves a new vendor sorting after both,
-    #: alphabetically among any other default-priority vendors, same
-    #: fallback behavior as before this was a class attribute.
-    ad_export_priority: ClassVar[int] = 100
 
     #: Whether this vendor's real API exposes anything equivalent to "push
     #: and run an arbitrary script" (SentinelOne's Remote Script Orchestration,
@@ -194,15 +174,7 @@ class AgentConnector(ABC):
         return self._fixture_fetch_inventory()
 
     def _fixture_fetch_inventory(self) -> list[AgentDevice]:
-        # A labeled site/tenant (see AppConfig.sites_for) gets its own
-        # fixture file — for a per_client vendor (Carbon Black) each tenant
-        # really is a separate account, so one filtered file wouldn't be
-        # honest; for a global vendor's site filter this just keeps the
-        # demo data legible. Unlabeled (the common single-site/tenant case)
-        # keeps today's plain per-vendor filename, unchanged.
-        label = self.credentials.get("label")
-        filename = f"{self.vendor}_inventory_{label}.json" if label else f"{self.vendor}_inventory.json"
-        path = self._fixture_path(filename)
+        path = self._fixture_path(f"{self.vendor}_inventory.json")
         with open(path) as fh:
             payload = json.load(fh)
         return rebase_timestamps(self._parse_inventory(payload))

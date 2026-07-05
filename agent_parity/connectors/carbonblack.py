@@ -7,9 +7,9 @@ Live mode is shaped after the Carbon Black Cloud public APIs:
   create the session, ``put file`` to stage the script, ``create process``
   to run PowerShell against it, and read stdout from the session.
 
-Carbon Black credentials are *per-client* scope: each client environment has
-its own API ID / API secret key / org key, so the config resolver hands this
-connector a different credential block per client.
+Each Carbon Black Cloud environment has its own API ID / API secret key /
+org key, supplied directly in config.yaml's ``credentials:`` block like
+every other vendor.
 """
 
 from __future__ import annotations

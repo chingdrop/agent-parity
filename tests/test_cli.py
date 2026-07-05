@@ -73,7 +73,7 @@ def test_compare_reports_parse_errors_without_raising(tmp_path):
 def test_run_subcommand_dispatches_to_config_driven_pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
 
-    result = CliRunner().invoke(cli.cli, ["run", "--client", "acme"])
+    result = CliRunner().invoke(cli.cli, ["run"])
 
     assert result.exit_code == 0, result.output
-    assert (tmp_path / "output" / "acme.csv").exists()
+    assert (tmp_path / "output" / "report.csv").exists()

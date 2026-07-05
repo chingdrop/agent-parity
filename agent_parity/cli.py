@@ -1,11 +1,10 @@
 """Standalone entrypoint, no server required.
 
-    uv run agent-parity run --all                       # config.yaml + connectors (live or fixture)
-    uv run agent-parity run --client acme
-    uv run agent-parity compare ad_export.csv agent_export.csv   # two CSVs, zero config
+    uv run agent-parity run                                       # config.yaml + connector (live or fixture)
+    uv run agent-parity compare ad_export.csv agent_export.csv    # two CSVs, zero config
 
-``run`` collects from every configured client/vendor (``sample_data/``
-fixtures when no live credentials are set) and correlates. ``compare`` skips
+``run`` collects from the configured vendor (``sample_data/`` fixtures when
+no live credentials are set) and correlates. ``compare`` skips
 config.yaml/connectors/credentials entirely — hand it an AD export and any
 EDR's inventory mapped into agent-parity's own column schema (see
 ``agent_parity.agent_csv``) and it correlates those two files directly; a
@@ -26,8 +25,8 @@ import click
 
 from agent_parity.ad_sync.parser import ADParseError
 from agent_parity.agent_csv import AgentCSVParseError
-from agent_parity.config import ConfigError, load_config
-from agent_parity.pipeline import correlate_from_csvs, run_correlation_for_client
+from agent_parity.config import load_config
+from agent_parity.pipeline import correlate_from_csvs, run_correlation
 
 OUT_DIR = Path("output")
 
@@ -38,50 +37,23 @@ def cli() -> None:
 
 
 @cli.command()
-@click.option("--client", help="Client slug (default: the first client, alphabetically).")
-@click.option("--all", "run_all", is_flag=True, help="Run for every client instead of just one.")
-def run(client: str | None, run_all: bool) -> None:
-    """Collect + correlate via config.yaml and connectors."""
+def run() -> None:
+    """Collect + correlate via config.yaml and a connector."""
     config = load_config()
-    if not config.clients:
-        raise click.ClickException("No clients configured in config.yaml.")
+    result, vendor_status = run_correlation(config)
 
-    if run_all:
-        slugs = sorted(config.clients)
-    elif client:
-        if client not in config.clients:
-            raise click.ClickException(
-                f"Unknown client {client!r}; configured: {', '.join(sorted(config.clients))}"
-            )
-        slugs = [client]
-    else:
-        slugs = [sorted(config.clients)[0]]
+    status_summary = ", ".join(f"{name}={state}" for name, state in sorted(vendor_status.items()))
+    if result is None:
+        raise click.ClickException(f"every AD domain export failed ({status_summary})")
 
     OUT_DIR.mkdir(exist_ok=True)
-    had_failure = False
-    for slug in slugs:
-        try:
-            result, vendor_status = run_correlation_for_client(config, config.client(slug))
-        except ConfigError as exc:
-            click.echo(f"[{slug}] config error: {exc}", err=True)
-            had_failure = True
-            continue
-
-        status_summary = ", ".join(f"{name}={state}" for name, state in sorted(vendor_status.items()))
-        if result is None:
-            click.echo(f"[{slug}] FAILED: every AD domain export failed ({status_summary})", err=True)
-            had_failure = True
-            continue
-
-        out_path = OUT_DIR / f"{slug}.csv"
-        result.frame.to_csv(out_path, index=False)
-        counts = ", ".join(f"{k}={v}" for k, v in sorted(result.summary["status_counts"].items()))
-        click.echo(
-            f"[{slug}] {len(result.frame)} rows -> {out_path} "
-            f"(coverage {result.summary['coverage_pct']}%; {counts}; {status_summary})"
-        )
-    if had_failure:
-        raise SystemExit(1)
+    out_path = OUT_DIR / "report.csv"
+    result.frame.to_csv(out_path, index=False)
+    counts = ", ".join(f"{k}={v}" for k, v in sorted(result.summary["status_counts"].items()))
+    click.echo(
+        f"{len(result.frame)} rows -> {out_path} "
+        f"(coverage {result.summary['coverage_pct']}%; {counts}; {status_summary})"
+    )
 
 
 @cli.command()

@@ -1,9 +1,9 @@
 # agent-parity
 
 Device coverage reconciliation: correlate an Active Directory computer
-inventory against EDR/security agent inventories (SentinelOne, Carbon Black,
-BitDefender) to answer three questions a SOC or compliance team actually
-cares about:
+inventory against an EDR/security agent inventory (SentinelOne, Carbon
+Black, or BitDefender) to answer three questions a SOC or compliance team
+actually cares about:
 
 1. **Missing coverage** — devices AD knows about that no agent is reporting on.
 2. **Orphaned agents** — agents phoning home for a device AD has no record of
@@ -17,20 +17,23 @@ credentials are involved; vendor API interactions are shaped from public API
 documentation, and **everything runs against local fixtures by default** —
 no live credentials required.
 
-The original tool existed to feed a quarterly report sent to clients: show
-that agent coverage was trending upward over time, and flag high-value
-assets (Domain Controllers, file/storage servers) specifically, so gaps
-there got prioritized over a missing agent on a random workstation. A third
-axis works the same way: a device running an OS that's already end-of-life
-(or soon will be) is a risk finding independent of whether an agent is
-installed on it. All three are first-class in this rebuild, not just implied
-by the raw data — see [High-value assets](#high-value-assets-servers-as-the-prioritization-signal)
+The original tool existed to feed a quarterly report: show that agent
+coverage was trending upward over time, and flag high-value assets (Domain
+Controllers, file/storage servers) specifically, so gaps there got
+prioritized over a missing agent on a random workstation. A third axis works
+the same way: a device running an OS that's already end-of-life (or soon
+will be) is a risk finding independent of whether an agent is installed on
+it. All three are first-class in this rebuild, not just implied by the raw
+data — see [High-value assets](#high-value-assets-servers-as-the-prioritization-signal)
 and [OS end-of-life](#os-end-of-life-a-third-prioritization-axis) below.
 
 This package is a standalone library and CLI — no Django, no Celery, no
 database. It's meant to be used either directly (the CLI below) or as a
 pinned git dependency (`uv add git+https://.../agent-parity@vX.Y.Z`) inside a
 larger project that provides its own persistence/scheduling/dashboard.
+It's deliberately scoped to one organization, one vendor per run — see
+[Credentials](#credentials-configyaml--env) below for what that means in
+practice.
 
 ## Quick start
 
@@ -40,16 +43,15 @@ server or database either way:
 ```console
 uv sync
 uv run agent-parity compare ad_export.csv agent_export.csv   # your own two CSVs, zero config
-uv run agent-parity run --all                                # config.yaml + connectors (demo: sample_data/)
-uv run pytest                                                 # 190+ tests, all offline
+uv run agent-parity run                                       # config.yaml + connector (demo: sample_data/)
+uv run pytest                                                  # 190+ tests, all offline
 ```
 
 `compare` needs no vendor connector, no `config.yaml`, and no credentials at
 all — see [Bring your own CSVs](#bring-your-own-csvs) right below. `run` is
-the config.yaml/connector-driven path (`--all` or `--client acme`); with no
-`.env` (or unset credentials in it) every connector falls back to
-`sample_data/` fixtures — see [Sample data](#sample-data) below for what's in
-them.
+the config.yaml/connector-driven path; with no `.env` (or unset credentials
+in it) the connector falls back to `sample_data/` fixtures — see
+[Sample data](#sample-data) below for what's in them.
 
 ## Bring your own CSVs
 
@@ -89,9 +91,9 @@ below) is the next step up.
 ## Architecture
 
 ```
-      `agent-parity compare`                    `agent-parity run` (config.yaml + connectors)
+      `agent-parity compare`                    `agent-parity run` (config.yaml + connector)
    two CSVs, zero config                  ┌──────────────────────────────────────────────┐
-              │                           │            per (client, vendor)              │
+              │                           │                                              │
               │           config.yaml ──► agent_parity/config.py ──► connector (S1/CB/BD) │
               │            + .env             │                       │            │      │
               │                                │            deploy_and_run()   fetch_inventory()
@@ -106,7 +108,7 @@ below) is the next step up.
               └────────────────────────┬──────────────────────┘
                                        ▼
                           agent_parity/pipeline.py
-              correlate_from_csvs() / run_correlation_for_client()
+                  correlate_from_csvs() / run_correlation()
                                        │
                     ┌──────────────────┴──────────────────┐
                     ▼                                     ▼
@@ -142,18 +144,13 @@ method to paper over that, but that method doesn't actually exist in
 GravityZone's public API, so it's been removed rather than left implying an
 accuracy it didn't have. `BitDefenderConnector.supports_remote_execution =
 False`; it's fetch_inventory-only, and `deploy_and_run()` refuses outright
-(in both live and fixture mode) rather than silently succeeding.
+(in both live and fixture mode) rather than silently succeeding — an
+organization on BitDefender alone can't have its AD export collected at all.
 
 `deployment/script_runner.py` is the uniform entry point; each connector's
 `deploy_and_run()` implements the vendor mechanics. AD collection and agent
-inventory both flow through the same authenticated channel per vendor — for
-whichever vendor is actually carrying the AD export. Every client needs at
-least one enabled vendor with real remote-execution capability;
-`agent_parity/config.py`'s `pick_ad_export_vendor()` picks it, preferring
-SentinelOne over Carbon Black (reflecting real deployment prevalence — the
-bulk of the original client base was on SentinelOne, a handful on Carbon
-Black, one on BitDefender) and raising a clear `ConfigError` if a client has
-neither.
+inventory both flow through the same authenticated channel: whichever one
+vendor is configured.
 
 All three connectors share one HTTP transport — `agent_parity/rest_adapter.py`
 (`RestAdapter`) — instead of a bare `requests.Session`: automatic retries with
@@ -163,103 +160,24 @@ to add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
 `_request_json()`/`_as_text()` helpers narrow that `dict | str | bytes` result
 for call sites that know which one they expect.
 
-### Multi-domain clients: one export per domain, concatenated into a master list
+### Multi-domain AD: one export per domain, concatenated into a master list
 
-A client isn't always a single AD domain — some span multiple domains or
-forests, and no one domain controller can enumerate computer objects outside
-its own domain. `ClientConfig.ad_target_devices` (`agent_parity/config.py`) is
-a list, not a single hostname: `Export-ADDevices.ps1` runs once per entry, and
-`agent_parity/pipeline.py`'s `collect_ad_frame` parses and concatenates the
-resulting CSVs (`agent_parity/ad_sync/parser.py`'s `concat_ad_frames`) into
-one master AD DataFrame before correlation ever runs. A single-domain client
-is just the one-element case of the same list — not a special code path.
+An organization isn't always a single AD domain — some span multiple domains
+or forests, and no one domain controller can enumerate computer objects
+outside its own domain. `AppConfig.ad_target_devices` (`agent_parity/config.py`)
+is a list, not a single hostname: `Export-ADDevices.ps1` runs once per entry,
+and `agent_parity/pipeline.py`'s `collect_ad_frame` parses and concatenates
+the resulting CSVs (`agent_parity/ad_sync/parser.py`'s `concat_ad_frames`)
+into one master AD DataFrame before correlation ever runs. A single-domain
+organization (the common case) is just the one-element case of the same
+list — not a special code path.
 
-Collection is tolerant of partial failure the same way per-vendor inventory
+Collection is tolerant of partial failure the same way vendor inventory
 collection already is: one domain being unreachable doesn't sink the others.
-Only when *every* domain fails does `run_correlation_for_client` return
-`None` (nothing at all to correlate against). Per-domain outcomes show up in
-`vendor_status` keyed `ad:<target_device>` (e.g. `ad:GLOBEX-DC01`), alongside
-the plain vendor-name keys for agent inventory.
-
-Vendor agent inventories aren't affected by *this specific* fan-out — a
-client's domains are purely an AD-side concept — but a client's vendor-side
-coverage can itself span more than one site or tenant within a console, which
-works the same way; see the next section. The demo's `globex` client models
-multi-domain: it has two domains (`GLOBEX-DC01` and a branch office
-`GLOBEX-BR-DC01`) in `config.yaml`/`sample_data/globex/`, while `acme` stays
-single-domain.
-
-### Multi-site/tenant clients: the same shape, applied to vendor consoles
-
-A client's coverage isn't always all under one vendor tenant either:
-SentinelOne organizes endpoints into Sites within a single account, and
-Carbon Black Cloud tenants (`org_key`) are fully separate orgs — some clients
-run more than one. `ClientConfig.vendors[vendor_name]` (`agent_parity/config.py`)
-is a tuple of "site" dicts, not a single credential block, for exactly the
-same reason `ad_target_devices` is a list — a client with one site/tenant is
-just the one-element case.
-
-What "multiple" means differs by each connector's own `scope` class attribute, and
-that's not an arbitrary split — it mirrors how each vendor's API is actually
-provisioned:
-
-- **Per-client scope (Carbon Black)**: each additional tenant is a fully
-  separate, already-real credential set (its own `api_url`/`api_id`/`api_key`/
-  `org_key`). Multi-tenant support here needed zero connector changes — it's
-  the existing single-tenant mechanism, just invoked once per tenant and
-  concatenated, the same way `collect_ad_frame` concatenates AD domains.
-- **Global scope (SentinelOne, BitDefender)**: credentials are shared
-  org-wide, so "site" means filtering *that one account's* query down to the
-  sites a client owns — SentinelOne's `GET /web/api/v2.1/agents` takes a
-  real, documented `siteIds` filter; a client's site dict carries
-  `{"site_ids": "..."}`, merged onto the shared credentials at connector-build
-  time (`AppConfig.sites_for`) rather than stored as if it were a secret.
-  BitDefender's equivalent (`company_id`) is modeled the same way but flagged
-  in `connectors/bitdefender.py` as unverified against GravityZone's real
-  multi-tenant API shape — this project already removed one fabricated
-  GravityZone capability (`createCustomScriptTask`) rather than guess, and
-  the same caution applies here.
-
-Fetching is tolerant of partial failure the same way AD-domain collection is:
-one site/tenant failing doesn't sink the others (`pipeline.collect_vendor_inventory`).
-`vendor_status` keys stay the plain vendor name for the common single-site
-case — unlike a domain's `target_device` (always a real hostname), a
-vendor's default site has no meaningful name, so an index or label suffix
-(`carbonblack:branch`, `carbonblack:0`) only appears once there's more than
-one to distinguish (`pipeline.site_status_key`). The demo's `acme` client has
-two Carbon Black tenants (its primary org plus a `label: branch` one, each
-with its own fixture file since they're genuinely separate accounts — see
-`connectors/base.py`'s label-aware fixture lookup), while SentinelOne/BitDefender
-site filtering has unit coverage (`tests/test_connectors.py`) without a full
-multi-site demo scenario wired into `sample_data/`.
-
-### Multiple named accounts per global vendor
-
-"Global scope" doesn't mean *one* credential set for a vendor, either — it
-means every client that uses the same account shares that account's secret.
-There were genuinely two separate SentinelOne consoles in practice: one for
-ordinary managed-services clients ("mssp"), one for clients under active
-DFIR incident response ("dfir") — a distinct engagement, a distinct console,
-by design, not just a Site within one account (that's the previous section).
-`VendorConfig.accounts` (`agent_parity/config.py`) is a dict of named
-credential sets, not a single block — always named, even when a vendor
-(BitDefender, today) only has one, the same "no special-cased single case"
-principle as everywhere else in this config layer:
-
-```yaml
-sentinelone:
-  scope: global
-  accounts:
-    mssp: { api_url: ..., api_token: ... }
-    dfir: { api_url: ..., api_token: ... }
-```
-
-A client's site dict gets an `"account"` key picking which one it's in
-(`config.yaml`'s `acme`/`globex` both pick `mssp`). Omitted, it resolves to
-the vendor's sole account when there's exactly one — still today's implicit
-default for a single-account vendor — or raises a clear `ConfigError` if
-there's more than one and no client made a choice (`AppConfig._resolve_account`);
-ambiguous is a config error, not a silent pick.
+Only when *every* domain fails does `run_correlation` return `None` (nothing
+at all to correlate against). Per-domain outcomes show up in `vendor_status`
+keyed `ad:<target_device>` (e.g. `ad:ACME-DC01`), alongside the plain vendor
+name for agent inventory.
 
 ### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
@@ -305,13 +223,13 @@ vendor credentials either, so no script ever actually runs.
 ### Normalizing to SentinelOne's wording
 
 Most of the historical client base was on SentinelOne, so its API vocabulary
-is what reports and dashboards were standardized on — analysts read "windows"
-/ "server"/"desktop" and expect that wording regardless of which vendor
-actually produced a given row. `AgentDevice` carries two fields for this:
-`platform` and `machine_type`. SentinelOne's connector passes its own
-`osType`/`machineType` straight through (it's the canonical source); Carbon
-Black and BitDefender's connectors translate their own raw values into the
-same wording:
+is what reports were standardized on — analysts read "windows"/"server"/
+"desktop" and expect that wording regardless of which vendor actually
+produced a given row. `AgentDevice` carries two fields for this: `platform`
+and `machine_type`. SentinelOne's connector passes its own `osType`/
+`machineType` straight through (it's the canonical source); Carbon Black and
+BitDefender's connectors translate their own raw values into the same
+wording:
 
 - **Carbon Black** reports `os: "WINDOWS"` (uppercase) directly — lowercased
   to match S1's casing, no inference needed. It has no equivalent to `machineType`
@@ -332,10 +250,10 @@ vendor actually reports.
 ### High-value assets: servers as the prioritization signal
 
 The reason this project exists in the first place: the correlated data fed a
-quarterly report sent to clients, showing that agent coverage was improving
-over time, and calling out high-value assets specifically — Domain
-Controllers, file/storage servers — so gaps on those got prioritized over a
-missing agent on a random workstation.
+quarterly report, showing that agent coverage was improving over time, and
+calling out high-value assets specifically — Domain Controllers, file/storage
+servers — so gaps on those got prioritized over a missing agent on a random
+workstation.
 
 Domain Controllers are reliably identifiable (a distinctive OU in
 `DistinguishedName`), but file/storage servers aren't — they can be named
@@ -357,8 +275,8 @@ anything from a hostname.
 
 This flows all the way through: `summarize()` reports `server_coverage_pct`
 alongside the overall `coverage_pct`, and the classified frame is filterable
-by `machine_type` so pulling "every missing or stale server, across every
-client" for a report is one filter, not a manual search.
+by `machine_type` so pulling "every missing or stale server" for a report is
+one filter, not a manual search.
 
 ### OS end-of-life: a third prioritization axis
 
@@ -418,33 +336,13 @@ The merge indicator *is* the classification: `left_only` → `missing_agent`,
 depending on a vectorized `last_seen` check (`np.select`). Join keys are
 hostnames with the DNS suffix stripped, lowercased, and trimmed — so
 `ACME-WS-014.corp.acme.example` and `acme-ws-014` correlate. Coverage
-percentages and per-vendor gap lists fall out of `groupby`/`value_counts`
-(`summarize()`).
+percentages fall out of `groupby`/`value_counts` (`summarize()`).
 
 ### Credentials: config.yaml + .env
 
-Vendors have genuinely different credential shapes: SentinelOne is one API
-token per named account (see [Multiple named accounts](#multiple-named-accounts-per-global-vendor)
-above); Carbon Black needs a distinct API ID / secret / org key **per
-client**. `config.yaml` (committed) declares topology — which vendors exist,
-their scope, each client's enabled vendors/sites/domains — with every secret
-value written as a `${VAR}` reference; `.env` (gitignored; see
-`.env.example`) holds the actual values. `agent_parity/config.py`'s
-`load_config()` is the single entrypoint that resolves both into an
-`AppConfig` — there's no database and no second config path, so this is
-also exactly what a consuming project should call.
-
-A `${VAR}` pointing at an unset variable resolves to `None`, which is
-precisely what puts a connector into fixture mode — a fresh checkout with no
-`.env` runs the entire pipeline against `sample_data/`.
-
-### Single-console setups
-
-Everything above the fold is shaped for the tool's original MSSP use —
-multiple client organizations, each potentially spanning multiple AD domains
-and multiple sites/tenants per vendor. If you're running this against just
-your own organization with one security console, none of that nesting is
-needed — `load_config()` also accepts a flat dialect:
+`config.yaml` (committed) is deliberately small — one organization, one
+vendor: which vendor, its credentials (as `${VAR}` references, never
+literal), and the AD domain(s) to export from:
 
 ```yaml
 vendor: sentinelone
@@ -455,35 +353,35 @@ ad_target_devices:
   - DC01
 ```
 
-This expands into exactly the same internal shape the nested form produces
-(one implicit client, one vendor account) — every other feature described
-above (multi-domain AD, object storage, OS EOL, high-value assets) works
-identically either way. `vendor:` can be any connector registered in
+`vendor:` can be any connector registered in
 `agent_parity.connectors.CONNECTOR_CLASSES` — adding support for a vendor
 beyond SentinelOne/Carbon Black/BitDefender is writing one connector class
 decorated `@register_connector` (`agent_parity/connectors/base.py`), not
 editing a central table — and an unknown name raises a clear `ConfigError`
-listing what's actually registered. With no `.env`, this falls back to
-fixture mode exactly like the nested dialect does.
+listing what's actually registered. `.env` (gitignored; see `.env.example`)
+holds the actual credential values; `agent_parity/config.py`'s
+`load_config()` is the single entrypoint that resolves both into an
+`AppConfig` — there's no database and no second config path, so this is also
+exactly what a consuming project should call.
+
+A `${VAR}` pointing at an unset variable resolves to `None`, which is
+precisely what puts the connector into fixture mode — a fresh checkout with
+no `.env` runs the entire pipeline against `sample_data/`. Running this for
+more than one organization is several config files and several calls into
+`pipeline.run_correlation()` — not something this package's config format
+tries to represent in one file.
 
 ## Sample data
 
-Two synthetic clients with deliberate, reviewable gap scenarios:
-
-|                     | Acme Corp (`acme`)                                                            | Globex (`globex`)         |
-|---------------------|-------------------------------------------------------------------------------|---------------------------|
-| AD computer objects | 41                                                                            | 32                        |
-| Vendors             | SentinelOne + Carbon Black + BitDefender                                      | SentinelOne + BitDefender |
-| Missing agent       | 5 (new server, new-hire imaging gaps, a rebuild, a disabled stray)            | 4                         |
-| Stale coverage      | 3 (15–30 days quiet, one per vendor)                                          | 3                         |
-| Orphaned agents     | 4 (decommissioned server, shadow-IT laptop, workgroup kiosk, renamed machine) | 3                         |
-
-Details worth noticing: some devices report to two vendors (exercising the
-one-row-per-vendor merge); one agent per client reports its FQDN while AD has
-the short name (normalization resolves it); one orphan per client is a
-renamed machine normalization deliberately *can't* resolve. Fixture
-timestamps are rebased at load so the newest check-in is always "now" and the
-authored stale/recent split stays stable regardless of when you run the demo.
+One synthetic organization (Acme Corp), one vendor configured
+(SentinelOne) — 41 AD computer objects, 21 missing coverage, 19 covered, 2
+orphaned agents, 1 stale. `sample_data/carbonblack_inventory.json` and
+`bitdefender_inventory.json` also ship (used directly by
+`tests/test_connectors.py` to prove each connector's fixture parsing in
+isolation) even though the default `config.yaml` only points at SentinelOne —
+switch `vendor:` to try either. Fixture timestamps are rebased at load so the
+newest check-in is always "now" and the authored stale/recent split stays
+stable regardless of when you run the demo.
 
 ## Optional: local object storage (MinIO)
 
@@ -513,14 +411,13 @@ a real network. Run it manually, e.g. before cutting a release.
   classified as `machine_type="server"` from AD's OS text alone, with zero
   agent data, and an agent-reported machine_type must never be overridden).
 - **Pipeline collection** (`test_pipeline.py`): multi-domain AD concatenation
-  and partial-failure tolerance, multi-tenant vendor concatenation and partial
-  failure, `site_status_key`'s labeling rules, and `run_correlation_for_client`'s
-  happy path plus its "every AD domain failed" `None` case.
+  and partial-failure tolerance, and `run_correlation`'s happy path plus its
+  "every AD domain failed" `None` case.
 - **Fixture scenarios** (`test_pipeline_sync.py`): named tests pin the
-  authored gap scenarios (`acme-sql02` is missing, `acme-fs-old` is orphaned,
-  …) so a fixture edit that breaks a scenario fails loudly.
-- **Config resolver**: global vs. per-client scope, `${VAR}` resolution,
-  fixture-mode fallback on unset secrets, named-account resolution.
+  authored gap scenarios (`acme-sql02` is missing, `acme-byod-lt1` is
+  orphaned, …) so a fixture edit that breaks a scenario fails loudly.
+- **Config resolver**: `${VAR}` resolution, fixture-mode fallback on unset
+  secrets, unknown-vendor rejection.
 - **Connectors and parser**: fixture normalization, timestamp rebasing,
   live-mode gating on complete credentials, platform/machine_type wording
   normalized to SentinelOne's conventions (Carbon Black's uppercase `os`
@@ -546,8 +443,11 @@ network. That's what `docker/smoke_test.sh` is for; see
 
 ## Out of scope for v1
 
+- Multiple organizations/tenants in one config — this package models one
+  organization per `config.yaml`; a caller that genuinely needs several is
+  expected to load several configs and call `pipeline.run_correlation()`
+  once per organization itself.
 - Persistence, scheduling, and a dashboard — deliberately left to a
   consuming project; this package's contract ends at `CorrelationResult`.
-- Fuzzy hostname matching beyond normalization (a natural next step for the
-  renamed-machine orphans).
+- Fuzzy hostname matching beyond normalization.
 - Real-time ingestion — this is a batch/on-demand tool, not a streaming one.
