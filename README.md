@@ -27,37 +27,25 @@ installed on it. All three are first-class in this rebuild, not just implied
 by the raw data — see [High-value assets](#high-value-assets-servers-as-the-prioritization-signal)
 and [OS end-of-life](#os-end-of-life-a-third-prioritization-axis) below.
 
-## Quick start (demo mode — no Docker, no Redis, no Celery)
+This package is a standalone library and CLI — no Django, no Celery, no
+database. It's meant to be used either directly (the CLI below) or as a
+pinned git dependency (`uv add git+https://.../agent-parity@vX.Y.Z`) inside a
+larger project that provides its own persistence/scheduling/dashboard.
+
+## Quick start
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+.
 
 ```console
 uv sync
-uv run agent_parity_web/manage.py migrate
-uv run agent_parity_web/manage.py seed_demo        # two runs of history per client
-uv run agent_parity_web/manage.py runserver
+uv run agent-parity --all              # collect + correlate every client, write out/<slug>.csv
+uv run agent-parity --client acme      # just one client
+uv run pytest                          # 180+ tests, all offline
 ```
 
-Open http://127.0.0.1:8000/ — coverage overview, per-vendor breakdown, and a
-trend chart per client. `/devices/` is a filterable device list; each device
-links to its status history across every run. `manage.py createsuperuser`
-unlocks `/admin/` for raw model browsing, and `/setup/` (same staff login)
-for adding/editing clients and vendor credentials by hand instead of
-re-running `import_config` — see
-[Credentials](#credentials-db-backed-topology-configyaml-as-a-one-time-import)
-below.
-
-`seed_demo` runs the pipeline twice per client: once against the fixtures
-as-authored (backdated a day), once through a deterministic "drift" transform
-that plays out a plausible day of change — a gap remediated, an agent gone
-quiet, an orphan decommissioned, a new unmanaged workstation. Every
-transition on the dashboard is one of those four, on purpose. For a single
-plain run, use `uv run agent_parity_web/manage.py sync_and_correlate`
-(`--client <slug>` / `--all`).
-
-```console
-uv run pytest        # 200+ tests, all offline
-```
+With no `.env` (or unset credentials in it), every connector runs against
+`sample_data/` fixtures — see [Sample data](#sample-data) below for what's in
+them.
 
 ## Architecture
 
@@ -78,29 +66,20 @@ uv run pytest        # 200+ tests, all offline
                           (CSV -> DataFrame)   (outer merge + classification)
                                        └─────────┬──────────┘
                                                  ▼
-                              Django ORM (system of record)
-                     Client ─ Device ─ CorrelationRun ─ CoverageSnapshot
-                                    │                        │
-                                    ▼                        ▼
-                            Django dashboard        reporting/splunk_export.py
-                        (overview, list, history,     (optional HEC deltas)
-                         Chart.js trend)
+                                    agent_parity/pipeline.py
+                                  run_correlation_for_client()
+                                                 │
+                              ┌──────────────────┴──────────────────┐
+                              ▼                                     ▼
+                       agent_parity/cli.py                  a consuming project
+                    (writes out/<slug>.csv)         (e.g. a hub: persists, dashboards,
+                                                        schedules — its own concern)
 ```
 
-(`config.yaml + .env` in the diagram is a one-time import now, not something
-read on every run — see
-[Credentials](#credentials-db-backed-topology-configyaml-as-a-one-time-import)
-below for what replaced it.)
-
-Two packages, one boundary:
-
-- **`agent_parity/`** — the pipeline: connectors, AD parsing, the pandas
-  correlation engine, the Splunk exporter. Deliberately free of Django and
-  Celery imports.
-- **`agent_parity_web/`** — the Django project: ORM models, the dashboard,
-  the management commands, and the Celery tasks. `dashboard/services.py` is
-  the single implementation of collect → correlate → persist that both
-  entrypoints call.
+Everything above the `pipeline.py` line is pure, dependency-light Python:
+pandas/numpy for the correlation engine, `requests`/`boto3` for the connectors
+and object storage, `pyyaml` for config. No web framework, no ORM, no task
+queue — a consumer decides what to do with a `CorrelationResult`.
 
 ### The deployment model: remote script execution, not direct AD access
 
@@ -151,19 +130,15 @@ A client isn't always a single AD domain — some span multiple domains or
 forests, and no one domain controller can enumerate computer objects outside
 its own domain. `ClientConfig.ad_target_devices` (`agent_parity/config.py`) is
 a list, not a single hostname: `Export-ADDevices.ps1` runs once per entry, and
-`dashboard/services.py`'s `collect_ad_frame` parses and concatenates the
+`agent_parity/pipeline.py`'s `collect_ad_frame` parses and concatenates the
 resulting CSVs (`agent_parity/ad_sync/parser.py`'s `concat_ad_frames`) into
 one master AD DataFrame before correlation ever runs. A single-domain client
 is just the one-element case of the same list — not a special code path.
 
 Collection is tolerant of partial failure the same way per-vendor inventory
-collection already is: one domain being unreachable doesn't sink the others,
-and the scaled (Celery) path fans out one `collect_ad_export` task per domain
-the same way it already fans out one task per vendor. Only when *every*
-domain fails does the run fail outright (nothing at all to correlate
-against) — `dashboard/services.py`'s `finalize_run` is where both the
-synchronous path and the Celery chord callback share that "no AD data" check,
-rather than each re-implementing it. Per-domain outcomes show up in a run's
+collection already is: one domain being unreachable doesn't sink the others.
+Only when *every* domain fails does `run_correlation_for_client` return
+`None` (nothing at all to correlate against). Per-domain outcomes show up in
 `vendor_status` keyed `ad:<target_device>` (e.g. `ad:GLOBEX-DC01`), alongside
 the plain vendor-name keys for agent inventory.
 
@@ -206,19 +181,17 @@ split — it mirrors how each vendor's API is actually provisioned:
   the same caution applies here.
 
 Fetching is tolerant of partial failure the same way AD-domain collection is:
-one site/tenant failing doesn't sink the others (`services.collect_vendor_inventory`),
-and the Celery path fans out one task per (client, vendor, site) instead of
-per (client, vendor). `vendor_status` keys stay the plain vendor name for the
-common single-site case — unlike a domain's `target_device` (always a real
-hostname), a vendor's default site has no meaningful name, so an index or
-label suffix (`carbonblack:branch`, `carbonblack:0`) only appears once
-there's more than one to distinguish (`services.site_status_key`). The
-demo's `acme` client has two Carbon Black tenants (its primary org plus a
-`label: branch` one, each with its own fixture file since they're genuinely
-separate accounts — see `connectors/base.py`'s label-aware fixture lookup),
-while SentinelOne/BitDefender site filtering has unit coverage
-(`tests/test_connectors.py`) without a full multi-site demo scenario wired
-into `sample_data/`.
+one site/tenant failing doesn't sink the others (`pipeline.collect_vendor_inventory`).
+`vendor_status` keys stay the plain vendor name for the common single-site
+case — unlike a domain's `target_device` (always a real hostname), a
+vendor's default site has no meaningful name, so an index or label suffix
+(`carbonblack:branch`, `carbonblack:0`) only appears once there's more than
+one to distinguish (`pipeline.site_status_key`). The demo's `acme` client has
+two Carbon Black tenants (its primary org plus a `label: branch` one, each
+with its own fixture file since they're genuinely separate accounts — see
+`connectors/base.py`'s label-aware fixture lookup), while SentinelOne/BitDefender
+site filtering has unit coverage (`tests/test_connectors.py`) without a full
+multi-site demo scenario wired into `sample_data/`.
 
 ### Multiple named accounts per global vendor
 
@@ -246,17 +219,7 @@ A client's site dict gets an `"account"` key picking which one it's in
 the vendor's sole account when there's exactly one — still today's implicit
 default for a single-account vendor — or raises a clear `ConfigError` if
 there's more than one and no client made a choice (`AppConfig._resolve_account`);
-ambiguous is a config error, not a silent pick. `VendorCredential.site_label`
-(`dashboard/models.py`) does double duty: a site/tenant label for a client's
-own rows, an account name for a global vendor's shared-secret rows — same
-underlying purpose (distinguish multiple rows for one vendor), reused rather
-than adding a second field.
-
-Unlike per-client multi-tenant editing (deliberately left to config.yaml/admin
-for now, see above), named accounts get real setup-page support: the overview
-page lists every account per global vendor with its own edit link and an
-"add account" flow (`/setup/vendors/<vendor>/<account>/`), and a client's
-edit form gets an account picker for each global vendor it enables.
+ambiguous is a config error, not a silent pick.
 
 ### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
@@ -283,7 +246,7 @@ doesn't go through them at all:
 
 This is built against the **S3 API** (`boto3`), not a specific product:
 `agent_parity/storage.py`'s `ObjectStorage` talks to a self-hosted **MinIO**
-instance (the Docker Compose stack runs one) for local/dev/demo use, or real
+instance (`docker/docker-compose.yml` runs one) for local/dev use, or real
 **AWS S3** in production, with `endpoint_url` as the only thing that changes.
 It is *not* Azure Blob Storage capable — Blob doesn't speak the S3 API, so
 that would need a second implementation with a different SDK, not just
@@ -294,10 +257,10 @@ error rather than falling back to the vendor channel if a live connector
 reaches it with no storage configured. The one exception is fixture mode: a
 non-live connector has no real endpoint to upload anything from, so it always
 returns the canned `sample_data/` CSV directly, regardless of whether storage
-happens to be configured. Storage is unconfigured by default in the uv demo
-path (`STORAGE_BUCKET`/`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY` all resolve
-to `null` with no `.env`) — that's only safe because the demo path has no
-live vendor credentials either, so no script ever actually runs.
+happens to be configured. Storage is unconfigured by default in the demo path
+(`STORAGE_BUCKET`/`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY` all resolve to
+`null` with no `.env`) — that's only safe because the demo path has no live
+vendor credentials either, so no script ever actually runs.
 
 ### Normalizing to SentinelOne's wording
 
@@ -353,12 +316,9 @@ matched or not — gets a `machine_type`, without ever trying to infer
 anything from a hostname.
 
 This flows all the way through: `summarize()` reports `server_coverage_pct`
-alongside the overall `coverage_pct`; the overview page shows both, plus a
-second trend line so "coverage is improving" and "the assets that matter
-most are covered" are both visible as trends, not just point-in-time
-snapshots; the device list is filterable by `machine_type` so pulling
-"every missing or stale server, across every client" for a report is one
-filter, not a manual search.
+alongside the overall `coverage_pct`, and the classified frame is filterable
+by `machine_type` so pulling "every missing or stale server, across every
+client" for a report is one filter, not a manual search.
 
 ### OS end-of-life: a third prioritization axis
 
@@ -369,9 +329,9 @@ Windows build numbers — to their end-of-life date. Every device gets
 classified against today's date into `unknown` / `supported` / `eol_soon`
 (within 180 days) / `end_of_life` (`agent_parity/os_eol.py`). This is
 independent of coverage: a *covered* end-of-life server still means the OS
-itself needs upgrading — no agent fixes that — so `at_risk_counts` cross-tabs
-EOL status against coverage status to surface the worst case, an unsupported
-OS with no agent watching it.
+itself needs upgrading — no agent fixes that — so `at_risk_status_counts`
+cross-tabs EOL status against coverage status to surface the worst case, an
+unsupported OS with no agent watching it.
 
 Free-text OS names are ambiguous for anything past Windows 10 — "Windows 11"
 alone doesn't say which feature update, and each one has its own EOL date, so
@@ -418,114 +378,25 @@ The merge indicator *is* the classification: `left_only` → `missing_agent`,
 depending on a vectorized `last_seen` check (`np.select`). Join keys are
 hostnames with the DNS suffix stripped, lowercased, and trimmed — so
 `ACME-WS-014.corp.acme.example` and `acme-ws-014` correlate. Coverage
-percentages and per-vendor gap lists fall out of `groupby`/`value_counts`.
+percentages and per-vendor gap lists fall out of `groupby`/`value_counts`
+(`summarize()`).
 
-### Why Django replaced a Splunk dashboard
-
-The original professional version pushed correlated results into Splunk
-because stakeholders already looked there — not because a log index is the
-right home for relational data. This rebuild splits the two concerns Splunk
-was covering:
-
-- **Persistence**: the Django ORM models the structure the data actually has
-  — `CorrelationRun` per execution, `CoverageSnapshot` per device/vendor
-  observation, FK'd to both `Device` and run. A device's history across runs
-  is a query, not a correlation of disconnected log events. Admin gives free
-  CRUD; migrations come with the framework.
-- **Visibility**: the dashboard (server-rendered templates + one Chart.js
-  chart) shows coverage %, per-vendor health, per-status counts via ORM
-  aggregation — never by re-deriving pipeline logic in a view.
-
-**Splunk stays, demoted to an optional sink** (`reporting/splunk_export.py`):
-config-gated, no-op without an HEC token, emitting *deltas* (state
-transitions since the previous run) as structured JSON with an explicit
-sourcetype into a dedicated index. The database remains the system of record;
-Splunk never re-derives classification in SPL.
-
-### Scaling: Celery group/chord across clients
-
-`deploy_and_run` is slow and I/O-bound — stage a script, poll a vendor's
-remote-execution status, fetch output — and doing that serially across many
-clients × three vendors is the real bottleneck. It's embarrassingly
-parallel, and a chord is exactly its shape:
-
-- **Fan-out (group)**: one task per (client, vendor) inventory pull plus one
-  AD-export task per client. Each vendor task carries its own Celery
-  `rate_limit` reflecting that vendor's real API throttling.
-- **Fan-in (chord callback)**: one task per client receives the complete
-  result set, runs the same pandas correlation, and persists — correlation
-  never races partial state.
-- **Idempotency**: the `CorrelationRun` row is created (empty, `pending`)
-  *before* dispatch, and its ID rides through the callback; a retried or
-  duplicated callback finds the run finalized and no-ops under a row lock.
-  Dispatch happens in `transaction.on_commit()` so a worker can't observe a
-  run ID that hasn't committed — the classic Celery+Django race.
-- **Partial failure**: fan-out tasks return `{"ok": False, "error": ...}`
-  rather than raising, so one flaky vendor API can't stop the chord; the run
-  lands as `partial` with per-vendor outcomes recorded. `link_error` on the
-  callback is the backstop that marks a run `failed` instead of leaving it
-  `pending` forever.
-- **Scheduling**: Celery beat ticks `dispatch_all_clients` hourly; each
-  client's own `sync_interval_hours` decides whether it's due. A second daily
-  tick at 07:00 (`CELERY_TIMEZONE`, i.e. UTC) calls the same task with
-  `force=True`, bypassing the per-client interval so every active client
-  gets a fresh correlation before the start of business each morning.
-
-The management command and the chord callback call the same functions in
-`dashboard/services.py` — the parallelism is additive infrastructure, not a
-rewrite of the pipeline.
-
-### Credentials: DB-backed topology, config.yaml as a one-time import
+### Credentials: config.yaml + .env
 
 Vendors have genuinely different credential shapes: SentinelOne is one API
 token per named account (see [Multiple named accounts](#multiple-named-accounts-per-global-vendor)
 above); Carbon Black needs a distinct API ID / secret / org key **per
-client**. Client topology (name, slug, AD target devices, sync interval,
-enabled vendors) and vendor credentials both live in the database now — a
-`Client` row plus one `VendorCredential` row per (vendor, client) for
-per-client vendors, or per (vendor, account) alone (`client=None`) for global
-ones — or more than one of either, for a client with multiple sites/tenants
-within a vendor (see [Multi-site/tenant clients](#multi-sitetenant-clients-the-same-shape-applied-to-vendor-consoles)
-above), distinguished by `site_label`. `VendorCredential.credentials` is
-encrypted at the Django ORM layer (`dashboard/fields.py`'s
-`EncryptedJSONField`, built on `cryptography.fernet` and keyed by
-`CREDENTIAL_ENCRYPTION_KEY`) rather than a Postgres-only mechanism like
-`pgcrypto` — this app runs on SQLite in demo mode and Postgres in scaled
-mode, and the encryption has to work on both.
+client**. `config.yaml` (committed) declares topology — which vendors exist,
+their scope, each client's enabled vendors/sites/domains — with every secret
+value written as a `${VAR}` reference; `.env` (gitignored; see
+`.env.example`) holds the actual values. `agent_parity/config.py`'s
+`load_config()` is the single entrypoint that resolves both into an
+`AppConfig` — there's no database and no second config path, so this is
+also exactly what a consuming project should call.
 
-`config.yaml` (still committed, still `${VAR}`-referenced) is now purely a
-**one-time import source**, not something read at run time:
-
-- **`manage.py import_config`** (or the setup page's own upload form, at
-  `/setup/import/`) parses it exactly the way it always has
-  (`agent_parity.config.load_config()`, unchanged) and writes the resulting
-  `Client`/`VendorCredential` rows via `dashboard/config_db.py`'s
-  `import_app_config()`. Idempotent — re-importing an unchanged file updates
-  nothing.
-- **`agent_parity/config.py`**'s dataclasses (`AppConfig`, `ClientConfig`,
-  `VendorConfig`) stay the single contract the pipeline consumes —
-  `sites_for()`/`get_connectors()`/`pick_ad_export_vendor()` are all
-  reused completely unchanged. `dashboard/config_db.py`'s
-  `build_app_config_from_db()` is the DB-backed counterpart to
-  `load_config()`, used by every production entrypoint (management
-  commands, Celery tasks) instead. `agent_parity/` itself never learns the
-  DB exists — the Django/pipeline boundary from the Architecture section
-  above stays intact.
-- The **setup page** (`/setup/`, gated behind `staff_member_required` —
-  the same bar as `/admin/`, since this is the one surface that writes
-  credentials) is the ongoing way to add or edit a client and its
-  credentials by hand, without touching config.yaml again. Credential form
-  fields are always rendered blank, even when editing an existing value —
-  leaving a field blank on submit means "keep the current value," so a
-  stored secret is never echoed back into the page.
-- **`.env`** (gitignored; see `.env.example`) still holds `CREDENTIAL_ENCRYPTION_KEY`,
-  Django/infra secrets, and (explicitly out of scope for this feature —
-  global, not per-client, and not moved to the DB) `STALE_DAYS` and the
-  object-storage `STORAGE_*` variables.
-- A `${VAR}` pointing at an unset variable still resolves to `None` at
-  import time, which is precisely what puts a connector into fixture
-  mode — a fresh checkout's `seed_demo` imports config.yaml with no `.env`
-  and runs the entire pipeline on `sample_data/`, same as before.
+A `${VAR}` pointing at an unset variable resolves to `None`, which is
+precisely what puts a connector into fixture mode — a fresh checkout with no
+`.env` runs the entire pipeline against `sample_data/`.
 
 ## Sample data
 
@@ -545,62 +416,27 @@ the short name (normalization resolves it); one orphan per client is a
 renamed machine normalization deliberately *can't* resolve. Fixture
 timestamps are rebased at load so the newest check-in is always "now" and the
 authored stale/recent split stays stable regardless of when you run the demo.
-The asymmetric vendor topology is what makes the chord fan out a different
-task set per client.
 
-## Scaled mode (Docker Compose + Celery)
+## Optional: local object storage (MinIO)
 
-```console
-cp .env.example .env                        # fill in POSTGRES_PASSWORD at least
-cd docker
-docker compose up --build                   # dev: runserver, bind mounts, DEBUG
-```
-
-The base file defines `web`, `worker` (scale with `--scale worker=N`),
-`beat`, `redis`, `db` (Postgres), and `minio` (S3-compatible object storage
-for the AD-export handoff — console at http://localhost:9001 in dev, login
-with `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`); `docker-compose.override.yml`
-is applied automatically for development. Seed data inside the stack:
-
-```console
-docker compose exec web python manage.py seed_demo
-```
-
-Production applies the prod overlay explicitly — gunicorn (the image
-default), no bind mounts, restart policies, two worker replicas, secrets
-from the deployment environment:
-
-```console
-docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm web python manage.py migrate
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
-```
-
-### Smoke-testing the real stack
-
-`uv run pytest` is fast and offline by design (fixtures, SQLite, `task_always_eager`
-Celery) — which also means it structurally can't catch a broken Dockerfile, a
-Celery worker that never picks up work, or a MinIO endpoint the app can't
-actually reach. `docker/smoke_test.sh` covers that gap: it builds and starts
-the full Compose stack, seeds demo data against a real Postgres, dispatches a
-real Celery group/chord through a real Redis broker/worker
-(`manage.py smoke_check_celery`), round-trips a real object through the
-running MinIO server (`manage.py smoke_check_storage`), and tears everything
-down.
+Everything above runs with zero external services. The one live-infrastructure
+path this package has — the AD-export object-storage handoff (see
+[above](#ad-export-handoff-object-storage-instead-of-the-vendor-channel-mandatory-for-live-exports)) —
+can be exercised locally against a real MinIO instance instead of just
+`moto`'s simulated S3:
 
 ```console
 cd docker
-./smoke_test.sh          # ~1-2 minutes; needs Docker running
-./smoke_test.sh --keep   # leave the stack up afterward, for debugging
+docker compose up -d           # starts MinIO (console at http://localhost:9001)
+./smoke_test.sh                # round-trips a real object through it
 ```
 
-Not part of `uv run pytest` or any fast/CI path — it needs Docker, takes
-noticeably longer, and is inherently less deterministic than the offline
-suite (real network calls, real timing). Run it manually, e.g. before a
-release, not on every commit.
+Not part of `uv run pytest` or any fast/CI path — it needs Docker and touches
+a real network. Run it manually, e.g. before cutting a release.
 
 ## Tests
 
-`uv run pytest` — all offline, no broker:
+`uv run pytest` — all offline, no live credentials or external services:
 
 - **Correlation**: one test per `CoverageStatus` outcome, the
   merged-row-count-equals-union-of-join-keys invariant, FQDN/case
@@ -608,11 +444,15 @@ release, not on every commit.
   high-value-asset backfill (a missing Domain Controller must be
   classified as `machine_type="server"` from AD's OS text alone, with zero
   agent data, and an agent-reported machine_type must never be overridden).
-- **Chord semantics** (eager mode): one vendor failing yields a `partial`
-  run with the other vendors' snapshots intact; duplicate callback delivery
-  doesn't double-count (idempotency); per-client cadence gating.
+- **Pipeline collection** (`test_pipeline.py`): multi-domain AD concatenation
+  and partial-failure tolerance, multi-tenant vendor concatenation and partial
+  failure, `site_status_key`'s labeling rules, and `run_correlation_for_client`'s
+  happy path plus its "every AD domain failed" `None` case.
+- **Fixture scenarios** (`test_pipeline_sync.py`): named tests pin the
+  authored gap scenarios (`acme-sql02` is missing, `acme-fs-old` is orphaned,
+  …) so a fixture edit that breaks a scenario fails loudly.
 - **Config resolver**: global vs. per-client scope, `${VAR}` resolution,
-  fixture-mode fallback on unset secrets.
+  fixture-mode fallback on unset secrets, named-account resolution.
 - **Connectors and parser**: fixture normalization, timestamp rebasing,
   live-mode gating on complete credentials, platform/machine_type wording
   normalized to SentinelOne's conventions (Carbon Black's uppercase `os`
@@ -623,48 +463,23 @@ release, not on every commit.
   a mocked S3 backend (`moto` — no real MinIO/AWS S3 needed); the
   storage-vs-direct-channel branch in `script_runner.run_ad_export`, including
   that fixture mode never touches storage even when it's configured.
-- **Fixture scenarios**: named tests pin the authored gap scenarios
-  (`acme-sql02` is missing, `acme-fs-old` is orphaned, …) so a fixture edit
-  that breaks a scenario fails loudly.
 - **Pipeline data shapes** (`test_models.py`): `normalize_hostname` edge
   cases, `ADDevice`/`AgentDevice` join-key properties, `AgentDevice.to_dict`/
-  `from_dict` round-tripping across the Celery JSON boundary.
+  `from_dict` round-tripping (used to pass records across a process boundary,
+  e.g. a consuming project's own task queue).
 - **HTTP transport** (`test_rest_adapter.py`): content-type-based parsing
   (JSON/text/bytes), retry configuration, header merging, `files=` passthrough
   — `RestAdapter` in isolation, not just through a connector.
-- **ORM schema** (`test_dashboard_models.py`): `CoverageStatus` choices stay
-  in lockstep with the pipeline's own enum, `__str__` methods, the
-  `(client, join_key)` uniqueness constraint, cascade deletes.
-- **Service-layer internals** (`test_services.py`): `_first_valid`'s
-  NaN/None handling, `sync_client_from_config`'s create-vs-update (upsert)
-  behavior, `persist_correlation`'s idempotency guarantee exercised directly
-  rather than only through the Celery chord.
-- **Dashboard views** (`test_views.py`): overview's empty state and populated
-  coverage cards, device-list filtering (client/status/vendor) and
-  pagination, device-detail 404 handling, the trend-data JSON endpoint —
-  against a DB seeded via the real pipeline, not hand-built fixtures.
-- **Admin registration** (`test_admin.py`): every model actually shows up in
-  Django admin (a model added without `@admin.register` fails silently
-  everywhere else).
 
-Deliberately not unit-tested: Django settings modules, `config/celery.py`/
-`wsgi.py`/`urls.py`, and `dashboard/apps.py` — these are declarative framework
-wiring, not application logic; a failure there breaks every other test in the
-suite (which loads them to run at all), so that failure mode is already
-covered by the suite existing.
-
-Also deliberately **not** covered here: whether the real, distributed pieces
-(Celery worker/broker, MinIO) actually work together — `task_always_eager`
-and `moto` prove the *logic* is right but never touch a real network or a
-second process. That's what `docker/smoke_test.sh` is for; see
-[Smoke-testing the real stack](#smoke-testing-the-real-stack) above.
+Also deliberately **not** covered here: whether a real MinIO/AWS S3 endpoint
+actually works — `moto` proves the *logic* is right but never touches a real
+network. That's what `docker/smoke_test.sh` is for; see
+[Optional: local object storage](#optional-local-object-storage-minio) above.
 
 ## Out of scope for v1
 
-- Per-client logins/permissions — `Client` scopes the data model; the
-  dashboard itself is single-operator on Django auth.
-- Real-time ingestion — this is a batch tool on a schedule.
+- Persistence, scheduling, and a dashboard — deliberately left to a
+  consuming project; this package's contract ends at `CorrelationResult`.
 - Fuzzy hostname matching beyond normalization (a natural next step for the
   renamed-machine orphans).
-- A REST API layer (DRF would slot in if a JS frontend ever needed it) and
-  Kubernetes (Compose demonstrates the deployment story).
+- Real-time ingestion — this is a batch/on-demand tool, not a streaming one.

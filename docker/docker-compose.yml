@@ -1,54 +1,9 @@
-# Base stack: web + worker + beat + redis + postgres.
-#
-# `docker compose up` from this directory automatically layers
-# docker-compose.override.yml on top (dev: bind mounts, runserver, DEBUG).
-# For production: docker compose -f docker-compose.yml -f docker-compose.prod.yml up
-
-x-app: &app
-  build:
-    context: ..
-    dockerfile: docker/Dockerfile
-  env_file:
-    - path: ../.env
-      required: false
-  environment:
-    DJANGO_SETTINGS_MODULE: config.settings.production
-    DATABASE_URL: postgresql://${POSTGRES_USER:-agent_parity}:${POSTGRES_PASSWORD:-agent_parity}@db:5432/${POSTGRES_DB:-agent_parity}
-    REDIS_URL: redis://redis:6379/0
-  depends_on:
-    db:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
-    minio:
-      condition: service_healthy
+# S3-compatible object storage (MinIO) for locally exercising the real
+# AD-export handoff path (see agent_parity/storage.py). Everything else in
+# this package runs directly via `uv run agent-parity` — no other services
+# needed.
 
 services:
-  db:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-agent_parity}
-      POSTGRES_USER: ${POSTGRES_USER:-agent_parity}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-agent_parity}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agent_parity}" ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  redis:
-    image: redis:7-alpine
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  # S3-compatible object storage for the AD-export handoff (see
-  # agent_parity/storage.py). Same code talks to real AWS S3 in production —
-  # just set STORAGE_ENDPOINT_URL to nothing and point creds/bucket at S3.
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"
@@ -63,19 +18,5 @@ services:
       timeout: 3s
       retries: 10
 
-  web:
-    <<: *app
-    ports:
-      - "8000:8000"
-
-  worker:
-    <<: *app
-    command: celery -A config worker --loglevel=info
-
-  beat:
-    <<: *app
-    command: celery -A config beat --loglevel=info
-
 volumes:
-  pgdata:
   miniodata:

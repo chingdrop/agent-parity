@@ -7,20 +7,9 @@ __pycache__/
 dist/
 build/
 
-# Django
-db.sqlite3
-db.sqlite3-shm
-db.sqlite3-wal
-staticfiles/
-media/
+# CLI output
+out/
 *.log
-local_settings.py
-
-# Celery
-celerybeat-schedule
-celerybeat-schedule.db
-celerybeat.pid
-celery_worker.pid
 
 # Secrets — config.yaml holds only ${VAR} references and is safe to commit;
 # .env holds the actual values and must never be.

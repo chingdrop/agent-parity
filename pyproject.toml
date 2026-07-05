@@ -1,3 +1,7 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
 name = "agent-parity"
 version = "0.1.0"
@@ -5,36 +9,25 @@ description = "Device coverage reconciliation: correlate an AD computer inventor
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "django>=5.2",
     "pandas>=2.2",
     "numpy>=2.0",
     "requests>=2.32",
     "certifi>=2024.7.4",
     "urllib3>=2.0",
-    "celery[redis]>=5.5",
-    "redis>=5.0",
     "pyyaml>=6.0",
-    "gunicorn>=23.0",
-    "psycopg[binary]>=3.2",
-    "whitenoise>=6.7",
     "pandas-stubs~=3.0.3",
-    "celery-types>=0.26.0",
     "boto3>=1.34",
     "boto3-stubs~=1.43.40",
-    "cryptography>=42.0",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
-    "pytest-django>=4.9",
     "moto[s3]>=5.0",
 ]
 
-[tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings.development"
-pythonpath = [".", "agent_parity_web"]
-testpaths = ["tests"]
+[project.scripts]
+agent-parity = "agent_parity.cli:main"
 
-[tool.uv]
-package = false
+[tool.pytest.ini_options]
+testpaths = ["tests"]

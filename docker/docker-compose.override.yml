@@ -1,28 +1,8 @@
-# Development overrides — applied automatically by `docker compose up`.
-# Bind-mounted source, Django dev server with autoreload, DEBUG settings.
+# Applied automatically by `docker compose up` — exposes MinIO's API and
+# web console for local inspection (http://localhost:9001, login with
+# MINIO_ROOT_USER/PASSWORD).
 
 services:
-  web:
-    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
-    environment:
-      DJANGO_SETTINGS_MODULE: config.settings.development
-    volumes:
-      - ..:/app
-
-  worker:
-    environment:
-      DJANGO_SETTINGS_MODULE: config.settings.development
-    volumes:
-      - ..:/app
-
-  beat:
-    environment:
-      DJANGO_SETTINGS_MODULE: config.settings.development
-    volumes:
-      - ..:/app
-
-  # Expose MinIO's API and web console for local inspection
-  # (http://localhost:9001, login with MINIO_ROOT_USER/PASSWORD).
   minio:
     ports:
       - "9000:9000"
