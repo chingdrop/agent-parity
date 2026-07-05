@@ -17,6 +17,7 @@ import logging
 import pandas as pd
 
 from agent_parity.ad_sync.parser import concat_ad_frames, parse_ad_export
+from agent_parity.agent_csv import parse_agent_csv
 from agent_parity.config import (
     AppConfig,
     ClientConfig,
@@ -150,3 +151,22 @@ def run_correlation_for_client(
         stale_days=stale_days if stale_days is not None else config.stale_days,
     )
     return result, vendor_status
+
+
+def correlate_from_csvs(
+        ad_csv_text: str,
+        agent_csv_text: str,
+        stale_days: int = 14,
+) -> CorrelationResult:
+    """Correlate two CSVs directly — no config.yaml, no connectors, no
+    credentials.
+
+    ``ad_csv_text`` is ``Export-ADDevices.ps1``'s own output (same parser the
+    connector-driven path uses); ``agent_csv_text`` is any EDR/agent
+    inventory mapped into agent-parity's own column schema (see
+    ``agent_parity.agent_csv``). This is the on-ramp for someone without a
+    supported vendor connector configured at all — once collection needs to
+    be repeatable/scheduled against a live API instead of a one-off export,
+    ``run_correlation_for_client`` (config.yaml-driven) is the next step up.
+    """
+    return correlate(parse_ad_export(ad_csv_text), parse_agent_csv(agent_csv_text), stale_days=stale_days)

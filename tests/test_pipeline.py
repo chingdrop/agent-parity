@@ -1,15 +1,17 @@
 """Tests for agent_parity/pipeline.py: the collection helpers (multi-domain/
 multi-site concatenation and partial-failure tolerance) and the top-level
-run_correlation_for_client orchestration.
+run_correlation_for_client/correlate_from_csvs orchestration.
 """
 
 from dataclasses import replace
+from datetime import datetime, timezone
 
 from agent_parity.config import load_config
 from agent_parity.models import CoverageStatus
 from agent_parity.pipeline import (
     collect_ad_frame,
     collect_vendor_inventory,
+    correlate_from_csvs,
     run_correlation_for_client,
     site_status_key,
 )
@@ -133,3 +135,37 @@ def test_run_correlation_for_client_returns_none_when_every_ad_domain_fails():
 
     assert result is None
     assert vendor_status["ad:NONEXISTENT-DC99"].startswith("error")
+
+
+# --- correlate_from_csvs: zero-config, no connectors, no sample_data --------------
+
+_NOW = datetime.now(timezone.utc).isoformat()
+
+_AD_CSV = f"""\
+Name,DNSHostName,OperatingSystem,LastLogonTimestamp,Enabled,DistinguishedName
+CORP-WS-001,corp-ws-001.corp.example,Windows 11 Enterprise,{_NOW},True,"CN=CORP-WS-001,OU=Workstations,DC=corp,DC=example"
+CORP-WS-002,corp-ws-002.corp.example,Windows 11 Enterprise,{_NOW},True,"CN=CORP-WS-002,OU=Workstations,DC=corp,DC=example"
+CORP-DC01,corp-dc01.corp.example,Windows Server 2022 Datacenter,{_NOW},True,"CN=CORP-DC01,OU=Domain Controllers,DC=corp,DC=example"
+"""
+
+_AGENT_CSV = f"""\
+hostname,os,vendor,agent_id,last_seen,platform,machine_type
+CORP-WS-001,Windows 11 Enterprise,crowdstrike,1,{_NOW},windows,desktop
+CORP-DC01,Windows Server 2022 Datacenter,crowdstrike,2,{_NOW},windows,server
+CORP-WS-999,Windows 11 Enterprise,crowdstrike,3,{_NOW},windows,desktop
+"""
+
+
+def test_correlate_from_csvs_classifies_with_no_config_or_connector():
+    """Deliberately not touching sample_data/ or config.yaml at all — this
+    path must work from two hand-rolled CSVs alone."""
+    result = correlate_from_csvs(_AD_CSV, _AGENT_CSV)
+    frame = result.frame
+
+    def status(join_key):
+        return set(frame.loc[frame["join_key"] == join_key, "status"])
+
+    assert status("corp-ws-001") == {CoverageStatus.COVERED}
+    assert status("corp-dc01") == {CoverageStatus.COVERED}
+    assert status("corp-ws-002") == {CoverageStatus.MISSING_AGENT}
+    assert status("corp-ws-999") == {CoverageStatus.ORPHANED_AGENT}

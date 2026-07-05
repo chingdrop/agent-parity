@@ -23,8 +23,9 @@ project happens to use one.
 
 ```console
 uv sync                                     # install deps
-uv run agent-parity --all                   # collect + correlate every client, write out/<slug>.csv
-uv run agent-parity --client acme           # just one client
+uv run agent-parity compare ad.csv agent.csv   # two CSVs, zero config.yaml/connectors/credentials
+uv run agent-parity run --all                  # config.yaml + connectors, every client
+uv run agent-parity run --client acme          # config.yaml + connectors, just one client
 
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
@@ -44,12 +45,16 @@ Four layers, collect → correlate → report:
   BitDefender), each implementing `fetch_inventory()`/`deploy_and_run()`.
 - **`agent_parity/ad_sync/`** + **`agent_parity/deployment/`** — parsing the AD export
   script's CSV output and running it remotely through a vendor's own scripting capability.
+- **`agent_parity/agent_csv.py`** — parsing a generic, vendor-agnostic agent/EDR
+  inventory CSV, for callers with no connector/credentials at all.
 - **`agent_parity/correlation/engine.py`** — the pandas merge/classification core.
-- **`agent_parity/pipeline.py`** — the one orchestration entrypoint (collect everything
-  for a client, then correlate) that ties the above together; **`agent_parity/cli.py`**
-  is a thin wrapper around it for standalone use. A consuming project (the hub) is
-  expected to call `pipeline.run_correlation_for_client()` directly rather than shell
-  out to the CLI, since it will want the `CorrelationResult` in-process to persist itself.
+- **`agent_parity/pipeline.py`** — two orchestration entrypoints that tie the above
+  together: `run_correlation_for_client()` (config.yaml + connectors, live or fixture)
+  and `correlate_from_csvs()` (two CSVs, zero config). **`agent_parity/cli.py`** is a
+  thin `run`/`compare` wrapper around them for standalone use. A consuming project (the
+  hub) is expected to call `pipeline.run_correlation_for_client()` directly rather than
+  shell out to the CLI, since it will want the `CorrelationResult` in-process to
+  persist itself.
 
 ## Correlation engine (`agent_parity/correlation/engine.py`)
 
@@ -94,15 +99,24 @@ correlation tests rather than re-testing pandas.
 
 ## Collection pipeline (`agent_parity/pipeline.py`)
 
-`run_correlation_for_client(config, client_cfg, stale_days=None)` is the one
-entrypoint: collect the AD export (across every domain — see "Multi-domain clients"),
-collect every enabled vendor's inventory (across every site/tenant/account — see
-"Multi-site/tenant clients"), then call `correlation.engine.correlate()`. Returns
+`run_correlation_for_client(config, client_cfg, stale_days=None)` is the config.yaml/
+connector entrypoint: collect the AD export (across every domain — see "Multi-domain
+clients"), collect every enabled vendor's inventory (across every site/tenant/account —
+see "Multi-site/tenant clients"), then call `correlation.engine.correlate()`. Returns
 `(CorrelationResult | None, vendor_status)` — `None` only when every AD domain failed,
-meaning there's nothing to correlate against. No persistence and no history live
-here on purpose: that's a consuming project's job, not this package's. `agent_parity/cli.py`
-is the only built-in consumer — it writes `out/<slug>.csv` and prints a summary,
-nothing more.
+meaning there's nothing to correlate against.
+
+`correlate_from_csvs(ad_csv_text, agent_csv_text, stale_days=14)` is the zero-config
+counterpart — no `AppConfig`, no connectors, no credentials, just
+`ad_sync.parser.parse_ad_export()` + `agent_csv.parse_agent_csv()` feeding straight into
+`correlate()`. This is the on-ramp for anyone without a supported vendor connector set
+up at all; `run_correlation_for_client` is the next step once collection needs to be
+repeatable/scheduled against a live API instead of a one-off export file.
+
+No persistence and no history live in either function on purpose: that's a consuming
+project's job, not this package's. `agent_parity/cli.py` is the only built-in
+consumer — its `run`/`compare` subcommands wrap the two functions above, write
+`output/<name>.csv`, and print a summary, nothing more.
 
 ## Connectors (`agent_parity/connectors/`)
 
@@ -341,8 +355,11 @@ elsewhere in this file.
   regenerate them from.
 - Test coverage is intentionally close to 1:1 with source modules: `test_models.py` ↔
   `agent_parity/models.py`, `test_rest_adapter.py` ↔ `agent_parity/rest_adapter.py`,
-  `test_pipeline.py` ↔ `agent_parity/pipeline.py` (the collection helpers not already
-  exercised end-to-end by `test_pipeline_sync.py`), `test_config.py` ↔
-  `agent_parity/config.py`. When adding a new module with real logic in it, add its
+  `test_pipeline.py` ↔ `agent_parity/pipeline.py` (the collection helpers plus
+  `correlate_from_csvs`, deliberately exercised with hand-rolled CSVs rather than
+  `sample_data/`, to prove that path has zero dependency on the demo fixtures),
+  `test_agent_csv.py` ↔ `agent_parity/agent_csv.py`, `test_cli.py` ↔
+  `agent_parity/cli.py`, `test_config.py` ↔ `agent_parity/config.py`. When adding a
+  new module with real logic in it, add its
   test file alongside — don't rely on it being incidentally exercised by a
   higher-level pipeline test.

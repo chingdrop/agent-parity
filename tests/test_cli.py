@@ -1,0 +1,67 @@
+"""Tests for the CLI entrypoint (agent_parity/cli.py)."""
+
+from datetime import datetime, timezone
+
+import pandas as pd
+
+from agent_parity import cli
+
+NOW = datetime.now(timezone.utc).isoformat()
+
+AD_CSV = f"""\
+Name,DNSHostName,OperatingSystem,LastLogonTimestamp,Enabled,DistinguishedName
+CORP-WS-001,corp-ws-001.corp.example,Windows 11 Enterprise,{NOW},True,"CN=CORP-WS-001,OU=Workstations,DC=corp,DC=example"
+"""
+
+AGENT_CSV = f"""\
+hostname,vendor,last_seen
+CORP-WS-001,crowdstrike,{NOW}
+"""
+
+
+def test_compare_writes_output_and_returns_zero(tmp_path):
+    ad_csv = tmp_path / "ad.csv"
+    agent_csv = tmp_path / "agent.csv"
+    ad_csv.write_text(AD_CSV)
+    agent_csv.write_text(AGENT_CSV)
+    out_path = tmp_path / "result.csv"
+
+    exit_code = cli.main(["compare", str(ad_csv), str(agent_csv), "--out", str(out_path)])
+
+    assert exit_code == 0
+    frame = pd.read_csv(out_path)
+    assert len(frame) == 1
+    assert frame.loc[0, "status"] == "covered"
+
+
+def test_compare_defaults_output_path_to_agent_csv_stem(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
+    ad_csv = tmp_path / "ad.csv"
+    agent_csv = tmp_path / "crowdstrike_export.csv"
+    ad_csv.write_text(AD_CSV)
+    agent_csv.write_text(AGENT_CSV)
+
+    exit_code = cli.main(["compare", str(ad_csv), str(agent_csv)])
+
+    assert exit_code == 0
+    assert (tmp_path / "output" / "crowdstrike_export_correlated.csv").exists()
+
+
+def test_compare_reports_parse_errors_without_raising(tmp_path):
+    ad_csv = tmp_path / "ad.csv"
+    agent_csv = tmp_path / "agent.csv"
+    ad_csv.write_text("Oops,Something\nbroke,badly\n")
+    agent_csv.write_text(AGENT_CSV)
+
+    exit_code = cli.main(["compare", str(ad_csv), str(agent_csv), "--out", str(tmp_path / "out.csv")])
+
+    assert exit_code == 1
+
+
+def test_run_subcommand_dispatches_to_config_driven_pipeline(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
+
+    exit_code = cli.main(["run", "--client", "acme"])
+
+    assert exit_code == 0
+    assert (tmp_path / "output" / "acme.csv").exists()
