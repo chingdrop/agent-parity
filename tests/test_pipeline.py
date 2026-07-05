@@ -23,14 +23,14 @@ def test_collect_ad_frame_concatenates_two_domains():
     """A second, real fixture file (a separate domain controller's export)
     must be collected and concatenated into one master frame alongside the
     default demo domain."""
-    config = replace(load_config(), ad_target_devices=("ACME-DC01", "GLOBEX-BR-DC01"))
+    config = replace(load_config(), ad_target_devices=("ACME-DC01", "ACME-BR-DC01"))
     ad_df, status = collect_ad_frame(config)
 
     assert ad_df is not None
-    assert status == {"ad:ACME-DC01": "ok", "ad:GLOBEX-BR-DC01": "ok"}
+    assert status == {"ad:ACME-DC01": "ok", "ad:ACME-BR-DC01": "ok"}
     join_keys = set(ad_df["join_key"])
     assert "acme-dc01" in join_keys  # from the primary domain
-    assert "globex-br-ws01" in join_keys  # from the second domain
+    assert "acme-br-ws01" in join_keys  # from the second domain
 
 
 def test_collect_ad_frame_tolerates_one_domain_failing():

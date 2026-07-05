@@ -283,7 +283,7 @@ to correlate against nothing); don't duplicate that check elsewhere.
 
 Fixture mode picks the CSV by target device — `sample_data/ad_export_<target_device>.csv`
 (`connectors/base.py`'s `deploy_and_run`) — one file per domain, not one shared
-`ad_export.csv`. `sample_data/ad_export_GLOBEX-BR-DC01.csv` exists purely to give
+`ad_export.csv`. `sample_data/ad_export_ACME-BR-DC01.csv` exists purely to give
 `tests/test_pipeline.py`'s multi-domain concatenation test a second, real fixture
 file to concatenate against the default demo domain (`ad_export_ACME-DC01.csv`) —
 it isn't part of the default `config.yaml`'s single-domain demo.
