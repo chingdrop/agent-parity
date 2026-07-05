@@ -164,6 +164,21 @@ def backfill_machine_type(classified: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def _coalesce(df: pd.DataFrame, cols: list[str]) -> pd.Series:
+    """First non-null, non-empty value across ``cols``, in priority order —
+    a column-wise ``fillna`` chain (each column is a single vectorized pass
+    over every row) rather than a per-row Python-level scan. Empty strings
+    count as "missing" the same way a real gap would (an agent reporting
+    ``os=""`` shouldn't win over AD's real value); ``replace`` is a no-op on
+    numeric columns, so the same helper coalesces both os_build and os text.
+    """
+    result = pd.Series(pd.NA, index=df.index, dtype="object")
+    for col in cols:
+        candidate = df[col].replace("", pd.NA) if df[col].dtype == object else df[col]
+        result = result.fillna(candidate)
+    return result
+
+
 def classify_eol_status(
         classified: pd.DataFrame,
         as_of: pd.Timestamp | None = None,
@@ -190,30 +205,30 @@ def classify_eol_status(
     build_cols = [c for c in ("os_build_agent", "os_build_ad") if c in out.columns]
     text_cols = [c for c in ("os_agent", "os_ad") if c in out.columns]
 
-    def resolved_build(row):
-        for col in build_cols:
-            if pd.notna(row[col]):
-                return int(row[col])
-        return None
-
-    def resolved_text(row):
-        for col in text_cols:
-            if isinstance(row[col], str) and row[col]:
-                return row[col]
-        return None
-
     if out.empty:
         out["os_build"] = pd.Series(dtype="object")
         out["eol_status"] = pd.Series(dtype="object")
         return out
 
-    out["os_build"] = out.apply(resolved_build, axis=1)
-    out["eol_status"] = out.apply(
-        lambda row: eol_status_for_device(
-            resolved_text(row), row["os_build"], as_of=as_of_date, warning_days=warning_days
-        ),
-        axis=1,
+    resolved_build = _coalesce(out, build_cols) if build_cols else pd.Series(
+        pd.NA, index=out.index, dtype="object"
     )
+    out["os_build"] = resolved_build.map(lambda v: int(v) if pd.notna(v) else None)
+    resolved_text = _coalesce(out, text_cols) if text_cols else pd.Series(
+        pd.NA, index=out.index, dtype="object"
+    )
+    # pd.NA doesn't behave like None in a boolean context (eol_status_for_device
+    # does `os_text or ""`, which raises on pd.NA) — normalize before the loop.
+    resolved_text = resolved_text.where(resolved_text.notna(), None)
+
+    # eol_status_for_device's own lookup (agent_parity.os_eol) is a scalar
+    # function over a small reference table, not something to vectorize —
+    # this loop is over resolved, already-coalesced values (two plain
+    # columns), not full-row Series reconstruction like .apply(axis=1) does.
+    out["eol_status"] = [
+        eol_status_for_device(text, build, as_of=as_of_date, warning_days=warning_days)
+        for text, build in zip(resolved_text, out["os_build"])
+    ]
     return out
 
 

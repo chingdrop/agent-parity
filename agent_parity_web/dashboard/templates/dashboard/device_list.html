@@ -12,7 +12,7 @@
         <select name="client" id="client">
             <option value="">All</option>
             {% for client in clients %}
-            <option value="{{ client.slug }}" {% if selected.client== client.slug %}selected{% endif %}>
+            <option value="{{ client.slug }}" {% if selected.client == client.slug %}selected{% endif %}>
                 {{ client.name }}
             </option>
             {% endfor %}
@@ -23,7 +23,7 @@
         <select name="status" id="status">
             <option value="">All</option>
             {% for value, label in statuses %}
-            <option value="{{ value }}" {% if selected.status== value %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ value }}" {% if selected.status == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
         </select>
     </div>
@@ -32,7 +32,7 @@
         <select name="vendor" id="vendor">
             <option value="">All</option>
             {% for vendor in vendors %}
-            <option value="{{ vendor }}" {% if selected.vendor== vendor %}selected{% endif %}>{{ vendor }}</option>
+            <option value="{{ vendor }}" {% if selected.vendor == vendor %}selected{% endif %}>{{ vendor }}</option>
             {% endfor %}
         </select>
     </div>
@@ -41,7 +41,7 @@
         <select name="machine_type" id="machine_type">
             <option value="">All</option>
             {% for machine_type in machine_types %}
-            <option value="{{ machine_type }}" {% if selected.machine_type== machine_type %}selected{% endif %}>
+            <option value="{{ machine_type }}" {% if selected.machine_type == machine_type %}selected{% endif %}>
                 {{ machine_type }}
             </option>
             {% endfor %}
@@ -52,7 +52,7 @@
         <select name="eol_status" id="eol_status">
             <option value="">All</option>
             {% for value, label in eol_statuses %}
-            <option value="{{ value }}" {% if selected.eol_status== value %}selected{% endif %}>{{ label }}</option>
+            <option value="{{ value }}" {% if selected.eol_status == value %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
         </select>
     </div>
