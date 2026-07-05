@@ -8,7 +8,7 @@ dist/
 build/
 
 # CLI output
-out/
+output/
 *.log
 
 # Secrets — config.yaml holds only ${VAR} references and is safe to commit;

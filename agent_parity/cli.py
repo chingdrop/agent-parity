@@ -4,7 +4,7 @@ required.
     uv run agent-parity --all
     uv run agent-parity --client acme
 
-Writes ``out/<slug>.csv`` (the full classified frame) per client and prints a
+Writes ``output/<slug>.csv`` (the full classified frame) per client and prints a
 one-line summary. With no credentials configured, every connector runs
 against ``sample_data/`` fixtures — the same fixture-fallback behavior the
 rest of the package always has. This has no persistence or history; a caller
@@ -22,7 +22,7 @@ from pathlib import Path
 from agent_parity.config import ConfigError, load_config
 from agent_parity.pipeline import run_correlation_for_client
 
-OUT_DIR = Path("out")
+OUT_DIR = Path("output")
 
 
 def main(argv: list[str] | None = None) -> int:
