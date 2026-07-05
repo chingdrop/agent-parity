@@ -169,6 +169,25 @@ def test_other_vendors_still_support_remote_execution(connector_cls):
     assert connector_cls.supports_remote_execution is True
 
 
+# --- connector registry (@register_connector) -----------------------------------
+
+
+def test_every_connector_registers_itself_under_its_own_vendor_name():
+    from agent_parity.connectors import CONNECTOR_CLASSES
+
+    for connector_cls in CONNECTORS:
+        assert CONNECTOR_CLASSES[connector_cls.vendor] is connector_cls
+
+
+def test_scope_and_ad_export_priority_match_committed_topology():
+    """Pins the real business facts these class attributes replaced the old
+    VENDOR_SCOPE dict / AD_EXPORT_VENDOR_PREFERENCE tuple with."""
+    assert SentinelOneConnector.scope == "global"
+    assert CarbonBlackConnector.scope == "per_client"
+    assert BitDefenderConnector.scope == "global"
+    assert SentinelOneConnector.ad_export_priority < CarbonBlackConnector.ad_export_priority
+
+
 def test_is_live_requires_all_credentials():
     partial = CarbonBlackConnector(
         credentials={"api_url": "https://example", "api_id": "X", "api_key": None, "org_key": "Y"}

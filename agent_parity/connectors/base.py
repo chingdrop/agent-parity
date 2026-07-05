@@ -42,7 +42,14 @@ from agent_parity.rest_adapter import RestAdapter, RestAdapterConfig
 # correlation/engine.py needs them too, for AD-only rows, without pulling in
 # this module's requests/RestAdapter dependency chain just for two pure
 # string-processing functions.
-__all__ = ["AgentConnector", "ConnectorError", "infer_machine_type", "infer_platform"]
+__all__ = [
+    "AgentConnector",
+    "ConnectorError",
+    "infer_machine_type",
+    "infer_platform",
+    "CONNECTOR_REGISTRY",
+    "register_connector",
+]
 
 
 class ConnectorError(Exception):
@@ -105,6 +112,22 @@ def rebase_csv_timestamps(csv_text: str, column: str = "LastLogonTimestamp") -> 
     return out.getvalue()
 
 
+#: Vendor name (as used in config.yaml) -> connector class, populated by
+#: @register_connector as each connector module is imported. Adding a new
+#: vendor is "write a connector class decorated with @register_connector,
+#: plus one import in connectors/__init__.py" — nothing else needs editing.
+CONNECTOR_REGISTRY: dict[str, type["AgentConnector"]] = {}
+
+
+def register_connector(cls: type["AgentConnector"]) -> type["AgentConnector"]:
+    """Class decorator: adds a connector to ``CONNECTOR_REGISTRY`` keyed by
+    its own ``vendor`` attribute — the single source of truth for what
+    vendor name it handles, its scope, and its AD-export priority is the
+    class itself, not a separately maintained table."""
+    CONNECTOR_REGISTRY[cls.vendor] = cls
+    return cls
+
+
 class AgentConnector(ABC):
     """Base class for vendor connectors.
 
@@ -115,6 +138,24 @@ class AgentConnector(ABC):
 
     vendor: ClassVar[str]
     required_credentials: ClassVar[tuple[str, ...]]
+
+    #: Whether this vendor's credentials are shared across every client
+    #: ("global" — one API token for the whole organization, e.g.
+    #: SentinelOne) or distinct per client ("per_client", e.g. Carbon Black
+    #: Cloud, where each environment has its own API ID/secret/org key). A
+    #: real, fixed fact about how each vendor's API is provisioned — not
+    #: something a config file should be able to override.
+    scope: ClassVar[str] = "global"
+
+    #: Tie-break priority among supports_remote_execution=True vendors when
+    #: picking who carries a client's AD export (see
+    #: agent_parity.config.pick_ad_export_vendor) — lower sorts first. Not
+    #: just a technical preference: it reflects real deployment prevalence
+    #: (SentinelOne covered the bulk of the original client base, Carbon
+    #: Black a handful). The default leaves a new vendor sorting after both,
+    #: alphabetically among any other default-priority vendors, same
+    #: fallback behavior as before this was a class attribute.
+    ad_export_priority: ClassVar[int] = 100
 
     #: Whether this vendor's real API exposes anything equivalent to "push
     #: and run an arbitrary script" (SentinelOne's Remote Script Orchestration,

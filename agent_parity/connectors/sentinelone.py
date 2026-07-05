@@ -34,14 +34,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agent_parity.connectors.base import AgentConnector, ConnectorError, parse_timestamp
+from agent_parity.connectors.base import (
+    AgentConnector,
+    ConnectorError,
+    parse_timestamp,
+    register_connector,
+)
 from agent_parity.models import AgentDevice, Vendor
 from agent_parity.os_eol import extract_build_number
 
 
+@register_connector
 class SentinelOneConnector(AgentConnector):
     vendor = Vendor.SENTINELONE.value
     required_credentials = ("api_url", "api_token")
+    scope = "global"
+    # Covered the bulk of the original client base — preferred over Carbon
+    # Black when both are capable of carrying a client's AD export.
+    ad_export_priority = 0
 
     @property
     def _headers(self) -> dict:

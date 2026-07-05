@@ -199,8 +199,9 @@ is a tuple of "site" dicts, not a single credential block, for exactly the
 same reason `ad_target_devices` is a list — a client with one site/tenant is
 just the one-element case.
 
-What "multiple" means differs by `VENDOR_SCOPE`, and that's not an arbitrary
-split — it mirrors how each vendor's API is actually provisioned:
+What "multiple" means differs by each connector's own `scope` class attribute, and
+that's not an arbitrary split — it mirrors how each vendor's API is actually
+provisioned:
 
 - **Per-client scope (Carbon Black)**: each additional tenant is a fully
   separate, already-real credential set (its own `api_url`/`api_id`/`api_key`/
@@ -436,6 +437,34 @@ also exactly what a consuming project should call.
 A `${VAR}` pointing at an unset variable resolves to `None`, which is
 precisely what puts a connector into fixture mode — a fresh checkout with no
 `.env` runs the entire pipeline against `sample_data/`.
+
+### Single-console setups
+
+Everything above the fold is shaped for the tool's original MSSP use —
+multiple client organizations, each potentially spanning multiple AD domains
+and multiple sites/tenants per vendor. If you're running this against just
+your own organization with one security console, none of that nesting is
+needed — `load_config()` also accepts a flat dialect:
+
+```yaml
+vendor: sentinelone
+credentials:
+  api_url: ${SENTINELONE_API_URL}
+  api_token: ${SENTINELONE_API_TOKEN}
+ad_target_devices:
+  - DC01
+```
+
+This expands into exactly the same internal shape the nested form produces
+(one implicit client, one vendor account) — every other feature described
+above (multi-domain AD, object storage, OS EOL, high-value assets) works
+identically either way. `vendor:` can be any connector registered in
+`agent_parity.connectors.CONNECTOR_CLASSES` — adding support for a vendor
+beyond SentinelOne/Carbon Black/BitDefender is writing one connector class
+decorated `@register_connector` (`agent_parity/connectors/base.py`), not
+editing a central table — and an unknown name raises a clear `ConfigError`
+listing what's actually registered. With no `.env`, this falls back to
+fixture mode exactly like the nested dialect does.
 
 ## Sample data
 

@@ -120,6 +120,20 @@ consumer — its `run`/`compare` subcommands wrap the two functions above, write
 
 ## Connectors (`agent_parity/connectors/`)
 
+**Adding a vendor is "write one connector class"**, not "edit several central
+tables." `connectors/base.py`'s `@register_connector` class decorator adds a
+connector to `CONNECTOR_REGISTRY` (re-exported as `connectors.CONNECTOR_CLASSES`)
+keyed by its own `vendor` attribute; `scope` (`"global"`/`"per_client"`, see
+"Credential resolution" above) and `ad_export_priority` (tie-break order for
+`pick_ad_export_vendor`, lower sorts first) are `ClassVar`s on `AgentConnector`
+itself, defaulted sensibly (`scope="global"`, `ad_export_priority=100`) and
+overridden per connector where they differ — `SentinelOneConnector.ad_export_priority
+= 0`, `CarbonBlackConnector.scope = "per_client"` + `ad_export_priority = 1`. A 4th
+vendor needs a new module (decorated, with whichever attributes it needs) plus one
+import line in `connectors/__init__.py` to trigger registration — nothing else. There
+used to be a separate `VENDOR_SCOPE` dict and `AD_EXPORT_VENDOR_PREFERENCE` tuple in
+`config.py`; both are gone now that the class itself is the single source of truth.
+
 Every connector implements `fetch_inventory()` and `deploy_and_run(script_path,
 target_id)` against a shared `AgentConnector` ABC (`connectors/base.py`). **Fixture
 fallback is not a test-only shim — it's the default runtime path.** `is_live` gates
@@ -237,24 +251,44 @@ bucket provisioning is out-of-band, so that stays smoke-test-only code).
 reference; an unset variable resolves to `None` rather than raising, which is exactly
 what puts a connector into fixture mode. This is the *only* config entrypoint — there
 is no database, so there's nothing else for a consuming project to call.
+
+**Two dialects, dispatched on a top-level `vendor:` key** (singular — never present in
+the nested dialect, which uses `vendors:`/`clients:` instead, so detection is
+unambiguous):
+- **`_load_full_config`** — the nested, multi-client dialect (`clients:` list, each with
+  its own multi-domain AD/multi-site-tenant topology, `vendors:` declaring global
+  vendors' named accounts). Modeled on the original MSSP practice this tool was rebuilt
+  from — real, still fully supported, but more structure than a single-organization
+  user needs.
+- **`_load_simple_config`** — the flat, single-console dialect (`vendor:`/`credentials:`/
+  `ad_target_devices:`, no nesting) for "one org, one console." Expands into the exact
+  same `AppConfig`/`ClientConfig`/`VendorConfig` shape the nested dialect produces (one
+  implicit client, one account for a global-scope vendor or credentials straight on the
+  client's site entry for a per-client-scope one) — `sites_for`/`get_connectors`/
+  `pick_ad_export_vendor` never know which dialect produced the config they're given.
+  Validates `vendor:` against `CONNECTOR_CLASSES` (see "Connectors" below), so any
+  registered connector works here, not a hardcoded three.
+
 `sites_for(client_slug, vendor_name)` returns one merged config dict per site/tenant
 (see "Multi-site/tenant clients" below) — it's the one place that knows `global` vs
-`per_client` scope (`VENDOR_SCOPE`) — SentinelOne/BitDefender are global (same
-credentials for every client), Carbon Black is per-client. When adding a vendor or a
-client, this is the function whose behavior actually matters; don't special-case scope
-logic in a connector or in `pipeline.py`.
-`get_connectors(config, client_slug, vendor_name)` builds one connector per entry
-`sites_for()` returns — almost always a one-element tuple.
+`per_client` scope (each connector's own `scope` class attribute — see "Connectors"
+below) — SentinelOne/BitDefender are global (same credentials for every client), Carbon
+Black is per-client. When adding a vendor or a client, this is the function whose
+behavior actually matters; don't special-case scope logic in a connector or in
+`pipeline.py`. `get_connectors(config, client_slug, vendor_name)` builds one connector
+per entry `sites_for()` returns — almost always a one-element tuple.
 
 `pick_ad_export_vendor(client_cfg)` picks which of a client's enabled vendors carries
 the AD export — filtered to `supports_remote_execution = True` connectors, then broken
-by `AD_EXPORT_VENDOR_PREFERENCE = ("sentinelone", "carbonblack")`, not alphabetically.
-That preference order is a real business fact (S1 covered most of the client base, CB a
-handful, BitDefender basically none) as much as a technical one — if you touch it, keep
-both in mind. Raises `ConfigError` if a client has no capable vendor at all. Called from
-`pipeline.collect_ad_csv`; don't reintroduce a `sorted(client_cfg.vendors)[0]`-style
-pick elsewhere — that bug (silently routing AD export through whichever vendor happens
-to sort first, capable or not) is exactly what this function replaced.
+by each connector's own `ad_export_priority` class attribute (see "Connectors" below),
+not alphabetically. That preference (SentinelOne before Carbon Black by default) is a
+real business fact (S1 covered most of the client base, CB a handful, BitDefender
+basically none) as much as a technical one — if you touch a connector's
+`ad_export_priority`, keep both in mind. Raises `ConfigError` if a client has no capable
+vendor at all. Called from `pipeline.collect_ad_csv`; don't reintroduce a
+`sorted(client_cfg.vendors)[0]`-style pick elsewhere — that bug (silently routing AD
+export through whichever vendor happens to sort first, capable or not) is exactly what
+this function replaced.
 
 ## Multi-domain clients (`ClientConfig.ad_target_devices`)
 
@@ -286,8 +320,9 @@ single-domain.
 
 The vendor-side counterpart to multi-domain AD: `ClientConfig.vendors[vendor_name]` is
 `tuple[dict, ...]`, not a single credential dict — one "site" entry per tuple element.
-What a site dict *is* depends on `VENDOR_SCOPE`, and that split isn't arbitrary — it
-matches how each vendor's API is actually provisioned:
+What a site dict *is* depends on each connector's own `scope` class attribute (see
+"Connectors" above), and that split isn't arbitrary — it matches how each vendor's API
+is actually provisioned:
 
 - **Per-client scope (Carbon Black)**: each entry is a complete, independent credential
   block (`api_url`/`api_id`/`api_key`/`org_key`) — a second entry is a second, fully
@@ -339,7 +374,7 @@ every existing single-account setup); omitted and there's more than one,
 `ConfigError` — ambiguous is a config error, not a silent pick; unknown account
 name, `ConfigError` too. Don't special-case "just default to the first one
 alphabetically" here — that's exactly the kind of silent-pick bug
-`AD_EXPORT_VENDOR_PREFERENCE`/`pick_ad_export_vendor` already exists to avoid
+`ad_export_priority`/`pick_ad_export_vendor` already exists to avoid
 elsewhere in this file.
 
 ## Testing conventions

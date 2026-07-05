@@ -88,7 +88,8 @@ class ClientConfig:
     sync_interval_hours: int
     # vendor name -> one dict per site/tenant this client has within that
     # vendor's console (almost always a single-element tuple). What the
-    # dict holds depends on VENDOR_SCOPE: for a per_client vendor (Carbon
+    # dict holds depends on the connector's own scope class attribute
+    # (see connectors/base.py): for a per_client vendor (Carbon
     # Black) each entry is a complete, independent credential block — a
     # second entry means a second, fully separate CB org/tenant. For a
     # global vendor (SentinelOne, BitDefender) each entry is just an
@@ -189,12 +190,26 @@ class AppConfig:
             ) from None
 
 
-def load_config(path: str | Path | None = None) -> AppConfig:
-    """Load config.yaml, resolving ``${VAR}`` secret references as we go."""
-    config_path = Path(path or os.environ.get("AGENT_PARITY_CONFIG") or DEFAULT_CONFIG_PATH)
-    with open(config_path) as fh:
-        raw: dict = _resolve_env_refs(yaml.safe_load(fh))
+def _parse_storage(raw: dict) -> StorageConfig:
+    storage_raw = raw.get("storage") or {}
+    return StorageConfig(
+        backend=storage_raw.get("backend") or "s3",
+        endpoint_url=storage_raw.get("endpoint_url") or None,
+        bucket=storage_raw.get("bucket") or None,
+        access_key=storage_raw.get("access_key") or None,
+        secret_key=storage_raw.get("secret_key") or None,
+        region=storage_raw.get("region") or "us-east-1",
+    )
 
+
+def _load_full_config(raw: dict) -> AppConfig:
+    """The nested, multi-client dialect: a ``clients:`` list, each with its
+    own multi-domain AD/multi-site-tenant vendor topology, plus ``vendors:``
+    declaring global vendors' named accounts. Modeled on the original MSSP
+    practice this tool was rebuilt from — real, still-supported, but more
+    structure than a single-organization user needs; see
+    ``_load_simple_config`` for that case.
+    """
     vendors = {}
     for name, block in (raw.get("vendors") or {}).items():
         block = block or {}
@@ -235,48 +250,90 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                 )
         clients[client.slug] = client
 
-    storage_raw = raw.get("storage") or {}
-    storage = StorageConfig(
-        backend=storage_raw.get("backend") or "s3",
-        endpoint_url=storage_raw.get("endpoint_url") or None,
-        bucket=storage_raw.get("bucket") or None,
-        access_key=storage_raw.get("access_key") or None,
-        secret_key=storage_raw.get("secret_key") or None,
-        region=storage_raw.get("region") or "us-east-1",
+    return AppConfig(
+        stale_days=int(raw.get("stale_days", 14)),
+        vendors=vendors,
+        clients=clients,
+        storage=_parse_storage(raw),
+    )
+
+
+def _load_simple_config(raw: dict) -> AppConfig:
+    """The flat, single-console dialect: one organization, one vendor, no
+    ``clients:``/``vendors:`` nesting at all —
+
+        vendor: sentinelone
+        credentials: {api_url: ..., api_token: ...}
+        ad_target_devices: [DC01]
+
+    Expands into the exact same ``AppConfig`` shape ``_load_full_config``
+    builds, so nothing downstream (``sites_for``/``get_connectors``/
+    ``pick_ad_export_vendor``) needs to know which dialect produced it. Any
+    vendor registered in ``CONNECTOR_CLASSES`` works here, not just the three
+    built in — that's the point of the connector registry (see
+    ``connectors/base.py``).
+    """
+    # Imported here, not at module level, for the same reason as
+    # get_connectors/pick_ad_export_vendor: keep topology-only config
+    # loading free of the connector dependency chain for callers that don't
+    # need it.
+    from agent_parity.connectors import CONNECTOR_CLASSES
+
+    vendor_name = raw["vendor"]
+    try:
+        connector_cls = CONNECTOR_CLASSES[vendor_name]
+    except KeyError:
+        raise ConfigError(
+            f"Unknown vendor {vendor_name!r}; registered connectors: {sorted(CONNECTOR_CLASSES)}"
+        ) from None
+
+    credentials = dict(raw.get("credentials") or {})
+    if connector_cls.scope == "per_client":
+        # Mirrors the nested dialect's per_client shape exactly: the site
+        # entry *is* the full credential block, no accounts indirection.
+        vendors = {vendor_name: VendorConfig(name=vendor_name, scope="per_client", accounts={})}
+        client_site: dict = credentials
+    else:
+        # A single implicit "default" account — there's only ever one
+        # console in this dialect, so no "account:" key is needed to
+        # disambiguate (AppConfig._resolve_account already treats a vendor
+        # with exactly one account as the implicit default).
+        vendors = {
+            vendor_name: VendorConfig(name=vendor_name, scope="global", accounts={"default": credentials})
+        }
+        client_site = {}
+
+    client = ClientConfig(
+        name=raw.get("name", "Default"),
+        slug=raw.get("slug", "default"),
+        ad_target_devices=tuple(raw.get("ad_target_devices") or ()),
+        sync_interval_hours=int(raw.get("sync_interval_hours", 24)),
+        vendors={vendor_name: (client_site,)},
     )
 
     return AppConfig(
         stale_days=int(raw.get("stale_days", 14)),
         vendors=vendors,
-        clients=clients,
-        storage=storage,
+        clients={client.slug: client},
+        storage=_parse_storage(raw),
     )
 
 
-#: Preference order for the vendor that carries a client's AD export, among
-#: whichever of its enabled vendors genuinely support remote script execution
-#: (see ``AgentConnector.supports_remote_execution``). This isn't just
-#: alphabetical: it reflects real deployment prevalence — SentinelOne covered
-#: the bulk of the client base, Carbon Black a handful of clients, and
-#: BitDefender (never eligible here) exactly one. A vendor not in this tuple
-#: still sorts after these two, alphabetically, so adding a 4th capable
-#: vendor doesn't require touching this list.
-AD_EXPORT_VENDOR_PREFERENCE = ("sentinelone", "carbonblack")
+def load_config(path: str | Path | None = None) -> AppConfig:
+    """Load config.yaml, resolving ``${VAR}`` secret references as we go.
 
-#: Whether each vendor's credentials are shared across every client
-#: ("global" — one API token for the whole organization, e.g. SentinelOne's
-#: management API) or distinct per client ("per_client", e.g. Carbon Black
-#: Cloud, where each environment has its own API ID/secret/org key). This is
-#: a fixed fact about how each vendor's API is provisioned, not something a
-#: config.yaml entry or a DB-backed setup form should be able to override —
-#: ``VendorConfig.scope`` (parsed from config.yaml) and
-#: ``dashboard.config_db`` (parsed from the DB) both agree with this table;
-#: it's the single place either one is checked against.
-VENDOR_SCOPE = {
-    "sentinelone": "global",
-    "carbonblack": "per_client",
-    "bitdefender": "global",
-}
+    Dispatches on a top-level ``vendor:`` key (singular) — present only in
+    the flat, single-console dialect (see ``_load_simple_config``); the
+    nested, multi-client dialect (``_load_full_config``) uses ``vendors:``/
+    ``clients:`` instead, so detection is unambiguous.
+    """
+    config_path = Path(path or os.environ.get("AGENT_PARITY_CONFIG") or DEFAULT_CONFIG_PATH)
+    with open(config_path) as fh:
+        raw: dict = _resolve_env_refs(yaml.safe_load(fh))
+
+    if "vendor" in raw:
+        return _load_simple_config(raw)
+    return _load_full_config(raw)
 
 
 def pick_ad_export_vendor(client_cfg: ClientConfig) -> str:
@@ -284,7 +341,13 @@ def pick_ad_export_vendor(client_cfg: ClientConfig) -> str:
 
     Only vendors whose connector sets ``supports_remote_execution = True``
     are eligible — not every EDR vendor's API can push and run an arbitrary
-    script, and picking one that can't would silently misrepresent it.
+    script, and picking one that can't would silently misrepresent it. Ties
+    (including "not specially preferred") break by each connector's own
+    ``ad_export_priority`` class attribute (see ``connectors/base.py``), then
+    alphabetically — this isn't just a technical preference: SentinelOne's
+    default priority reflects that it covered the bulk of the original
+    client base, Carbon Black a handful. A 4th vendor needs no changes here;
+    its own class attribute (or the default) is all that's consulted.
     """
     # Imported here (not at module level) for the same reason as in
     # get_connector: keep topology-only config loading free of the connector
@@ -304,10 +367,7 @@ def pick_ad_export_vendor(client_cfg: ClientConfig) -> str:
         )
 
     def preference_key(vendor_name: str) -> tuple[int, str]:
-        try:
-            return AD_EXPORT_VENDOR_PREFERENCE.index(vendor_name), vendor_name
-        except ValueError:
-            return len(AD_EXPORT_VENDOR_PREFERENCE), vendor_name
+        return CONNECTOR_CLASSES[vendor_name].ad_export_priority, vendor_name
 
     return min(capable, key=preference_key)
 

@@ -21,13 +21,19 @@ from agent_parity.connectors.base import (
     ConnectorError,
     infer_machine_type,
     parse_timestamp,
+    register_connector,
 )
 from agent_parity.models import AgentDevice, Vendor
 
 
+@register_connector
 class CarbonBlackConnector(AgentConnector):
     vendor = Vendor.CARBONBLACK.value
     required_credentials = ("api_url", "api_id", "api_key", "org_key")
+    scope = "per_client"
+    # A handful of the original client base — second preference behind
+    # SentinelOne when both are capable of carrying a client's AD export.
+    ad_export_priority = 1
 
     @property
     def _headers(self) -> dict:

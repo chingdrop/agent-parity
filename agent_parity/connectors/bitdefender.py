@@ -44,6 +44,7 @@ from agent_parity.connectors.base import (
     ConnectorError,
     infer_platform,
     parse_timestamp,
+    register_connector,
 )
 from agent_parity.models import AgentDevice, Vendor
 
@@ -53,9 +54,11 @@ from agent_parity.models import AgentDevice, Vendor
 _MACHINE_TYPES = {1: "desktop", 2: "server"}
 
 
+@register_connector
 class BitDefenderConnector(AgentConnector):
     vendor = Vendor.BITDEFENDER.value
     required_credentials = ("api_url", "api_key")
+    scope = "global"
     supports_remote_execution = False
 
     _rpc_ids = itertools.count(1)
