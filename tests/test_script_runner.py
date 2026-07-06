@@ -14,7 +14,7 @@ import requests
 from moto import mock_aws
 
 from agent_parity.deployment.script_runner import ScriptExecutionError, run_ad_export
-from agent_parity.storage import ObjectStorage
+from shared_tools.storage import ObjectStorage
 
 SAMPLE_CSV = "Name,Enabled\nACME-WS-001,True\n"
 
@@ -87,7 +87,7 @@ def test_live_mode_with_storage_deletes_object_after_download(moto_storage):
     connector = _fake_connector(is_live=True, deploy_and_run=Mock(side_effect=fake_deploy_and_run))
     run_ad_export(connector, "ACME-DC01", storage=moto_storage, object_key="acme/export.csv")
 
-    from agent_parity.storage import StorageError
+    from shared_tools.storage import StorageError
 
     with pytest.raises(StorageError):
         moto_storage.get_object("acme/export.csv")
@@ -110,7 +110,7 @@ def test_missing_upload_surfaces_as_storage_error(moto_storage):
     """A script that runs but never uploads anything (a real bug, e.g. a
     firewalled endpoint) shows up as a download failure, not a silent empty
     result — the object genuinely doesn't exist."""
-    from agent_parity.storage import StorageError
+    from shared_tools.storage import StorageError
 
     connector = _fake_connector(is_live=True, deploy_and_run=Mock(return_value="ok"))
     with pytest.raises(StorageError):

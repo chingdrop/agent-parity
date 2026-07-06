@@ -16,7 +16,7 @@ from agent_parity.connectors import (
     SentinelOneConnector,
 )
 from agent_parity.connectors.base import infer_machine_type, infer_platform
-from agent_parity.rest_adapter import RestAdapter
+from shared_tools.rest_adapter import RestAdapter
 
 CONNECTORS = [SentinelOneConnector, CarbonBlackConnector, BitDefenderConnector]
 

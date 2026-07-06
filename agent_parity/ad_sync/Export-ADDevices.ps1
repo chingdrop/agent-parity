@@ -8,7 +8,7 @@
     executed there — it never runs on the agent-parity host itself.
 
     -UploadUrl is a short-lived, single-object presigned PUT URL (see
-    agent_parity.storage / deployment.script_runner) that this script uploads
+    shared_tools.storage / deployment.script_runner) that this script uploads
     its CSV to directly, rather than returning it through the vendor's own
     remote-execution output channel. That channel is not a reliable way to
     get a full AD export back: RSO/Live Response output handling doesn't

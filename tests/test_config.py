@@ -5,7 +5,7 @@ import pytest
 
 from agent_parity.config import ConfigError, get_connector, get_storage, load_config
 from agent_parity.connectors import SentinelOneConnector
-from agent_parity.storage import ObjectStorage
+from shared_tools.storage import ObjectStorage
 
 
 def _write(tmp_path, text):

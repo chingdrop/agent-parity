@@ -157,16 +157,34 @@ can't have its AD export collected at all; `pipeline.collect_ad_csv` raises a cl
 can't run scripts either, set this the same way — don't leave `_live_deploy_and_run`
 unimplemented and let it fail some other way.
 
-Live mode goes through `agent_parity/rest_adapter.py` (`RestAdapter`, ported from a
-sibling project) rather than a bare `requests.Session` — retries/backoff on
-429/5xx are configured there once, shared by all three vendors. `RestAdapter.request()`
-returns already-parsed content (`dict` for JSON, `str` for text/html, `bytes`
-otherwise), not a `Response` object, so connector call sites use `self._request_json(...)`
-when they know the endpoint returns a JSON object, or `self._as_text(...)` on the raw
-`_request(...)` result when they need guaranteed text (e.g. SentinelOne's fetch-files
-script output). No test exercises real network I/O; `tests/test_connectors.py` proves
-the RestAdapter wiring (retry config, JSON/text parsing) by monkeypatching the
+Live mode goes through `shared_tools.rest_adapter` (`RestAdapter`) rather than a
+bare `requests.Session` — retries/backoff on 429/5xx are configured there once,
+shared by all three vendors. `RestAdapter` and `ObjectStorage` (see "AD-export
+object storage" below) both live in [py-shared-tools](vendor/py-shared-tools/README.md),
+a separate git repo consumed as a submodule at `vendor/py-shared-tools` plus a
+`uv` path dependency (`py-shared-tools[storage]`, `[tool.uv.sources]` in
+`pyproject.toml`) — reused as-is across other projects rather than
+copy-pasted, which is what these two classes' own comments used to say before
+the extraction. Editing either class means editing the files under
+`vendor/py-shared-tools/`, not anywhere in `agent_parity/`; there's no local
+copy left to accidentally diverge from. A fresh clone of this repo needs
+`git submodule update --init` (or `git clone --recurse-submodules`) before
+`uv sync` can resolve it — `uv`'s git-dependency resolution does fetch
+submodules recursively, so this also works transparently for a consuming
+project's `uv add git+https://.../agent-parity@vX.Y.Z`.
+
+`RestAdapter.request()` returns already-parsed content (`dict` for JSON, `str`
+for text/html, `bytes` otherwise), not a `Response` object, so connector call
+sites use `self._request_json(...)` when they know the endpoint returns a
+JSON object, or `self._as_text(...)` on the raw `_request(...)` result when
+they need guaranteed text (e.g. SentinelOne's fetch-files script output). No
+test exercises real network I/O; `tests/test_connectors.py` proves the
+RestAdapter wiring (retry config, JSON/text parsing) by monkeypatching the
 underlying `requests.Session.request`, not by hitting a live API.
+`RestAdapter`'s own unit tests (content-type parsing, header merging, retry
+config, the `files=` passthrough) live in `vendor/py-shared-tools/tests/`,
+not in this repo's `tests/` — they're that submodule's own test suite, run
+via `cd vendor/py-shared-tools && uv run pytest`.
 
 **`AgentDevice.platform`/`machine_type` are normalized to SentinelOne's wording**
 (most of the historical client base was on S1, so its vocabulary is canonical).
@@ -181,7 +199,8 @@ text (`infer_platform`) since it has no equivalent field. `infer_platform`/
 `infer_machine_type` live in `models.py`, not `connectors/base.py`, specifically
 so `correlation/engine.py` can use them too (for AD-only rows — see
 `backfill_machine_type`) without pulling in the connector stack's
-`requests`/`RestAdapter` dependency chain just for two pure string functions.
+`requests`/`RestAdapter` dependency chain (now the `shared_tools` submodule)
+just for two pure string functions.
 If a 4th vendor is
 added, decide per-field whether it reports something directly-mappable
 (prefer a direct map, like BitDefender's `machineType`) or needs inference
@@ -190,7 +209,7 @@ actually has the field. **`agent_version` is deliberately never touched this
 way** — each vendor's version numbering is real and vendor-specific; making
 one look like another's would be fabricating a value, not normalizing one.
 
-## AD-export object storage (`agent_parity/storage.py`)
+## AD-export object storage (`shared_tools.storage`, `vendor/py-shared-tools/shared_tools/storage.py`)
 
 S3-compatible handoff for `Export-ADDevices.ps1`'s output, wired through
 `deployment/script_runner.run_ad_export`. **Mandatory for any live connector** —
@@ -237,7 +256,10 @@ mechanisms, same `script_args: dict[str, str]` contract from `deploy_and_run`.
 
 Tests use `moto` (`@mock_aws` / the `mock_aws()` context manager) — no real
 MinIO or AWS S3 touches the test suite, and a real presigned-URL PUT/GET round
-trip still gets exercised (`tests/test_storage.py`, `tests/test_script_runner.py`).
+trip still gets exercised. `ObjectStorage`'s own unit tests live in
+`vendor/py-shared-tools/tests/test_storage.py` (that submodule's test suite);
+this repo's `tests/test_script_runner.py` covers the storage-vs-direct-channel
+orchestration in `run_ad_export` instead of re-testing `ObjectStorage` itself.
 `moto` proves the code path, not the network — `docker/smoke_check_storage.py`
 (run via `docker/smoke_test.sh`, Docker-only) round-trips a real object through
 the actual `minio` service, including auto-creating the smoke-test bucket
@@ -302,12 +324,16 @@ it isn't part of the default `config.yaml`'s single-domain demo.
   (no per-organization subfolder) — `get_connector`'s `fixture_dir` is always
   `SAMPLE_DATA_DIR` directly.
 - Test coverage is intentionally close to 1:1 with source modules: `test_models.py` ↔
-  `agent_parity/models.py`, `test_rest_adapter.py` ↔ `agent_parity/rest_adapter.py`,
+  `agent_parity/models.py`,
   `test_pipeline.py` ↔ `agent_parity/pipeline.py` (the collection helpers plus
   `correlate_from_csvs`, deliberately exercised with hand-rolled CSVs rather than
   `sample_data/`, to prove that path has zero dependency on the demo fixtures),
   `test_agent_csv.py` ↔ `agent_parity/agent_csv.py`, `test_cli.py` ↔
-  `agent_parity/cli.py`, `test_config.py` ↔ `agent_parity/config.py`. When adding a
+  `agent_parity/cli.py`, `test_config.py` ↔ `agent_parity/config.py`. `RestAdapter`
+  and `ObjectStorage` are the one exception to "lives in this repo, tested in this
+  repo's `tests/`" — they and their tests (`test_rest_adapter.py`, `test_storage.py`)
+  live in the `vendor/py-shared-tools` submodule instead, since that code is shared
+  across other projects, not agent-parity-specific. When adding a
   new module with real logic in it, add its
   test file alongside — don't rely on it being incidentally exercised by a
   higher-level pipeline test.

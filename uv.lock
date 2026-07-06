@@ -15,11 +15,11 @@ name = "agent-parity"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "boto3" },
     { name = "certifi" },
     { name = "click" },
     { name = "numpy" },
     { name = "pandas" },
+    { name = "py-shared-tools", extra = ["storage"] },
     { name = "pyyaml" },
     { name = "requests" },
     { name = "urllib3" },
@@ -35,11 +35,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "boto3", specifier = ">=1.34" },
     { name = "certifi", specifier = ">=2024.7.4" },
     { name = "click", specifier = ">=8.1" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=2.2" },
+    { name = "py-shared-tools", extras = ["storage"], editable = "vendor/py-shared-tools" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.32" },
     { name = "urllib3", specifier = ">=2.0" },
@@ -570,6 +570,37 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/56/7a/a0f6bda783eb4df8e3dfd55973a1ac6d368a89178c300e1b5b91cd181e5e/py_partiql_parser-0.6.3.tar.gz", hash = "sha256:09cecf916ce6e3da2c050f0cb6106166de42c33d34a078ec2eb19377ea70389a", size = 17456, upload-time = "2025-10-18T13:56:13.441Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c9/33/a7cbfccc39056a5cf8126b7aab4c8bafbedd4f0ca68ae40ecb627a2d2cd3/py_partiql_parser-0.6.3-py2.py3-none-any.whl", hash = "sha256:deb0769c3346179d2f590dcbde556f708cdb929059fb654bad75f4cf6e07f582", size = 23752, upload-time = "2025-10-18T13:56:12.256Z" },
+]
+
+[[package]]
+name = "py-shared-tools"
+version = "0.1.0"
+source = { editable = "vendor/py-shared-tools" }
+dependencies = [
+    { name = "certifi" },
+    { name = "requests" },
+    { name = "urllib3" },
+]
+
+[package.optional-dependencies]
+storage = [
+    { name = "boto3" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "boto3", marker = "extra == 'storage'", specifier = ">=1.34" },
+    { name = "certifi", specifier = ">=2024.7.4" },
+    { name = "requests", specifier = ">=2.32" },
+    { name = "urllib3", specifier = ">=2.0" },
+]
+provides-extras = ["storage"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "boto3", specifier = ">=1.34" },
+    { name = "moto", extras = ["s3"], specifier = ">=5.0" },
+    { name = "pytest", specifier = ">=8.3" },
 ]
 
 [[package]]

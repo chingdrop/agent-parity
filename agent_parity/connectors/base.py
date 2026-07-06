@@ -33,7 +33,7 @@ from typing import Callable, ClassVar
 import requests
 
 from agent_parity.models import AgentDevice, infer_machine_type, infer_platform
-from agent_parity.rest_adapter import RestAdapter, RestAdapterConfig
+from shared_tools.rest_adapter import RestAdapter, RestAdapterConfig
 
 # infer_platform/infer_machine_type are re-exported here (not just imported
 # for internal use) for existing call sites (carbonblack.py, bitdefender.py,

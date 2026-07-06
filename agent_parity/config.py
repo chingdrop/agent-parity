@@ -8,7 +8,7 @@ into fixture mode — so a fresh checkout with no ``.env`` runs the entire
 pipeline against ``sample_data/``.
 
 The same file also declares a ``storage:`` section (object storage for the
-AD-export handoff — see ``agent_parity.storage``), resolved the same way:
+AD-export handoff — see ``shared_tools.storage``), resolved the same way:
 unset ``${VAR}``s mean unconfigured, and ``get_storage()`` returns ``None``
 rather than raising. ``None`` is only a valid state with no live vendor
 credentials either (pure fixture/demo mode) — ``deployment.script_runner
@@ -172,7 +172,7 @@ def get_storage(config: AppConfig):
     # Imported here, not at module level, for the same reason as in
     # get_connector: keep topology-only config loading free of the boto3
     # dependency chain for callers that don't need it.
-    from agent_parity.storage import ObjectStorage
+    from shared_tools.storage import ObjectStorage
 
     if config.storage.backend != "s3":
         raise ConfigError(

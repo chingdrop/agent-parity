@@ -1,0 +1,3 @@
+[submodule "vendor/py-shared-tools"]
+	path = vendor/py-shared-tools
+	url = C:/Users/churley/Code/py-shared-tools

@@ -118,9 +118,10 @@ below) is the next step up.
 ```
 
 Everything above the `pipeline.py` line is pure, dependency-light Python:
-pandas/numpy for the correlation engine, `requests`/`boto3` for the connectors
-and object storage, `pyyaml` for config. No web framework, no ORM, no task
-queue — a consumer decides what to do with a `CorrelationResult`.
+pandas/numpy for the correlation engine, `requests`/`boto3` (via the
+`vendor/py-shared-tools` submodule — see below) for the connectors and object
+storage, `pyyaml` for config. No web framework, no ORM, no task queue — a
+consumer decides what to do with a `CorrelationResult`.
 
 ### The deployment model: remote script execution, not direct AD access
 
@@ -152,13 +153,25 @@ organization on BitDefender alone can't have its AD export collected at all.
 inventory both flow through the same authenticated channel: whichever one
 vendor is configured.
 
-All three connectors share one HTTP transport — `agent_parity/rest_adapter.py`
-(`RestAdapter`) — instead of a bare `requests.Session`: automatic retries with
-backoff on 429/5xx, content-type-aware parsing (JSON responses come back as
-`dict`, text/HTML as `str`, everything else as raw `bytes`), and a single place
-to add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
+All three connectors share one HTTP transport —
+`vendor/py-shared-tools/shared_tools/rest_adapter.py` (`RestAdapter`) —
+instead of a bare `requests.Session`: automatic retries with backoff on
+429/5xx, content-type-aware parsing (JSON responses come back as `dict`,
+text/HTML as `str`, everything else as raw `bytes`), and a single place to
+add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
 `_request_json()`/`_as_text()` helpers narrow that `dict | str | bytes` result
 for call sites that know which one they expect.
+
+`RestAdapter` and `ObjectStorage` (below) live in
+[py-shared-tools](vendor/py-shared-tools/README.md), a separate git repo
+pulled in as a submodule at `vendor/py-shared-tools` and added as a `uv` path
+dependency (`py-shared-tools[storage]` in `pyproject.toml`'s
+`[tool.uv.sources]`) rather than copy-pasted into this package — the same
+two classes are reused as-is by other projects. Import as
+`from shared_tools.rest_adapter import RestAdapter` /
+`from shared_tools.storage import ObjectStorage`. A fresh clone of
+agent-parity needs `git submodule update --init` (or `git clone
+--recurse-submodules`) before `uv sync` will find it.
 
 ### Multi-domain AD: one export per domain, concatenated into a master list
 
@@ -203,9 +216,10 @@ doesn't go through them at all:
    that never fails an export that already succeeded.
 
 This is built against the **S3 API** (`boto3`), not a specific product:
-`agent_parity/storage.py`'s `ObjectStorage` talks to a self-hosted **MinIO**
-instance (`docker/docker-compose.yml` runs one) for local/dev use, or real
-**AWS S3** in production, with `endpoint_url` as the only thing that changes.
+`vendor/py-shared-tools/shared_tools/storage.py`'s `ObjectStorage` talks to a
+self-hosted **MinIO** instance (`docker/docker-compose.yml` runs one) for
+local/dev use, or real **AWS S3** in production, with `endpoint_url` as the
+only thing that changes.
 It is *not* Azure Blob Storage capable — Blob doesn't speak the S3 API, so
 that would need a second implementation with a different SDK, not just
 different credentials.
@@ -432,9 +446,12 @@ a real network. Run it manually, e.g. before cutting a release.
   cases, `ADDevice`/`AgentDevice` join-key properties, `AgentDevice.to_dict`/
   `from_dict` round-tripping (used to pass records across a process boundary,
   e.g. a consuming project's own task queue).
-- **HTTP transport** (`test_rest_adapter.py`): content-type-based parsing
-  (JSON/text/bytes), retry configuration, header merging, `files=` passthrough
-  — `RestAdapter` in isolation, not just through a connector.
+- **HTTP transport and object storage in isolation**: `RestAdapter`'s
+  content-type-based parsing, retry configuration, header merging, `files=`
+  passthrough; `ObjectStorage`'s presigned-URL round trip. These live in
+  `vendor/py-shared-tools/tests/`, not this package's own `tests/` — they're
+  a separate repo's test suite, run via `cd vendor/py-shared-tools && uv run
+  pytest`, not part of `uv run pytest` at the agent-parity root.
 
 Also deliberately **not** covered here: whether a real MinIO/AWS S3 endpoint
 actually works — `moto` proves the *logic* is right but never touches a real

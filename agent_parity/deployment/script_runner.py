@@ -8,7 +8,8 @@ place for the agent itself. Each connector implements the vendor mechanics
 (stage / execute / poll / retrieve); this module is the uniform entry point
 the pipeline calls.
 
-**Object storage (``agent_parity.storage``) is mandatory for any live export.**
+**Object storage (``shared_tools.storage``, via the ``vendor/py-shared-tools``
+submodule) is mandatory for any live export.**
 Vendor remote-execution output channels (SentinelOne RSO's fetch-files,
 Carbon Black Live Response's command output) don't reliably preserve a CSV's
 exact formatting — encoding and line-ending normalization, truncation at
@@ -33,7 +34,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from agent_parity.connectors.base import AgentConnector
-from agent_parity.storage import ObjectStorage
+from shared_tools.storage import ObjectStorage
 
 AD_EXPORT_SCRIPT = Path(__file__).resolve().parent.parent / "ad_sync" / "Export-ADDevices.ps1"
 
