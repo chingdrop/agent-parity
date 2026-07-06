@@ -132,42 +132,65 @@ consumer — its `run`/`compare` subcommands wrap the two functions above, write
 against this registry. A 4th vendor needs a new module (decorated) plus one import
 line in `connectors/__init__.py` to trigger registration — nothing else.
 
-Every connector implements `fetch_inventory()` and `deploy_and_run(script_path,
-target_id)` against a shared `AgentConnector` ABC (`connectors/base.py`). **Fixture
-fallback is not a test-only shim — it's the default runtime path.** `is_live` gates
-on whether all `required_credentials` are present; if not, `fetch_inventory()` reads
-`sample_data/<vendor>_inventory.json` and `deploy_and_run()` returns
+**`AgentConnector` (`connectors/base.py`) is split across two layers.** The generic
+half — a credentialed `RestAdapter` session, `is_live`, live/fixture dispatch for
+`deploy_and_run()`, `_poll_until`, `_request`/`_request_json`/`_as_text`,
+`_fixture_path`, `ConnectorError`, and the `ConnectorRegistry` class itself — lives in
+`shared_tools.remote_exec.VendorConnector`, shared via `py-shared-tools` with other
+projects (`credential-audit`) that talk to the same kind of vendor remote-execution
+APIs. `AgentConnector` subclasses it and adds only what's specific to *this*
+project: `fetch_inventory()`/`_fixture_fetch_inventory()`/the abstract
+`_live_fetch_inventory()`/`_parse_inventory()` pair, and this project's own
+`_fixture_deploy_and_run()` override (the AD-export-CSV-by-target_id behavior below).
+`CONNECTOR_REGISTRY` here is agent-parity's own `ConnectorRegistry()` instance — the
+registry mechanism is shared, but each project's instance is independent, so
+`credential-audit` registering its own vendor connectors on the same base can never
+collide with these entries. **When touching connector internals, check whether the
+change belongs in `agent_parity/connectors/base.py` (this project's inventory/AD-export
+specifics) or `vendor/py-shared-tools/shared_tools/remote_exec.py` (generic vendor-API
+mechanics any consumer of the shared base would want) — don't add project-specific
+logic to the shared base, and don't duplicate generic mechanics back into this file.**
+
+**Fixture fallback is not a test-only shim — it's the default runtime path.** `is_live`
+gates on whether all `required_credentials` are present; if not, `fetch_inventory()`
+reads `sample_data/<vendor>_inventory.json` and `deploy_and_run()` returns
 `sample_data/ad_export_<target_id>.csv` — one file per domain controller, since an
 organization spanning multiple AD domains (`AppConfig.ad_target_devices`, see
 "Multi-domain AD" below) has a distinct export per domain, not one shared file.
 Timestamps are rebased so the newest check-in is ~now (`rebase_timestamps` /
-`rebase_csv_timestamps`) — this is what keeps the authored stale/recent split in
-`sample_data/` stable regardless of when the demo is run. Don't add
-credential-checking logic anywhere else; it belongs in `is_live` alone.
+`rebase_csv_timestamps`, still local to this project — they operate on `AgentDevice`
+and an AD-export-shaped CSV, not generic enough to share) — this is what keeps the
+authored stale/recent split in `sample_data/` stable regardless of when the demo is
+run. Don't add credential-checking logic anywhere else; it belongs in `is_live` alone.
 
 **Not every vendor supports `deploy_and_run()` for real.** `supports_remote_execution`
-(ClassVar, default `True`) gates it — `BitDefenderConnector` sets it `False` because
-GravityZone's real API has no equivalent to SentinelOne's Remote Script Orchestration
-or Carbon Black's Live Response, only predefined task types (scan, isolate, ...).
-`deploy_and_run()` raises `ConnectorError` before the live/fixture fork when this is
-`False`, so BitDefender can't accidentally "succeed" at something it doesn't really do,
-even in demo mode. It's fetch_inventory-only — an organization on BitDefender alone
-can't have its AD export collected at all; `pipeline.collect_ad_csv` raises a clear
-`ConfigError` rather than silently skipping it. If a 4th vendor connector genuinely
-can't run scripts either, set this the same way — don't leave `_live_deploy_and_run`
+(ClassVar, default `True`, defined on the shared `VendorConnector`) gates it —
+`BitDefenderConnector` sets it `False` because GravityZone's real API has no
+equivalent to SentinelOne's Remote Script Orchestration or Carbon Black's Live
+Response, only predefined task types (scan, isolate, ...). `deploy_and_run()` raises
+`ConnectorError` before the live/fixture fork when this is `False`, so BitDefender
+can't accidentally "succeed" at something it doesn't really do, even in demo mode.
+It's fetch_inventory-only — an organization on BitDefender alone can't have its AD
+export collected at all; `pipeline.collect_ad_csv` raises a clear `ConfigError`
+rather than silently skipping it. If a 4th vendor connector genuinely can't run
+scripts either, set this the same way — don't leave `_live_deploy_and_run`
 unimplemented and let it fail some other way.
 
 Live mode goes through `shared_tools.rest_adapter` (`RestAdapter`) rather than a
 bare `requests.Session` — retries/backoff on 429/5xx are configured there once,
-shared by all three vendors. `RestAdapter` and `ObjectStorage` (see "AD-export
-object storage" below) both live in [py-shared-tools](vendor/py-shared-tools/README.md),
+shared by all three vendors (wired up inside `VendorConnector.__init__`, not
+per-connector). `RestAdapter`, `ObjectStorage` (see "AD-export object storage"
+below), and `VendorConnector`/`remote_exec` all live in
+[py-shared-tools](vendor/py-shared-tools/README.md),
 a separate git repo consumed as a submodule at `vendor/py-shared-tools` plus a
 `uv` path dependency (`py-shared-tools[storage]`, `[tool.uv.sources]` in
 `pyproject.toml`) — reused as-is across other projects rather than
-copy-pasted, which is what these two classes' own comments used to say before
-the extraction. Editing either class means editing the files under
-`vendor/py-shared-tools/`, not anywhere in `agent_parity/`; there's no local
-copy left to accidentally diverge from. A fresh clone of this repo needs
+copy-pasted, which is what `RestAdapter`/`ObjectStorage`'s own comments used to
+say before their extraction (and what `AgentConnector`'s own `deploy_and_run`/
+polling/registry logic said before `VendorConnector`'s). Editing any of them
+means editing the files under `vendor/py-shared-tools/`, not anywhere in
+`agent_parity/`; there's no local copy left to accidentally diverge from. A
+fresh clone of this repo needs
 `git submodule update --init` (or `git clone --recurse-submodules`) before
 `uv sync` can resolve it — `uv`'s git-dependency resolution does fetch
 submodules recursively, so this also works transparently for a consuming
@@ -329,11 +352,15 @@ it isn't part of the default `config.yaml`'s single-domain demo.
   `correlate_from_csvs`, deliberately exercised with hand-rolled CSVs rather than
   `sample_data/`, to prove that path has zero dependency on the demo fixtures),
   `test_agent_csv.py` ↔ `agent_parity/agent_csv.py`, `test_cli.py` ↔
-  `agent_parity/cli.py`, `test_config.py` ↔ `agent_parity/config.py`. `RestAdapter`
-  and `ObjectStorage` are the one exception to "lives in this repo, tested in this
-  repo's `tests/`" — they and their tests (`test_rest_adapter.py`, `test_storage.py`)
+  `agent_parity/cli.py`, `test_config.py` ↔ `agent_parity/config.py`. `RestAdapter`,
+  `ObjectStorage`, and `VendorConnector`/`ConnectorRegistry` (`remote_exec.py`) are
+  the exception to "lives in this repo, tested in this repo's `tests/`" — they and
+  their tests (`test_rest_adapter.py`, `test_storage.py`, `test_remote_exec.py`)
   live in the `vendor/py-shared-tools` submodule instead, since that code is shared
-  across other projects, not agent-parity-specific. When adding a
+  across other projects, not agent-parity-specific. `test_connectors.py` still
+  covers `AgentConnector`'s own inventory-fetching and fixture-deploy-and-run
+  behavior in this repo — only the generic dispatch/polling/registry mechanics
+  moved. When adding a
   new module with real logic in it, add its
   test file alongside — don't rely on it being incidentally exercised by a
   higher-level pipeline test.

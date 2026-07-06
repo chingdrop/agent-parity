@@ -1,17 +1,28 @@
 """Shared connector interface.
 
 Every vendor connector supports ``fetch_inventory()`` — pull the vendor's
-current endpoint list, normalized to ``AgentDevice`` records.
+current endpoint list, normalized to ``AgentDevice`` records. That's this
+project's own domain logic; it stays here rather than in
+``shared_tools.remote_exec``, which knows nothing about inventories or
+``AgentDevice``.
 
-Most also support ``deploy_and_run(script_path, target_id)`` — push a script
-to a managed endpoint through the vendor's remote-execution capability and
-return its stdout. This is how the AD export is collected: the script runs
-on an already domain-joined, already-managed endpoint, so agent-parity never
-needs its own domain credentials or LDAP bind. Not every EDR vendor's real
-API exposes an equivalent to "run an arbitrary script" though — connectors
-that don't (see ``supports_remote_execution`` below) are fetch_inventory-only;
-``pipeline.collect_ad_csv`` raises a clear error if the configured vendor
-can't carry the AD export.
+Most connectors also support ``deploy_and_run(script_path, target_id)`` — push
+a script to a managed endpoint through the vendor's remote-execution
+capability and return its stdout. This is how the AD export is collected: the
+script runs on an already domain-joined, already-managed endpoint, so
+agent-parity never needs its own domain credentials or LDAP bind. **The
+generic mechanics of this — credentialed HTTP via ``RestAdapter``, live/fixture
+dispatch, polling, and the vendor registry — live in
+``shared_tools.remote_exec.VendorConnector``**, shared with other projects
+(``credential-audit``) that talk to the same kind of vendor remote-execution
+APIs; ``AgentConnector`` here adds only what's specific to *this* project:
+inventory fetching, and this project's own AD-export fixture behavior
+(``_fixture_deploy_and_run``, keyed by domain controller CSV + timestamp
+rebasing). Not every EDR vendor's real API exposes an equivalent to "run an
+arbitrary script" though — connectors that don't (see
+``supports_remote_execution``, inherited from ``VendorConnector``) are
+fetch_inventory-only; ``pipeline.collect_ad_csv`` raises a clear error if the
+configured vendor can't carry the AD export.
 
 When a connector has no usable credentials it falls back to local fixtures
 under ``sample_data/`` so the whole pipeline runs with zero live API access.
@@ -22,18 +33,14 @@ from __future__ import annotations
 import csv
 import io
 import json
-import logging
-import time
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, ClassVar
 
-import requests
+from shared_tools.remote_exec import ConnectorError, ConnectorRegistry, VendorConnector
 
 from agent_parity.models import AgentDevice, infer_machine_type, infer_platform
-from shared_tools.rest_adapter import RestAdapter, RestAdapterConfig
 
 # infer_platform/infer_machine_type are re-exported here (not just imported
 # for internal use) for existing call sites (carbonblack.py, bitdefender.py,
@@ -49,10 +56,6 @@ __all__ = [
     "CONNECTOR_REGISTRY",
     "register_connector",
 ]
-
-
-class ConnectorError(Exception):
-    """A vendor API call or remote execution failed."""
 
 
 def parse_timestamp(value) -> datetime | None:
@@ -115,56 +118,24 @@ def rebase_csv_timestamps(csv_text: str, column: str = "LastLogonTimestamp") -> 
 #: @register_connector as each connector module is imported. Adding a new
 #: vendor is "write a connector class decorated with @register_connector,
 #: plus one import in connectors/__init__.py" — nothing else needs editing.
-CONNECTOR_REGISTRY: dict[str, type["AgentConnector"]] = {}
+#: The registry mechanism itself (``ConnectorRegistry``) is shared via
+#: ``shared_tools.remote_exec``; this instance is agent-parity's own, so an
+#: unrelated project's vendor connectors never collide with these entries.
+CONNECTOR_REGISTRY: ConnectorRegistry = ConnectorRegistry()
+register_connector = CONNECTOR_REGISTRY.register
 
 
-def register_connector(cls: type["AgentConnector"]) -> type["AgentConnector"]:
-    """Class decorator: adds a connector to ``CONNECTOR_REGISTRY`` keyed by
-    its own ``vendor`` attribute — adding vendor support is "write a class
-    decorated with this," not editing a separately maintained table."""
-    CONNECTOR_REGISTRY[cls.vendor] = cls
-    return cls
-
-
-class AgentConnector(ABC):
+class AgentConnector(VendorConnector):
     """Base class for vendor connectors.
 
     Subclasses set ``vendor`` and ``required_credentials`` and implement the
-    ``_live_*`` methods shaped after the vendor's real API. The public
-    methods decide between live and fixture mode.
+    ``_live_*`` methods shaped after the vendor's real API. Credentialed HTTP,
+    live/fixture dispatch for ``deploy_and_run``, and polling all come from
+    ``shared_tools.remote_exec.VendorConnector`` (see ``session``, ``is_live``,
+    ``_request``/``_request_json``/``_as_text``, ``_fixture_path``,
+    ``_poll_until``); this class adds inventory fetching and this project's
+    own AD-export fixture behavior.
     """
-
-    vendor: ClassVar[str]
-    required_credentials: ClassVar[tuple[str, ...]]
-
-    #: Whether this vendor's real API exposes anything equivalent to "push
-    #: and run an arbitrary script" (SentinelOne's Remote Script Orchestration,
-    #: Carbon Black's Live Response). Not every EDR vendor does — BitDefender
-    #: GravityZone's remote-task API is limited to predefined task types (scan,
-    #: isolate, install/uninstall, ...), so it overrides this to False and is
-    #: fetch_inventory-only. ``deploy_and_run`` refuses to run at all when this
-    #: is False, in both live and fixture mode, so the pipeline never silently
-    #: attributes a capability to a vendor that doesn't really have it.
-    supports_remote_execution: ClassVar[bool] = True
-
-    #: Seconds between remote-execution status polls, and the overall cap.
-    poll_interval: ClassVar[float] = 5.0
-    poll_timeout: ClassVar[float] = 300.0
-
-    def __init__(self, credentials: dict | None = None, fixture_dir: str | Path | None = None):
-        self.credentials = credentials or {}
-        self.fixture_dir = Path(fixture_dir) if fixture_dir else None
-        # Call sites always pass fully-qualified URLs, so base_url is never
-        # actually joined against — it only matters that RestAdapterConfig
-        # requires one.
-        self.session = RestAdapter(
-            RestAdapterConfig(base_url=self.credentials.get("api_url") or ""),
-            logger=logging.getLogger(f"agent_parity.connectors.{self.vendor}"),
-        )
-
-    @property
-    def is_live(self) -> bool:
-        return all(self.credentials.get(key) for key in self.required_credentials)
 
     # -- inventory ---------------------------------------------------------
 
@@ -179,88 +150,19 @@ class AgentConnector(ABC):
             payload = json.load(fh)
         return rebase_timestamps(self._parse_inventory(payload))
 
-    # -- remote script execution -------------------------------------------
+    # -- remote script execution: this project's fixture behavior -----------
 
-    def deploy_and_run(
-            self,
-            script_path: str | Path,
-            target_id: str,
-            script_args: dict[str, str] | None = None,
+    def _fixture_deploy_and_run(
+            self, script_path: Path, target_id: str, script_args: dict[str, str]
     ) -> str:
-        """Push a script to ``target_id``, execute it, and return its stdout.
-
-        ``script_args`` are passed through to the script itself — currently
-        just the presigned upload URL when the AD export is handed off via
-        object storage instead of the vendor's own output channel (see
-        ``deployment.script_runner.run_ad_export``); ignored in fixture mode,
-        where there's no real script execution to parameterize.
-
-        Checked before the live/fixture fork so a vendor without genuine
-        remote-execution capability can't produce a misleadingly successful
-        result in demo mode either.
+        """The canned AD export for this specific domain controller stands in
+        for the script output — one file per target_id, since a client with
+        multiple AD domains has a distinct export per domain (see
+        ``pipeline.collect_ad_frame``). ``script_args`` is ignored in fixture
+        mode; there's no real script execution to parameterize.
         """
-        if not self.supports_remote_execution:
-            raise ConnectorError(
-                f"{self.vendor}: does not support remote script execution "
-                f"(fetch_inventory-only vendor)"
-            )
-        if self.is_live:
-            return self._live_deploy_and_run(Path(script_path), target_id, script_args or {})
-        # Fixture mode: the canned AD export for this specific domain
-        # controller stands in for the script output — one file per
-        # target_id, since a client with multiple AD domains has a distinct
-        # export per domain (see dashboard/services.py's collect_ad_frame).
         path = self._fixture_path(f"ad_export_{target_id}.csv")
         return rebase_csv_timestamps(path.read_text())
-
-    # -- helpers -------------------------------------------------------------
-
-    def _fixture_path(self, filename: str) -> Path:
-        if not self.fixture_dir:
-            raise ConnectorError(
-                f"{self.vendor}: no credentials configured and no fixture_dir provided"
-            )
-        path = self.fixture_dir / filename
-        if not path.exists():
-            raise ConnectorError(f"{self.vendor}: fixture not found: {path}")
-        return path
-
-    def _poll_until(self, check: Callable[[], str | None], what: str) -> str:
-        """Poll ``check`` until it returns output or the timeout elapses."""
-        deadline = time.monotonic() + self.poll_timeout
-        while time.monotonic() < deadline:
-            result = check()
-            if result is not None:
-                return result
-            time.sleep(self.poll_interval)
-        raise ConnectorError(f"{self.vendor}: timed out waiting for {what}")
-
-    def _request(self, method: str, url: str, **kwargs) -> dict | str | bytes:
-        """Issue a request through the shared RestAdapter (retries included).
-
-        Returns already-parsed content — a dict for JSON responses, str for
-        text/html, raw bytes otherwise — not a ``requests.Response``.
-        """
-        try:
-            return self.session.request(method, url, timeout=30, **kwargs)
-        except requests.RequestException as exc:
-            raise ConnectorError(f"{self.vendor}: API request failed: {exc}") from exc
-
-    @staticmethod
-    def _as_text(payload: dict | str | bytes) -> str:
-        """Coerce a ``_request`` result into text, for script-output call sites."""
-        if isinstance(payload, bytes):
-            return payload.decode("utf-8", errors="replace")
-        if isinstance(payload, str):
-            return payload
-        raise ConnectorError(f"expected text output, got parsed JSON: {payload!r}")
-
-    def _request_json(self, method: str, url: str, **kwargs) -> dict:
-        """Like ``_request``, but for endpoints that always return a JSON object."""
-        payload = self._request(method, url, **kwargs)
-        if not isinstance(payload, dict):
-            raise ConnectorError(f"{self.vendor}: expected a JSON object, got {payload!r}")
-        return payload
 
     # -- vendor-specific -----------------------------------------------------
 
@@ -271,14 +173,3 @@ class AgentConnector(ABC):
     @abstractmethod
     def _live_fetch_inventory(self) -> list[AgentDevice]:
         ...
-
-    def _live_deploy_and_run(
-            self, script_path: Path, target_id: str, script_args: dict[str, str]
-    ) -> str:
-        """Default for vendors with ``supports_remote_execution = False``.
-
-        The public ``deploy_and_run`` already refuses before reaching here;
-        this is a defensive fallback for anything that calls this directly.
-        Vendors that genuinely support remote execution override it.
-        """
-        raise ConnectorError(f"{self.vendor}: remote script execution not implemented")
