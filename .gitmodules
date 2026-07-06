@@ -1,3 +1,0 @@
-[submodule "vendor/py-shared-tools"]
-	path = vendor/py-shared-tools
-	url = git@github.com:chingdrop/py-shared-tools.git

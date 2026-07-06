@@ -148,7 +148,7 @@ registry mechanism is shared, but each project's instance is independent, so
 `credential-audit` registering its own vendor connectors on the same base can never
 collide with these entries. **When touching connector internals, check whether the
 change belongs in `agent_parity/connectors/base.py` (this project's inventory/AD-export
-specifics) or `vendor/py-shared-tools/shared_tools/remote_exec.py` (generic vendor-API
+specifics) or `py-shared-tools`'s own `shared_tools/remote_exec.py` (generic vendor-API
 mechanics any consumer of the shared base would want) — don't add project-specific
 logic to the shared base, and don't duplicate generic mechanics back into this file.**
 
@@ -200,20 +200,24 @@ bare `requests.Session` — retries/backoff on 429/5xx are configured there once
 shared by all three vendors (wired up inside `VendorConnector.__init__`, not
 per-connector). `RestAdapter`, `ObjectStorage` (see "AD-export object storage"
 below), and `VendorConnector`/`remote_exec` all live in
-[py-shared-tools](vendor/py-shared-tools/README.md),
-a separate git repo consumed as a submodule at `vendor/py-shared-tools` plus a
-`uv` path dependency (`py-shared-tools[storage]`, `[tool.uv.sources]` in
-`pyproject.toml`) — reused as-is across other projects rather than
-copy-pasted, which is what `RestAdapter`/`ObjectStorage`'s own comments used to
-say before their extraction (and what `AgentConnector`'s own `deploy_and_run`/
-polling/registry logic said before `VendorConnector`'s). Editing any of them
-means editing the files under `vendor/py-shared-tools/`, not anywhere in
-`agent_parity/`; there's no local copy left to accidentally diverge from. A
-fresh clone of this repo needs
-`git submodule update --init` (or `git clone --recurse-submodules`) before
-`uv sync` can resolve it — `uv`'s git-dependency resolution does fetch
-submodules recursively, so this also works transparently for a consuming
-project's `uv add git+https://.../agent-parity@vX.Y.Z`.
+[py-shared-tools](https://github.com/chingdrop/py-shared-tools),
+a separate git repo consumed as a plain pinned `uv` git dependency
+(`py-shared-tools[storage]`, `[tool.uv.sources]` in `pyproject.toml` pins it to
+a tag) — reused as-is across other projects rather than copy-pasted, which is
+what `RestAdapter`/`ObjectStorage`'s own comments used to say before their
+extraction (and what `AgentConnector`'s own `deploy_and_run`/polling/registry
+logic said before `VendorConnector`'s). Editing any of them means editing the
+files in a separate clone of `py-shared-tools`, not anywhere in
+`agent_parity/`; there's no local copy left to accidentally diverge from.
+**This used to be a vendored git submodule at `vendor/py-shared-tools`** with a
+local editable path override — dropped in favor of a plain git dependency
+because `uv` can't reconcile two sibling projects (`agent-parity` and
+`credential-audit`) each vendoring their own copy of the same package under
+different subdirectory paths; a consumer needing both (like `cyberhub`) would
+hit an unresolvable "conflicting URLs for package py-shared-tools" error. A
+plain git dependency pinned to the same tag in both projects resolves as one
+package. Bumping the pin means updating the `rev` in `[tool.uv.sources]`, not
+`git submodule update`.
 
 `RestAdapter.request()` returns already-parsed content (`dict` for JSON, `str`
 for text/html, `bytes` otherwise), not a `Response` object, so connector call
@@ -224,9 +228,9 @@ test exercises real network I/O; `tests/test_connectors.py` proves the
 RestAdapter wiring (retry config, JSON/text parsing) by monkeypatching the
 underlying `requests.Session.request`, not by hitting a live API.
 `RestAdapter`'s own unit tests (content-type parsing, header merging, retry
-config, the `files=` passthrough) live in `vendor/py-shared-tools/tests/`,
-not in this repo's `tests/` — they're that submodule's own test suite, run
-via `cd vendor/py-shared-tools && uv run pytest`.
+config, the `files=` passthrough) live in `py-shared-tools`'s own `tests/`,
+not in this repo's `tests/` — they're that repo's own test suite, run there
+via `uv run pytest`, not part of `uv run pytest` at the agent-parity root.
 
 **`AgentDevice.platform`/`machine_type` are normalized to SentinelOne's wording**
 (most of the historical client base was on S1, so its vocabulary is canonical).
@@ -241,7 +245,7 @@ text (`infer_platform`) since it has no equivalent field. `infer_platform`/
 `infer_machine_type` live in `models.py`, not `connectors/base.py`, specifically
 so `correlation/engine.py` can use them too (for AD-only rows — see
 `backfill_machine_type`) without pulling in the connector stack's
-`requests`/`RestAdapter` dependency chain (now the `shared_tools` submodule)
+`requests`/`RestAdapter` dependency chain (now `py-shared-tools`)
 just for two pure string functions.
 If a 4th vendor is
 added, decide per-field whether it reports something directly-mappable
@@ -251,7 +255,7 @@ actually has the field. **`agent_version` is deliberately never touched this
 way** — each vendor's version numbering is real and vendor-specific; making
 one look like another's would be fabricating a value, not normalizing one.
 
-## AD-export object storage (`shared_tools.script_export`, `vendor/py-shared-tools/shared_tools/script_export.py`)
+## AD-export object storage (`shared_tools.script_export`, in the `py-shared-tools` repo)
 
 **The storage-backed handoff itself moved to `shared_tools.script_export`** —
 `run_ad_export` in `deployment/script_runner.py` is now a thin wrapper
@@ -303,10 +307,10 @@ a second implementation with a different SDK, not just different config.
 `None` when unconfigured (`config.storage.enabled` is False);
 `config.storage.backend` only supports `"s3"` today, and `get_storage` raises
 `ConfigError` for anything else. **If you need to change the storage-handoff
-mechanics or the `StorageConfig` shape itself, edit
-`vendor/py-shared-tools/shared_tools/script_export.py` or `config.py`, not
-this project's own files** — they're shared with `credential-audit`, and a
-local copy here would silently diverge.
+mechanics or the `StorageConfig` shape itself, edit `py-shared-tools`'s own
+`shared_tools/script_export.py` or `shared_tools/config.py`, not this
+project's own files** — they're shared with `credential-audit`, and a local
+copy here would silently diverge.
 
 Only SentinelOne and Carbon Black connectors accept `script_args` meaningfully
 (BitDefender doesn't implement `_live_deploy_and_run` at all). SentinelOne passes
@@ -318,10 +322,10 @@ mechanisms, same `script_args: dict[str, str]` contract from `deploy_and_run`.
 Tests use `moto` (`@mock_aws` / the `mock_aws()` context manager) — no real
 MinIO or AWS S3 touches the test suite, and a real presigned-URL PUT/GET round
 trip still gets exercised. `ObjectStorage`'s own unit tests live in
-`vendor/py-shared-tools/tests/test_storage.py`; the *orchestration logic*
+`py-shared-tools`'s own `tests/test_storage.py`; the *orchestration logic*
 (mandatory-storage rule, fixture bypass, upload/download/cleanup, empty/
 wrong-shaped output) is now exhaustively tested in
-`vendor/py-shared-tools/tests/test_script_export.py` too, using a generic
+`py-shared-tools`'s own `tests/test_script_export.py` too, using a generic
 fake connector — that suite is actually a superset of what this repo used to
 cover on its own (it gained the wrong-shaped-output tests `credential-audit`
 had added that this project's copy was missing). This repo's own
@@ -417,7 +421,7 @@ it isn't part of the default `config.yaml`'s single-domain demo.
   `ObjectStorage`, and `VendorConnector`/`ConnectorRegistry` (`remote_exec.py`) are
   the exception to "lives in this repo, tested in this repo's `tests/`" — they and
   their tests (`test_rest_adapter.py`, `test_storage.py`, `test_remote_exec.py`)
-  live in the `vendor/py-shared-tools` submodule instead, since that code is shared
+  live in the `py-shared-tools` repo instead, since that code is shared
   across other projects, not agent-parity-specific. `test_connectors.py` still
   covers `AgentConnector`'s own inventory-fetching and fixture-deploy-and-run
   behavior in this repo — only the generic dispatch/polling/registry mechanics

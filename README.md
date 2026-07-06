@@ -118,8 +118,8 @@ below) is the next step up.
 ```
 
 Everything above the `pipeline.py` line is pure, dependency-light Python:
-pandas/numpy for the correlation engine, `requests`/`boto3` (via the
-`vendor/py-shared-tools` submodule — see below) for the connectors and object
+pandas/numpy for the correlation engine, `requests`/`boto3` (via
+`py-shared-tools` — see below) for the connectors and object
 storage, `pyyaml` for config. No web framework, no ORM, no task queue — a
 consumer decides what to do with a `CorrelationResult`.
 
@@ -154,7 +154,7 @@ inventory both flow through the same authenticated channel: whichever one
 vendor is configured.
 
 All three connectors share one HTTP transport —
-`vendor/py-shared-tools/shared_tools/rest_adapter.py` (`RestAdapter`) —
+`shared_tools.rest_adapter` (`RestAdapter`, from `py-shared-tools`) —
 instead of a bare `requests.Session`: automatic retries with backoff on
 429/5xx, content-type-aware parsing (JSON responses come back as `dict`,
 text/HTML as `str`, everything else as raw `bytes`), and a single place to
@@ -163,15 +163,14 @@ add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
 for call sites that know which one they expect.
 
 `RestAdapter` and `ObjectStorage` (below) live in
-[py-shared-tools](vendor/py-shared-tools/README.md), a separate git repo
-pulled in as a submodule at `vendor/py-shared-tools` and added as a `uv` path
-dependency (`py-shared-tools[storage]` in `pyproject.toml`'s
-`[tool.uv.sources]`) rather than copy-pasted into this package — the same
-two classes are reused as-is by other projects. Import as
+[py-shared-tools](https://github.com/chingdrop/py-shared-tools), a separate
+git repo pulled in as a plain pinned `uv` git dependency
+(`py-shared-tools[storage]` in `pyproject.toml`'s `[tool.uv.sources]`, pinned
+to a tag) rather than copy-pasted into this package — the same two classes
+are reused as-is by other projects. Import as
 `from shared_tools.rest_adapter import RestAdapter` /
-`from shared_tools.storage import ObjectStorage`. A fresh clone of
-agent-parity needs `git submodule update --init` (or `git clone
---recurse-submodules`) before `uv sync` will find it.
+`from shared_tools.storage import ObjectStorage`. `uv sync` fetches it
+directly from GitHub; no submodule init step is needed.
 
 ### Multi-domain AD: one export per domain, concatenated into a master list
 
@@ -216,7 +215,7 @@ doesn't go through them at all:
    that never fails an export that already succeeded.
 
 This is built against the **S3 API** (`boto3`), not a specific product:
-`vendor/py-shared-tools/shared_tools/storage.py`'s `ObjectStorage` talks to a
+`py-shared-tools`'s own `shared_tools/storage.py` `ObjectStorage` talks to a
 self-hosted **MinIO** instance (`docker/docker-compose.yml` runs one) for
 local/dev use, or real **AWS S3** in production, with `endpoint_url` as the
 only thing that changes.
@@ -413,9 +412,8 @@ docker compose -f docker/docker-compose.yml run --rm agent-parity run
 ```
 
 Runs fully offline by default (config.yaml's fixture-mode connector + AD
-export) — no `.env` required. The build context must include the
-`vendor/py-shared-tools` submodule (`git submodule update --init` first if you
-haven't already).
+export) — no `.env` required. `py-shared-tools` is a plain git dependency, so
+the build needs network access to fetch it (no submodule init required).
 
 The one live-infrastructure path this package has — the AD-export
 object-storage handoff (see
@@ -468,9 +466,9 @@ release.
 - **HTTP transport and object storage in isolation**: `RestAdapter`'s
   content-type-based parsing, retry configuration, header merging, `files=`
   passthrough; `ObjectStorage`'s presigned-URL round trip. These live in
-  `vendor/py-shared-tools/tests/`, not this package's own `tests/` — they're
-  a separate repo's test suite, run via `cd vendor/py-shared-tools && uv run
-  pytest`, not part of `uv run pytest` at the agent-parity root.
+  `py-shared-tools`'s own `tests/`, not this package's own `tests/` — they're
+  a separate repo's test suite, run there via `uv run pytest`, not part of
+  `uv run pytest` at the agent-parity root.
 
 Also deliberately **not** covered here: whether a real MinIO/AWS S3 endpoint
 actually works — `moto` proves the *logic* is right but never touches a real

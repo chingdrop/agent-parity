@@ -28,7 +28,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-py-shared-tools = { path = "vendor/py-shared-tools", editable = true }
+py-shared-tools = { git = "https://github.com/chingdrop/py-shared-tools", rev = "v1.0.0" }
 
 [project.scripts]
 agent-parity = "agent_parity.cli:cli"

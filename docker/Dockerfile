@@ -5,9 +5,7 @@
 # only exists to run the CLI on its own when there's no reason to pull in
 # the whole hub.
 #
-# Build from the repo root (the build context must include
-# vendor/py-shared-tools — run `git submodule update --init` first if you
-# haven't already):
+# Build from the repo root:
 #
 #   docker build -f docker/Dockerfile -t agent-parity .
 #   docker run --rm -v "$PWD/output:/app/output" agent-parity run
@@ -21,10 +19,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 
-# Dependencies first for layer-cache friendliness: pyproject.toml/uv.lock and
-# the vendored submodule change far less often than agent_parity/ itself.
+# Dependencies first for layer-cache friendliness: pyproject.toml/uv.lock
+# change far less often than agent_parity/ itself. py-shared-tools is a
+# plain pinned git dependency, so this needs network access to fetch it.
 COPY pyproject.toml uv.lock ./
-COPY vendor/ vendor/
 RUN uv sync --frozen --no-dev --no-install-project
 
 COPY . .
