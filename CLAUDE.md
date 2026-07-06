@@ -151,6 +151,24 @@ specifics) or `vendor/py-shared-tools/shared_tools/remote_exec.py` (generic vend
 mechanics any consumer of the shared base would want) — don't add project-specific
 logic to the shared base, and don't duplicate generic mechanics back into this file.**
 
+**`connectors/sentinelone.py` goes one step further: even the vendor-*specific* RSO
+mechanics are shared.** `SentinelOneConnector(SentinelOneRSOMixin, AgentConnector)` —
+`_headers` and `_live_deploy_and_run` (the upload -> execute -> poll `remote-scripts
+/status` -> fetch-files sequence) moved to `shared_tools.sentinelone.SentinelOneRSOMixin`
+once `credential-audit` needed a `SentinelOneConnector` of its own and the RSO code
+turned out to be byte-for-byte identical — not just the generic dispatch mechanics,
+the actual SentinelOne API calls. It's a **mixin**, not a full base class, specifically
+so each project can combine it with its own project-specific base via multiple
+inheritance (`SentinelOneRSOMixin, AgentConnector` here; `SentinelOneRSOMixin,
+CredentialAuditConnector` in `credential-audit`) rather than forcing one inheritance
+shape on every consumer. `connectors/sentinelone.py` here now only defines
+`vendor`/`required_credentials`/`_parse_inventory`/`_live_fetch_inventory` — the
+inventory-fetching half, which is all that's actually agent-parity-specific.
+If Carbon Black's Live Response mechanics (`carbonblack.py`'s `_live_deploy_and_run`)
+ever get duplicated into a second project too, extract a `CarbonBlackLiveResponseMixin`
+the same way, at that point — same "duplicated twice, not hypothetically" bar that
+applied to `VendorConnector` and `SentinelOneRSOMixin`, not before.
+
 **Fixture fallback is not a test-only shim — it's the default runtime path.** `is_live`
 gates on whether all `required_credentials` are present; if not, `fetch_inventory()`
 reads `sample_data/<vendor>_inventory.json` and `deploy_and_run()` returns
