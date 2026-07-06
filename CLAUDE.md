@@ -251,43 +251,62 @@ actually has the field. **`agent_version` is deliberately never touched this
 way** — each vendor's version numbering is real and vendor-specific; making
 one look like another's would be fabricating a value, not normalizing one.
 
-## AD-export object storage (`shared_tools.storage`, `vendor/py-shared-tools/shared_tools/storage.py`)
+## AD-export object storage (`shared_tools.script_export`, `vendor/py-shared-tools/shared_tools/script_export.py`)
 
-S3-compatible handoff for `Export-ADDevices.ps1`'s output, wired through
-`deployment/script_runner.run_ad_export`. **Mandatory for any live connector** —
-not an optional upgrade. Vendor remote-execution output channels (SentinelOne
-RSO's fetch-files, Carbon Black Live Response's command output) don't reliably
+**The storage-backed handoff itself moved to `shared_tools.script_export`** —
+`run_ad_export` in `deployment/script_runner.py` is now a thin wrapper
+supplying this project's own script path (`AD_EXPORT_SCRIPT`), object-key
+prefix (`"ad-exports"`), expected CSV header (`"Name"`), and error wording to
+`shared_tools.script_export.run_script_export`. This extraction happened
+once `credential-audit` needed the *exact same* orchestration for its own
+AD-metadata export — not just the generic `VendorConnector` dispatch, the
+whole "storage mandatory for live, fixture bypasses it entirely,
+presigned-URL round trip, validate the result" function was byte-for-byte
+identical under two names before it moved. `ScriptExecutionError` is
+re-exported from `deployment/script_runner.py` for existing import sites, not
+redefined there. **Mandatory for any live connector** — not an optional
+upgrade — because vendor remote-execution output channels (SentinelOne RSO's
+fetch-files, Carbon Black Live Response's command output) don't reliably
 preserve a CSV's exact formatting (encoding, line endings) and have real
-output-size limits a full AD export can exceed, so the vendor channel is never
-used to carry the actual export data once a connector is live:
+output-size limits a full AD export can exceed:
 
-1. `run_ad_export` raises `ScriptExecutionError` immediately if `connector.is_live`
-   and `storage is None` — a live export with no storage configured is a
-   configuration error, not something to silently work around by falling back
-   to the vendor channel. Don't reintroduce that fallback.
+1. `run_script_export` raises `ScriptExecutionError` immediately if
+   `connector.is_live` and `storage is None` — a live export with no storage
+   configured is a configuration error, not something to silently work
+   around by falling back to the vendor channel. Don't reintroduce that
+   fallback.
 2. Otherwise it generates a presigned PUT URL (`ObjectStorage.presigned_put_url`,
    15-minute default expiry) and passes it to `deploy_and_run(..., script_args={"UploadUrl": ...})`.
 3. The script uploads its own CSV there — the vendor call's return value is
    discarded entirely, since the real output never goes through it.
-4. `run_ad_export` downloads with `get_object` and deletes the object
+4. `run_script_export` downloads with `get_object` and deletes the object
    (best-effort; failures there only log, they never fail an export that
    already succeeded).
 
-**Fixture mode is the one exception** — `run_ad_export` checks `connector.is_live`
-*before* the storage check. There's no real endpoint in fixture mode to have
-uploaded anything, so it always returns the canned `sample_data/` CSV directly,
-regardless of whether storage happens to be configured. This is also why the
-uv demo path can leave `STORAGE_*` unset in `.env`: safe only because the vendor
-has no live credentials there either, so no script ever actually runs.
+**Fixture mode is the one exception** — `run_script_export` checks
+`connector.is_live` *before* the storage check. There's no real endpoint in
+fixture mode to have uploaded anything, so it always returns the canned
+`sample_data/` CSV directly, regardless of whether storage happens to be
+configured. This is also why the uv demo path can leave `STORAGE_*` unset in
+`.env`: safe only because the vendor has no live credentials there either, so
+no script ever actually runs.
 
 Built against the S3 API via `boto3`, not a specific product — MinIO
 (self-hosted, via `docker/docker-compose.yml`) for local/dev, real AWS S3 in
 production, same `ObjectStorage` class either way; only `endpoint_url`
 changes. This is *not* Azure Blob Storage capable — different API, would need
 a second implementation with a different SDK, not just different config.
-`get_storage(config)` returns `None` when unconfigured (`config.storage.enabled`
-is False); `config.storage.backend` only supports `"s3"` today, and
-`get_storage` raises `ConfigError` for anything else.
+**`StorageConfig`/`get_storage` also moved, into `shared_tools.config`** —
+`config.get_storage(config)` here is a one-line delegate to
+`shared_tools.config.get_storage(config.storage)`, same byte-for-byte logic
+`credential-audit`'s own `get_storage` needs. `get_storage(config)` returns
+`None` when unconfigured (`config.storage.enabled` is False);
+`config.storage.backend` only supports `"s3"` today, and `get_storage` raises
+`ConfigError` for anything else. **If you need to change the storage-handoff
+mechanics or the `StorageConfig` shape itself, edit
+`vendor/py-shared-tools/shared_tools/script_export.py` or `config.py`, not
+this project's own files** — they're shared with `credential-audit`, and a
+local copy here would silently diverge.
 
 Only SentinelOne and Carbon Black connectors accept `script_args` meaningfully
 (BitDefender doesn't implement `_live_deploy_and_run` at all). SentinelOne passes
@@ -299,9 +318,16 @@ mechanisms, same `script_args: dict[str, str]` contract from `deploy_and_run`.
 Tests use `moto` (`@mock_aws` / the `mock_aws()` context manager) — no real
 MinIO or AWS S3 touches the test suite, and a real presigned-URL PUT/GET round
 trip still gets exercised. `ObjectStorage`'s own unit tests live in
-`vendor/py-shared-tools/tests/test_storage.py` (that submodule's test suite);
-this repo's `tests/test_script_runner.py` covers the storage-vs-direct-channel
-orchestration in `run_ad_export` instead of re-testing `ObjectStorage` itself.
+`vendor/py-shared-tools/tests/test_storage.py`; the *orchestration logic*
+(mandatory-storage rule, fixture bypass, upload/download/cleanup, empty/
+wrong-shaped output) is now exhaustively tested in
+`vendor/py-shared-tools/tests/test_script_export.py` too, using a generic
+fake connector — that suite is actually a superset of what this repo used to
+cover on its own (it gained the wrong-shaped-output tests `credential-audit`
+had added that this project's copy was missing). This repo's own
+`tests/test_script_runner.py` is now a thin *wiring* smoke test — proving
+`run_ad_export` threads its own `object_key_prefix`/`header_marker`/script
+path through correctly — not a re-test of `run_script_export`'s own branching.
 `moto` proves the code path, not the network — `docker/smoke_check_storage.py`
 (run via `docker/smoke_test.sh`, Docker-only) round-trips a real object through
 the actual `minio` service, including auto-creating the smoke-test bucket

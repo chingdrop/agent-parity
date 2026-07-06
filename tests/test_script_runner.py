@@ -1,9 +1,14 @@
-"""Tests for the storage-backed AD-export handoff and the mandatory-storage
-rule for live connectors.
+"""Tests for agent-parity's own storage-backed AD-export wrapper.
 
-Uses a hand-written fake connector (not a real vendor connector) to isolate
-run_ad_export's orchestration logic — the connector implementations
-themselves are already covered in test_connectors.py.
+``run_ad_export``'s actual orchestration (live/fixture dispatch, the
+presigned-URL round trip, validation) is
+``shared_tools.script_export.run_script_export`` now, exhaustively tested in
+``py-shared-tools``' own ``tests/test_script_export.py`` (mandatory-storage
+rule, fixture mode never touching storage, upload/download/cleanup, empty
+and wrong-shaped output). What's tested here is that this project's thin
+wrapper supplies the right project-specific parameters — the AD-export
+script path, the ``"ad-exports"`` object-key prefix, and the ``"Name"``
+CSV-header sanity check — not a re-test of the shared logic's own branching.
 """
 
 from unittest.mock import Mock
@@ -13,7 +18,7 @@ import pytest
 import requests
 from moto import mock_aws
 
-from agent_parity.deployment.script_runner import ScriptExecutionError, run_ad_export
+from agent_parity.deployment.script_runner import AD_EXPORT_SCRIPT, ScriptExecutionError, run_ad_export
 from shared_tools.storage import ObjectStorage
 
 SAMPLE_CSV = "Name,Enabled\nACME-WS-001,True\n"
@@ -35,83 +40,42 @@ def moto_storage():
         yield ObjectStorage(bucket="test-bucket", access_key="test", secret_key="test")
 
 
-def test_live_connector_without_storage_raises_clear_error():
-    """Storage is mandatory for a live export — the vendor's own
-    remote-execution output channel doesn't reliably preserve the CSV's
-    formatting, so a missing storage config must never silently fall back
-    to it."""
-    connector = _fake_connector(is_live=True)
-    with pytest.raises(ScriptExecutionError, match="object storage is required"):
-        run_ad_export(connector, "ACME-DC01", storage=None)
-    connector.deploy_and_run.assert_not_called()
+def test_default_script_path_is_export_ad_devices():
+    assert AD_EXPORT_SCRIPT.name == "Export-ADDevices.ps1"
 
 
-def test_fixture_mode_never_touches_storage_even_if_configured():
-    """A non-live connector has no real endpoint to upload anything from —
-    the storage path must never engage regardless of whether storage is
-    configured."""
+def test_fixture_mode_wiring():
     connector = _fake_connector(is_live=False)
-    storage = Mock()
-
-    result = run_ad_export(connector, "ACME-DC01", storage=storage)
-
-    assert result == SAMPLE_CSV
-    storage.presigned_put_url.assert_not_called()
-    storage.get_object.assert_not_called()
+    assert run_ad_export(connector, "ACME-DC01", storage=None) == SAMPLE_CSV
 
 
-def test_live_mode_with_storage_uploads_then_downloads(moto_storage):
-    """The connector's return value is ignored entirely — the real output is
-    whatever landed in object storage, simulating what Export-ADDevices.ps1
-    actually does with the presigned URL it's handed."""
+def test_live_mode_wiring_round_trips_through_storage(moto_storage):
+    """Proves run_ad_export threads object_key_prefix="ad-exports" and
+    header_marker="Name" through to run_script_export correctly — the actual
+    upload/download/cleanup mechanics are shared_tools' own to test."""
 
-    def fake_deploy_and_run(script_path, target_id, script_args=None):
-        response = requests.put(script_args["UploadUrl"], data=SAMPLE_CSV.encode())
-        response.raise_for_status()
-        return "Uploaded 1 AD computer object(s) to object storage."
-
-    connector = _fake_connector(is_live=True, deploy_and_run=Mock(side_effect=fake_deploy_and_run))
-
-    result = run_ad_export(connector, "ACME-DC01", storage=moto_storage)
-
-    assert result == SAMPLE_CSV
-    _, kwargs = connector.deploy_and_run.call_args
-    assert "UploadUrl" in kwargs["script_args"]
-
-
-def test_live_mode_with_storage_deletes_object_after_download(moto_storage):
     def fake_deploy_and_run(script_path, target_id, script_args=None):
         requests.put(script_args["UploadUrl"], data=SAMPLE_CSV.encode()).raise_for_status()
         return "ok"
 
     connector = _fake_connector(is_live=True, deploy_and_run=Mock(side_effect=fake_deploy_and_run))
-    run_ad_export(connector, "ACME-DC01", storage=moto_storage, object_key="acme/export.csv")
-
-    from shared_tools.storage import StorageError
-
-    with pytest.raises(StorageError):
-        moto_storage.get_object("acme/export.csv")
+    assert run_ad_export(connector, "ACME-DC01", storage=moto_storage) == SAMPLE_CSV
 
 
-def test_empty_upload_is_rejected(moto_storage):
-    """The script ran and uploaded *something*, but it's empty — still a
-    failure, same as the direct-channel path returning nothing."""
+def test_live_mode_without_storage_raises_clear_error():
+    connector = _fake_connector(is_live=True)
+    with pytest.raises(ScriptExecutionError, match="object storage is required"):
+        run_ad_export(connector, "ACME-DC01", storage=None)
+
+
+def test_wrong_header_is_rejected_using_this_projects_marker(moto_storage):
+    """"Name" is this project's own header_marker — proves it's actually
+    wired through, not left at run_script_export's generic default."""
 
     def fake_deploy_and_run(script_path, target_id, script_args=None):
-        requests.put(script_args["UploadUrl"], data=b"").raise_for_status()
+        requests.put(script_args["UploadUrl"], data=b"NotTheRightHeader,Enabled\nx,y\n").raise_for_status()
         return "ok"
 
     connector = _fake_connector(is_live=True, deploy_and_run=Mock(side_effect=fake_deploy_and_run))
-    with pytest.raises(ScriptExecutionError, match="returned no output"):
-        run_ad_export(connector, "ACME-DC01", storage=moto_storage, object_key="acme/empty.csv")
-
-
-def test_missing_upload_surfaces_as_storage_error(moto_storage):
-    """A script that runs but never uploads anything (a real bug, e.g. a
-    firewalled endpoint) shows up as a download failure, not a silent empty
-    result — the object genuinely doesn't exist."""
-    from shared_tools.storage import StorageError
-
-    connector = _fake_connector(is_live=True, deploy_and_run=Mock(return_value="ok"))
-    with pytest.raises(StorageError):
-        run_ad_export(connector, "ACME-DC01", storage=moto_storage, object_key="acme/never-uploaded.csv")
+    with pytest.raises(ScriptExecutionError, match="does not look like"):
+        run_ad_export(connector, "ACME-DC01", storage=moto_storage)

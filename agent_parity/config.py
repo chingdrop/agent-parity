@@ -11,12 +11,15 @@ in ``shared_tools.config`` (``py-shared-tools``), shared verbatim with
 owns the ``AppConfig`` shape and its own section parsing.
 
 The same file also declares a ``storage:`` section (object storage for the
-AD-export handoff — see ``shared_tools.storage``), resolved the same way:
-unset ``${VAR}``s mean unconfigured, and ``get_storage()`` returns ``None``
-rather than raising. ``None`` is only a valid state with no live vendor
-credentials either (pure fixture/demo mode) — ``deployment.script_runner
-.run_ad_export`` treats a live connector with no storage as a configuration
-error, not a fallback.
+AD-export handoff — see ``shared_tools.script_export``), resolved the same
+way: unset ``${VAR}``s mean unconfigured, and ``get_storage()`` returns
+``None`` rather than raising. ``None`` is only a valid state with no live
+vendor credentials either (pure fixture/demo mode) —
+``deployment.script_runner.run_ad_export`` treats a live connector with no
+storage as a configuration error, not a fallback. ``StorageConfig``/
+``get_storage`` themselves live in ``shared_tools.config`` too — same
+byte-for-byte logic ``credential-audit``'s own AD-metadata export handoff
+needs, so it isn't redefined here either.
 """
 
 from __future__ import annotations
@@ -26,35 +29,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
-from shared_tools.config import ConfigError, resolve_env_refs
+from shared_tools.config import ConfigError, StorageConfig, parse_storage_config, resolve_env_refs
+from shared_tools.config import get_storage as _shared_get_storage
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.yaml"
 SAMPLE_DATA_DIR = REPO_ROOT / "sample_data"
-
-
-@dataclass(frozen=True)
-class StorageConfig:
-    """S3-compatible object storage for the AD-export handoff.
-
-    Required for any live vendor connector — vendor remote-execution output
-    channels don't reliably preserve a CSV's exact formatting, so
-    ``deployment.script_runner.run_ad_export`` refuses to run a live export
-    without it. Unconfigured by default (every field ``None``, ``enabled``
-    False) is only valid for the uv demo path, where the vendor has no live
-    credentials either, so no script ever actually executes.
-    """
-
-    backend: str = "s3"
-    endpoint_url: str | None = None  # unset -> real AWS S3; set for MinIO/other S3-compatible services
-    bucket: str | None = None
-    access_key: str | None = None
-    secret_key: str | None = None
-    region: str = "us-east-1"
-
-    @property
-    def enabled(self) -> bool:
-        return bool(self.bucket and self.access_key and self.secret_key)
 
 
 @dataclass(frozen=True)
@@ -71,18 +51,6 @@ class AppConfig:
     # tuple, not a special case.
     ad_target_devices: tuple[str, ...]
     storage: StorageConfig
-
-
-def _parse_storage(raw: dict) -> StorageConfig:
-    storage_raw = raw.get("storage") or {}
-    return StorageConfig(
-        backend=storage_raw.get("backend") or "s3",
-        endpoint_url=storage_raw.get("endpoint_url") or None,
-        bucket=storage_raw.get("bucket") or None,
-        access_key=storage_raw.get("access_key") or None,
-        secret_key=storage_raw.get("secret_key") or None,
-        region=storage_raw.get("region") or "us-east-1",
-    )
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
@@ -117,7 +85,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         vendor=vendor_name,
         credentials=dict(raw.get("credentials") or {}),
         ad_target_devices=tuple(raw.get("ad_target_devices") or ()),
-        storage=_parse_storage(raw),
+        storage=parse_storage_config(raw),
     )
 
 
@@ -144,24 +112,8 @@ def get_storage(config: AppConfig):
     actually runs); ``deployment.script_runner.run_ad_export`` raises a
     clear error if a live connector reaches it with no storage configured,
     rather than falling back to the vendor's own (unreliable) output
-    channel.
+    channel. Delegates to ``shared_tools.config.get_storage`` — same
+    byte-for-byte logic ``credential-audit`` needs for its own AD-metadata
+    export handoff, so it isn't redefined here.
     """
-    if not config.storage.enabled:
-        return None
-
-    # Imported here, not at module level, for the same reason as in
-    # get_connector: keep topology-only config loading free of the boto3
-    # dependency chain for callers that don't need it.
-    from shared_tools.storage import ObjectStorage
-
-    if config.storage.backend != "s3":
-        raise ConfigError(
-            f"Unsupported storage backend {config.storage.backend!r}; only 's3' is implemented"
-        )
-    return ObjectStorage(
-        bucket=config.storage.bucket,
-        endpoint_url=config.storage.endpoint_url,
-        access_key=config.storage.access_key,
-        secret_key=config.storage.secret_key,
-        region=config.storage.region,
-    )
+    return _shared_get_storage(config.storage)
