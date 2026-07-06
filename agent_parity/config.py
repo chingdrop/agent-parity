@@ -5,7 +5,10 @@ secret value written as a ``${VAR}`` reference; ``.env`` / the process
 environment holds the actual values. A ``${VAR}`` pointing at an unset
 environment variable resolves to ``None``, which is what puts the connector
 into fixture mode — so a fresh checkout with no ``.env`` runs the entire
-pipeline against ``sample_data/``.
+pipeline against ``sample_data/``. The ``${VAR}`` resolution rule itself lives
+in ``shared_tools.config`` (``py-shared-tools``), shared verbatim with
+``credential-audit``'s ``config.py`` rather than duplicated; this module only
+owns the ``AppConfig`` shape and its own section parsing.
 
 The same file also declares a ``storage:`` section (object storage for the
 AD-export handoff — see ``shared_tools.storage``), resolved the same way:
@@ -19,38 +22,15 @@ error, not a fallback.
 from __future__ import annotations
 
 import os
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+from shared_tools.config import ConfigError, resolve_env_refs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.yaml"
 SAMPLE_DATA_DIR = REPO_ROOT / "sample_data"
-
-_ENV_REF = re.compile(r"^\$\{(?P<name>[A-Za-z_][A-Za-z0-9_]*)\}$")
-
-
-class ConfigError(Exception):
-    """Raised for structural problems in config.yaml (never for unset secrets)."""
-
-
-def _resolve_env_refs(value):
-    """Recursively replace ``${VAR}`` strings with their environment value.
-
-    A reference to an unset variable becomes ``None`` — deliberately not an
-    error, because "no credentials" is the valid fixture-mode configuration.
-    """
-    if isinstance(value, dict):
-        return {k: _resolve_env_refs(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_resolve_env_refs(v) for v in value]
-    if isinstance(value, str):
-        match = _ENV_REF.match(value.strip())
-        if match:
-            return os.environ.get(match.group("name")) or None
-    return value
 
 
 @dataclass(frozen=True)
@@ -124,7 +104,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
     config_path = Path(path or os.environ.get("AGENT_PARITY_CONFIG") or DEFAULT_CONFIG_PATH)
     with open(config_path) as fh:
-        raw: dict = _resolve_env_refs(yaml.safe_load(fh))
+        raw: dict = resolve_env_refs(yaml.safe_load(fh))
 
     vendor_name = raw["vendor"]
     if vendor_name not in CONNECTOR_CLASSES:
