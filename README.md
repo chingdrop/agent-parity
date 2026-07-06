@@ -397,22 +397,41 @@ switch `vendor:` to try either. Fixture timestamps are rebased at load so the
 newest check-in is always "now" and the authored stale/recent split stays
 stable regardless of when you run the demo.
 
-## Optional: local object storage (MinIO)
+## Optional: Docker
 
-Everything above runs with zero external services. The one live-infrastructure
-path this package has — the AD-export object-storage handoff (see
-[above](#ad-export-handoff-object-storage-instead-of-the-vendor-channel-mandatory-for-live-exports)) —
-can be exercised locally against a real MinIO instance instead of just
+Bare-bones — `cyberhub`'s own deployment supersedes this entirely once this
+package is consumed there. This is just enough to run the CLI standalone
+without a local `uv` install, or to exercise the real object-storage handoff
+against a local MinIO instead of `moto`'s simulated S3:
+
+```bash
+docker build -f docker/Dockerfile -t agent-parity .
+docker run --rm -v "$PWD/output:/app/output" agent-parity run
+
+# or, via compose (also brings up a local MinIO the container can reach):
+docker compose -f docker/docker-compose.yml run --rm agent-parity run
+```
+
+Runs fully offline by default (config.yaml's fixture-mode connector + AD
+export) — no `.env` required. The build context must include the
+`vendor/py-shared-tools` submodule (`git submodule update --init` first if you
+haven't already).
+
+The one live-infrastructure path this package has — the AD-export
+object-storage handoff (see
+[above](#ad-export-handoff-object-storage-instead-of-the-vendor-channel-mandatory-for-live-exports))
+— can also be exercised locally against a real MinIO instance instead of just
 `moto`'s simulated S3:
 
 ```console
 cd docker
-docker compose up -d           # starts MinIO (console at http://localhost:9001)
+docker compose up -d minio     # starts MinIO (console at http://localhost:9001)
 ./smoke_test.sh                # round-trips a real object through it
 ```
 
-Not part of `uv run pytest` or any fast/CI path — it needs Docker and touches
-a real network. Run it manually, e.g. before cutting a release.
+Neither is part of `uv run pytest` or any fast/CI path — the smoke test needs
+Docker and touches a real network. Run it manually, e.g. before cutting a
+release.
 
 ## Tests
 
@@ -456,7 +475,7 @@ a real network. Run it manually, e.g. before cutting a release.
 Also deliberately **not** covered here: whether a real MinIO/AWS S3 endpoint
 actually works — `moto` proves the *logic* is right but never touches a real
 network. That's what `docker/smoke_test.sh` is for; see
-[Optional: local object storage](#optional-local-object-storage-minio) above.
+[Optional: Docker](#optional-docker) above.
 
 ## Out of scope for v1
 

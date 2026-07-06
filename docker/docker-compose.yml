@@ -1,9 +1,28 @@
-# S3-compatible object storage (MinIO) for locally exercising the real
-# AD-export handoff path (see agent_parity/storage.py). Everything else in
-# this package runs directly via `uv run agent-parity` — no other services
-# needed.
+# Bare-bones local dev/test setup for agent-parity:
+#
+# * `agent-parity` — builds docker/Dockerfile so the CLI can be run without a
+#   local uv install: `docker compose run agent-parity run`. Runs fully
+#   offline against sample_data/ by default (no .env required) — pass
+#   `--env-file ../.env` on the command line for live credentials.
+# * `minio` — S3-compatible object storage for locally exercising the real
+#   AD-export handoff path (see agent_parity/storage.py). Everything else in
+#   this package runs directly via `uv run agent-parity` — no other services
+#   needed.
+#
+# cyberhub's own deployment supersedes this entirely once this package is
+# consumed there; this is just enough to run things standalone if needed.
 
 services:
+  agent-parity:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    volumes:
+      - ../sample_data:/app/sample_data:ro
+      - ../output:/app/output
+    depends_on:
+      - minio
+
   minio:
     image: minio/minio:latest
     command: server /data --console-address ":9001"

@@ -37,7 +37,8 @@ uv run agent-parity run                        # config.yaml + connector
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
 
-docker compose -f docker/docker-compose.yml up -d    # optional: local MinIO for the live storage path
+docker build -f docker/Dockerfile -t agent-parity .   # bare-bones standalone image
+docker compose -f docker/docker-compose.yml up -d minio    # optional: local MinIO for the live storage path
 docker/smoke_test.sh                                 # round-trips a real object through it
 ```
 
@@ -306,6 +307,22 @@ orchestration in `run_ad_export` instead of re-testing `ObjectStorage` itself.
 the actual `minio` service, including auto-creating the smoke-test bucket
 (`ObjectStorage` itself has no bucket-admin methods on purpose; production
 bucket provisioning is out-of-band, so that stays smoke-test-only code).
+
+`docker/Dockerfile` is a separate, bare-bones concern from the MinIO
+service above — it builds a standalone image for running the `agent-parity`
+CLI itself (`docker build -f docker/Dockerfile -t agent-parity .`; entrypoint
+is `uv run --no-sync agent-parity`, `--no-sync` because a plain `uv run`
+would re-resolve against `uv.lock`'s full `[dev]` group on every container
+start, silently reinstalling `moto`/`boto3-stubs`/etc. that `--no-dev`
+deliberately excluded from the image at build time). `docker-compose.yml`'s
+`agent-parity` service just wires that Dockerfile up alongside `minio`, so
+`docker compose run agent-parity run` works out of the box. Not part of
+this project's own deployment story — `cyberhub` supersedes this entirely
+once this package is consumed there; it exists purely so the CLI can run
+standalone (an analyst's laptop, a CI job) without a local `uv` install.
+Congruent with `credential-audit`'s own `docker/Dockerfile` — keep the two
+in sync (same layer-caching shape, same non-root-user + `--no-sync` fix) if
+one changes.
 
 ## Credential resolution (`agent_parity/config.py`)
 
