@@ -17,11 +17,15 @@ FROM python:3.12-slim
 # Official uv static binary — avoids a pip-bootstrap step.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# git is required at build time: py-shared-tools is a plain git dependency
+# now (not a vendored submodule), so `uv sync` needs to clone it.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Dependencies first for layer-cache friendliness: pyproject.toml/uv.lock
-# change far less often than agent_parity/ itself. py-shared-tools is a
-# plain pinned git dependency, so this needs network access to fetch it.
+# change far less often than agent_parity/ itself.
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 

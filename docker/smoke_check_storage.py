@@ -1,9 +1,10 @@
 """Round-trip a real object through a real S3-compatible server (MinIO).
 
-``tests/test_storage.py`` proves ``ObjectStorage`` works against ``moto``'s
-simulated S3 — this proves it against the genuine article, including a real
-presigned-URL PUT over the actual network, which moto can only approximate.
-Run manually via ``docker/smoke_test.sh``; not part of ``uv run pytest``.
+``tests/test_script_runner.py`` proves ``ObjectStorage`` works against
+``moto``'s simulated S3 — this proves it against the genuine article,
+including a real presigned-URL PUT over the actual network, which moto can
+only approximate. Run manually via ``docker/smoke_test.sh``; not part of
+``uv run pytest``.
 
 Usage: STORAGE_BUCKET=... STORAGE_ACCESS_KEY=... STORAGE_SECRET_KEY=...
        STORAGE_ENDPOINT_URL=http://localhost:9000 uv run python docker/smoke_check_storage.py
