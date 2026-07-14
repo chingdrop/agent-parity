@@ -17,6 +17,7 @@ dependencies = [
     "pyyaml>=6.0",
     "click>=8.1",
     "py-shared-tools[storage]",
+    "sqlalchemy>=2.0",
 ]
 
 [dependency-groups]

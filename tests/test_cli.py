@@ -95,3 +95,28 @@ def test_run_subcommand_rejects_unknown_client(tmp_path, monkeypatch):
     result = CliRunner().invoke(cli.cli, ["run", "--client", "nope"])
 
     assert result.exit_code != 0
+
+
+def test_sync_subcommand_persists_a_run(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_PARITY_DB_URL", f"sqlite:///{tmp_path / 'test.db'}")
+
+    result = CliRunner().invoke(cli.cli, ["sync", "--client", "acme"])
+
+    assert result.exit_code == 0, result.output
+    assert "run 1: complete" in result.output
+
+    from agent_parity.db import CoverageSnapshot, get_engine, session_factory
+
+    Session = session_factory(get_engine())
+    with Session() as session:
+        assert session.query(CoverageSnapshot).count() == 51
+
+
+def test_sync_subcommand_all_persists_one_run_per_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("AGENT_PARITY_DB_URL", f"sqlite:///{tmp_path / 'test.db'}")
+
+    result = CliRunner().invoke(cli.cli, ["sync", "--all"])
+
+    assert result.exit_code == 0, result.output
+    assert "[acme] run" in result.output
+    assert "[globex] run" in result.output

@@ -3,19 +3,21 @@
     uv run agent-parity run --all                       # config.yaml + connectors (live or fixture)
     uv run agent-parity run --client acme
     uv run agent-parity compare ad_export.csv agent_export.csv   # two CSVs, zero config
+    uv run agent-parity sync --all                       # config.yaml + connectors, persisted to SQLite
 
 ``run`` collects from every configured client/vendor (``sample_data/``
-fixtures when no live credentials are set) and correlates. ``compare`` skips
-config.yaml/connectors/credentials entirely — hand it an AD export and any
-EDR's inventory mapped into agent-parity's own column schema (see
-``agent_parity.agent_csv``) and it correlates those two files directly; a
-good first step before setting up ``config.yaml`` for repeatable/scheduled
-runs against a live API.
-
-Both write ``output/<name>.csv`` (the full classified frame) and print a
-one-line summary. Neither has persistence or history; a caller that needs
-either (a dashboard, a scheduler) is expected to import
-``agent_parity.pipeline`` directly rather than shell out to this CLI.
+fixtures when no live credentials are set) and correlates; it writes
+``output/<name>.csv`` and prints a one-line summary, with zero persistence —
+a fresh ``CorrelationResult`` every time, nothing remembered between runs.
+``compare`` skips config.yaml/connectors/credentials entirely — hand it an AD
+export and any EDR's inventory mapped into agent-parity's own column schema
+(see ``agent_parity.agent_csv``) and it correlates those two files directly;
+a good first step before setting up ``config.yaml`` for repeatable/scheduled
+runs against a live API. ``sync`` is the persisted counterpart of ``run`` —
+same collection/correlation, but recorded as a ``CorrelationRun`` (see
+``agent_parity.persistence``) in a SQLite-backed history, the same
+entrypoint Celery's chord callback (``agent_parity.tasks``) uses when
+scheduled instead of run by hand.
 """
 
 from __future__ import annotations
@@ -27,6 +29,8 @@ import click
 from agent_parity.ad_sync.parser import ADParseError
 from agent_parity.agent_csv import AgentCSVParseError
 from agent_parity.config import ConfigError, load_config
+from agent_parity.db import get_engine, init_db, session_factory
+from agent_parity.persistence import run_and_persist_for_client
 from agent_parity.pipeline import correlate_from_csvs, run_correlation_for_client
 
 OUT_DIR = Path("output")
@@ -80,6 +84,58 @@ def run(client: str | None, run_all: bool) -> None:
             f"[{slug}] {len(result.frame)} rows -> {out_path} "
             f"(coverage {result.summary['coverage_pct']}%; {counts}; {status_summary})"
         )
+    if had_failure:
+        raise SystemExit(1)
+
+
+@cli.command()
+@click.option("--client", help="Client slug (default: the first client, alphabetically).")
+@click.option("--all", "run_all", is_flag=True, help="Run for every client instead of just one.")
+def sync(client: str | None, run_all: bool) -> None:
+    """Collect + correlate via config.yaml and connectors, persisted to SQLite.
+
+    Same collection/correlation as ``run``, but each invocation is recorded
+    as a ``CorrelationRun`` (see ``agent_parity.persistence``) instead of
+    just a CSV — the synchronous, single-process counterpart of what
+    ``agent_parity.tasks``'s Celery chord does when scheduled.
+    """
+    config = load_config()
+    if not config.clients:
+        raise click.ClickException("No clients configured in config.yaml.")
+
+    if run_all:
+        slugs = sorted(config.clients)
+    elif client:
+        if client not in config.clients:
+            raise click.ClickException(
+                f"Unknown client {client!r}; configured: {', '.join(sorted(config.clients))}"
+            )
+        slugs = [client]
+    else:
+        slugs = [sorted(config.clients)[0]]
+
+    engine = get_engine()
+    init_db(engine)
+    Session = session_factory(engine)
+
+    had_failure = False
+    with Session() as session:
+        for slug in slugs:
+            try:
+                run_row = run_and_persist_for_client(session, config, config.client(slug))
+            except ConfigError as exc:
+                click.echo(f"[{slug}] config error: {exc}", err=True)
+                had_failure = True
+                continue
+
+            status_summary = ", ".join(f"{name}={state}" for name, state in sorted(run_row.vendor_status.items()))
+            snapshot_count = len(run_row.snapshots)
+            click.echo(
+                f"[{slug}] run {run_row.id}: {run_row.status} "
+                f"({snapshot_count} snapshots; {status_summary})"
+            )
+            if run_row.status == "failed":
+                had_failure = True
     if had_failure:
         raise SystemExit(1)
 

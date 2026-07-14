@@ -11,6 +11,11 @@ build/
 output/
 *.log
 
+# `sync` subcommand's default run-history store (see agent_parity/db.py) —
+# AGENT_PARITY_DB_URL points elsewhere for anything that isn't local/demo.
+agent_parity.db
+*.db
+
 # Secrets — config.yaml holds only ${VAR} references and is safe to commit;
 # .env holds the actual values and must never be.
 .env
