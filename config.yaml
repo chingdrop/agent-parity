@@ -51,6 +51,10 @@ clients:
     # AD domain. Acme is single-domain.
     ad_target_devices:
       - ACME-DC01
+    # How often (in hours) agent_parity.tasks.dispatch_all_clients' beat
+    # entrypoint re-syncs this client — a real fact (Acme was synced more
+    # aggressively than Globex), not an arbitrary demo value.
+    sync_interval_hours: 6
     # Each vendor's value is a list of site/tenant entries (see
     # agent_parity/config.py's ClientConfig.vendors) — almost always one.
     # Acme has *two* Carbon Black tenants: its primary org (unlabeled — the
@@ -84,6 +88,7 @@ clients:
     ad_target_devices:
       - GLOBEX-DC01
       - GLOBEX-BR-DC01
+    sync_interval_hours: 12
     vendors:
       sentinelone:
         - account: mssp

@@ -27,12 +27,13 @@ it. All three are first-class in this rebuild, not just implied by the raw
 data — see [High-value assets](#high-value-assets-servers-as-the-prioritization-signal)
 and [OS end-of-life](#os-end-of-life-a-third-prioritization-axis) below.
 
-This package is a standalone library and CLI — no Django, no database. It's
-meant to be used either directly (the CLI below) or as a pinned git
-dependency (`uv add git+https://.../agent-parity@vX.Y.Z`) inside a larger
-project that provides its own dashboard. It models a real MSSP-style
-topology: multiple client organizations in one `config.yaml`, each with its
-own AD domain(s) and enabled vendor(s) — see
+This package is a standalone library and CLI — no Django, no web framework —
+but it does own real scheduling (Celery) and persistence (SQLAlchemy/SQLite)
+directly; see [Scheduling & persistence](#scheduling--persistence) below. It
+can be used either directly (the CLI below) or as a pinned git dependency
+(`uv add git+https://.../agent-parity@vX.Y.Z`) inside a larger project. It
+models a real MSSP-style topology: multiple client organizations in one
+`config.yaml`, each with its own AD domain(s) and enabled vendor(s) — see
 [Credentials](#credentials-configyaml--env) below.
 
 ## Quick start
@@ -270,6 +271,57 @@ default for a single-account vendor — or raises a clear `ConfigError` if
 there's more than one and no client made a choice
 (`AppConfig._resolve_account`); ambiguous is a config error, not a silent
 pick.
+
+### Scheduling & persistence
+
+This layer historically lived in a separate Django project consuming
+`agent_parity` (never in this package). That project — and its planned
+non-Django successor — are archived and won't be developed further, so this
+package now owns scheduling and persistence permanently: SQLAlchemy +
+SQLite in place of the Django ORM + Postgres, Celery unchanged.
+
+`agent_parity/db.py` is the schema — `Client` (an identity anchor only;
+topology stays in `config.yaml`), `Device`, `CorrelationRun` (one row per
+pipeline execution; status `pending`/`complete`/`partial`/`failed`),
+`CoverageSnapshot` (one row per classified-frame row). `get_engine()`
+resolves `AGENT_PARITY_DB_URL` or defaults to a local, gitignored
+`agent_parity.db` SQLite file — zero setup, same spirit as `sample_data/`'s
+fixture-mode fallback. No Alembic: this is a lightweight run-history store
+sized for the demo/single-node case, not a migration-managed production
+schema.
+
+`agent_parity/persistence.py` sits between `pipeline.py` (pure, no
+persistence) and a persisted caller: `finalize_run` correlates and writes
+`CoverageSnapshot` rows (or marks the run `FAILED` outright when every AD
+domain failed), `run_and_persist_for_client` is the synchronous entrypoint
+`agent-parity sync` calls. It's **idempotent** — a duplicate call against an
+already-finalized run no-ops rather than double-counting — the same
+principle the historical Django version enforced with `select_for_update`;
+SQLite has no equivalent row lock, so this instead relies on SQLite's own
+writer serialization, adequate at this single-node/demo scale but a real,
+disclosed difference from a Postgres-backed production database.
+
+`agent_parity/celery_app.py`/`tasks.py` are the scaled path: one *group* of
+fan-out tasks per client (one AD-export task per domain controller, one
+inventory-pull task per vendor/site-tenant) feeding a *chord* callback that
+runs the correlation exactly once against the client's complete result set.
+Fan-out tasks never raise — a broken vendor API returns `{"ok": False, ...}`
+instead, so the chord still fires and the run completes `PARTIAL` rather
+than not at all. `dispatch_all_clients` (the beat entrypoint) reads each
+client's own `sync_interval_hours` to decide whether it's due; the beat
+schedule ticks it hourly plus a forced daily 07:00 run. Broker/backend
+default to `redis://localhost:6379/0`
+(`CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` to override).
+
+```console
+uv run agent-parity sync --all                        # synchronous, persisted
+docker compose -f docker/docker-compose.yml up -d redis worker beat   # scheduled path
+```
+
+Tests run Celery tasks eagerly (`task_always_eager`, no broker needed) —
+`docker/smoke_check_celery.py` (via `docker/smoke_test.sh`) is the one
+thing that can't prove: a real chord round-tripping through a real Redis
+broker and real worker/beat containers.
 
 ### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
@@ -515,9 +567,11 @@ authored stale/recent split stays stable regardless of when you run the demo.
 
 ## Optional: Docker
 
-Bare-bones — `cyberhub`'s own deployment supersedes this entirely once this
-package is consumed there. This is just enough to run the CLI standalone
-without a local `uv` install, or to exercise the real object-storage handoff
+This is this package's actual deployment shape now (see
+[Scheduling & persistence](#scheduling--persistence) above) — not a
+placeholder for a separate hub project's deployment, since that plan is
+archived. Enough to run the CLI standalone without a local `uv` install, run
+the scheduled Celery path, or exercise the real object-storage handoff
 against a local MinIO instead of `moto`'s simulated S3:
 
 ```bash
@@ -526,27 +580,31 @@ docker run --rm -v "$PWD/output:/app/output" agent-parity run
 
 # or, via compose (also brings up a local MinIO the container can reach):
 docker compose -f docker/docker-compose.yml run --rm agent-parity run
+
+# the scheduled path: Redis broker + a worker + beat, all sharing one SQLite file
+docker compose -f docker/docker-compose.yml up -d redis worker beat
 ```
 
 Runs fully offline by default (config.yaml's fixture-mode connector + AD
 export) — no `.env` required. `py-shared-tools` is a plain git dependency, so
 the build needs network access to fetch it (no submodule init required).
 
-The one live-infrastructure path this package has — the AD-export
+The two live-infrastructure paths this package has — the AD-export
 object-storage handoff (see
 [above](#ad-export-handoff-object-storage-instead-of-the-vendor-channel-mandatory-for-live-exports))
-— can also be exercised locally against a real MinIO instance instead of just
-`moto`'s simulated S3:
+and the Celery scheduling stack — can be exercised locally against real
+MinIO/Redis/worker/beat instead of just `moto`'s simulated S3 and
+`task_always_eager`:
 
 ```console
 cd docker
-docker compose up -d minio     # starts MinIO (console at http://localhost:9001)
-./smoke_test.sh                # round-trips a real object through it
+./smoke_test.sh     # brings up minio+redis+worker+beat, round-trips a real
+                     # object AND a real Celery chord through them
 ```
 
-Neither is part of `uv run pytest` or any fast/CI path — the smoke test needs
-Docker and touches a real network. Run it manually, e.g. before cutting a
-release.
+Neither this nor `uv run pytest` (which never touches real infrastructure)
+overlap — the smoke test needs Docker and touches a real network. Run it
+manually, e.g. before cutting a release.
 
 ## Tests
 
@@ -579,8 +637,18 @@ release.
   that fixture mode never touches storage even when it's configured.
 - **Pipeline data shapes** (`test_models.py`): `normalize_hostname` edge
   cases, `ADDevice`/`AgentDevice` join-key properties, `AgentDevice.to_dict`/
-  `from_dict` round-tripping (used to pass records across a process boundary,
-  e.g. a consuming project's own task queue).
+  `from_dict` round-tripping (used to pass records across a Celery task
+  boundary — see below).
+- **Persistence** (`test_db.py`, `test_persistence.py`): SQLAlchemy model
+  round-trips and constraint enforcement, `finalize_run`'s FAILED-on-no-AD-data
+  branch, and `persist_correlation`'s idempotency (a duplicate call against an
+  already-finalized run must not double the snapshot count).
+- **Celery tasks** (`test_tasks.py`): the fan-out/fan-in chord, run eagerly
+  (`task_always_eager`, no broker) — one flaky vendor producing a `PARTIAL`
+  run rather than none at all, a multi-domain client's AD exports all firing,
+  the FAILED-on-no-AD-data path through the real callback, a duplicate
+  callback delivery not double-counting, and `dispatch_all_clients` respecting
+  (and `force`-overriding) each client's `sync_interval_hours`.
 - **HTTP transport and object storage in isolation**: `RestAdapter`'s
   content-type-based parsing, retry configuration, header merging, `files=`
   passthrough; `ObjectStorage`'s presigned-URL round trip. These live in
@@ -595,10 +663,9 @@ network. That's what `docker/smoke_test.sh` is for; see
 
 ## Out of scope for v1
 
-- A web dashboard — deliberately left to a consuming project; this
-  package's contract ends at `CorrelationResult` (plus, going forward,
-  whatever Celery-based scheduling/Splunk export lands directly in this
-  package — see recent git history for where that stands).
+- A web dashboard — there is no plan to build one; this package's own
+  reporting surface is `CorrelationResult`/`CoverageSnapshot` history plus
+  Splunk export (still being restored — see recent git history), not a UI.
 - Fuzzy hostname matching beyond normalization (a natural next step for the
   renamed-machine orphans).
 - Real-time ingestion — this is a batch tool on a schedule, not a streaming one.

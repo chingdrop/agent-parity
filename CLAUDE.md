@@ -12,36 +12,42 @@ check-ins. See [README.md](README.md) for the full architecture writeup — read
 before making structural changes, since several design decisions there are deliberate
 and were agreed on with the project owner rather than obvious from the code.
 
-This package is deliberately standalone: no Django, no Celery, no web framework, no
-database. It's meant to be consumed as a pinned git dependency
-(`uv add git+https://.../agent-parity@vX.Y.Z`) by a separate "hub" project that
-provides shared web/scheduling/persistence infrastructure for multiple tools. Keep it
-that way — don't reintroduce a framework dependency here just because a consuming
-project happens to use one.
+This package has no web framework and no Django — those were never real (a Django
+dashboard was a rebuild-only addition that has been permanently removed) — but it is
+**not** a thin, dependency-free library. It owns real scheduling (Celery) and
+persistence (SQLAlchemy/SQLite) directly, as core dependencies, the same tier as
+`pandas`/`requests`. Earlier in this project's history the plan was for a separate
+"hub" project to own that layer instead, consumed as a pinned git dependency
+(`uv add git+https://.../agent-parity@vX.Y.Z`) — that hub project is archived and
+won't be developed further, so this package owns scheduling/persistence permanently,
+not provisionally. Don't try to strip Celery/SQLAlchemy back out "to keep it a thin
+library" — that plan is dead, not deferred.
 
 Models a real MSSP-style topology: multiple client organizations in one `config.yaml`,
 each with its own AD domain(s) and enabled vendor(s) — `clients:`/`vendors:` nesting,
 `ClientConfig`/`VendorConfig`, and per-vendor `scope` (`global` vs `per_client`) are all
 deliberate, not incidental. This matches what was actually run in production; Django
 and the web dashboard never were (that was a rebuild-only addition, and it stays gone).
-Celery-based scheduling/fan-out and Splunk export are also real and are being restored
-in stages (see recent git history) — check current source before assuming a feature
-described here has landed yet.
+Celery-based scheduling/fan-out (see "Scheduling & persistence" below) is real and now
+restored; Splunk export is real too and is still being restored in stages (see recent
+git history) — check current source before assuming a feature described here has
+landed yet.
 
 ## Commands
 
 ```console
 uv sync                                     # install deps
 uv run agent-parity compare ad.csv agent.csv   # two CSVs, zero config.yaml/connectors/credentials
-uv run agent-parity run --all                  # config.yaml + connectors, every client
+uv run agent-parity run --all                  # config.yaml + connectors, every client, no persistence
 uv run agent-parity run --client acme          # config.yaml + connectors, just one client
+uv run agent-parity sync --all                 # same as run, but persisted as a CorrelationRun (SQLite)
 
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
 
 docker build -f docker/Dockerfile -t agent-parity .   # bare-bones standalone image
-docker compose -f docker/docker-compose.yml up -d minio    # optional: local MinIO for the live storage path
-docker/smoke_test.sh                                 # round-trips a real object through it
+docker compose -f docker/docker-compose.yml up -d minio redis worker beat   # local storage + scheduling stack
+docker/smoke_test.sh                                 # round-trips a real object + a real Celery chord
 ```
 
 There is no linter/formatter config in this repo (`pyproject.toml` has no `[tool.ruff]`
@@ -123,11 +129,75 @@ counterpart — no `AppConfig`, no connector, no credentials, just
 up at all; `run_correlation_for_client` is the next step once collection needs to be
 repeatable/scheduled against a live API instead of a one-off export file.
 
-No persistence and no history live in either function on purpose: that's a consuming
-project's job, not this package's (Celery-backed persistence is being restored
-separately — see recent git history). `agent_parity/cli.py` is the only built-in
-consumer — its `run`/`compare` subcommands wrap the two functions above, write
-`output/<name>.csv`, and print a summary, nothing more.
+No persistence and no history live in either function on purpose — that's kept as a
+separate layer (`agent_parity/persistence.py`, see "Scheduling & persistence" below),
+not because this package avoids owning persistence (it doesn't, see "What this is"
+above), but because collection/correlation and persistence are a clean seam regardless
+of which package owns both sides of it. `agent_parity/cli.py`'s `run`/`compare`
+subcommands call these two functions directly and stay pure (write `output/<name>.csv`,
+print a summary, nothing persisted); `sync` and `agent_parity/tasks.py` are the
+persisted callers, both going through `persistence.py` instead.
+
+## Scheduling & persistence (`agent_parity/db.py`, `persistence.py`, `celery_app.py`, `tasks.py`)
+
+Historically this layer lived in a separate Django project consuming `agent_parity`
+(never in this package itself); that project — and its planned non-Django successor —
+are archived and won't be developed further (see "What this is"), so this restoration
+folds the same layer into this package permanently, SQLAlchemy + SQLite in place of the
+Django ORM + Postgres.
+
+**`agent_parity/db.py`** is the schema: `Client` (an identity anchor only — topology
+stays in `config.yaml`, this table isn't a config cache), `Device` (keyed by join key
+per client), `CorrelationRun` (one row per pipeline execution; `RunStatus` is
+`pending`/`complete`/`partial`/`failed`), `CoverageSnapshot` (one row per
+`CorrelationResult.frame` row, FK'd to both `CorrelationRun` and `Device`). `get_engine()`
+resolves `AGENT_PARITY_DB_URL` or defaults to a local `agent_parity.db` SQLite file
+(gitignored) — same `${VAR}`-or-default shape `config.py`'s `AGENT_PARITY_CONFIG`
+already uses. `init_db()` is a plain `Base.metadata.create_all()` — no Alembic; this is
+a lightweight run-history store sized for the demo/single-node case, not a
+migration-managed production schema.
+
+**`agent_parity/persistence.py`** is the layer between `pipeline.py` (pure) and a
+persisted caller: `persist_correlation` loads a classified frame into `CoverageSnapshot`
+rows, `finalize_run` correlates then persists (or marks the run `FAILED` outright when
+`ad_df is None`), `run_and_persist_for_client` is the synchronous entrypoint the `sync`
+CLI subcommand calls. **Idempotency**: `persist_correlation` re-fetches the run inside
+its own transaction and no-ops if `status != PENDING` — the pre-created `CorrelationRun`
+id is the idempotency key, same principle the historical Django version enforced with
+`select_for_update`. SQLite has no equivalent row-level lock, so this instead relies on
+SQLite's own writer serialization (one write transaction at a time) — adequate at this
+single-node/demo scale, but a real, disclosed difference from a Postgres-backed
+production database, not something to treat as equivalent. Also watch for **naive vs.
+aware datetimes**: SQLite has no native timezone-aware datetime type, so a value just
+read back from the database comes back naive while a freshly computed one is
+timezone-aware — `persistence._naive_utc()` normalizes every datetime to naive UTC
+before storing or comparing; a comparison that skips it will crash the *second* time a
+device's `last_seen` needs updating (this broke once during Stage 4a verification,
+fixed there, not a hypothetical).
+
+**`agent_parity/celery_app.py`**/**`tasks.py`** are the scaled path, ported from the
+historical Django project's `tasks.py` — the shape is unchanged: one *group* of
+fan-out tasks per client (one AD export task per domain controller, one inventory-pull
+task per vendor/site-tenant), feeding a *chord* callback (`correlate_client`) that runs
+the correlation exactly once against the client's complete result set. Fan-out tasks
+never raise — they return `{"ok": False, "error": ...}` so one broken vendor API can't
+stop the chord from firing; the callback records per-vendor outcomes in `vendor_status`
+(`COMPLETE` vs `PARTIAL`), and `mark_run_failed` (`link_error`) is the backstop for the
+callback itself blowing up. There's no Django `transaction.on_commit` to hook into here
+— `dispatch_client` just does a plain `session.commit()` before dispatching the chord,
+since a committed SQLite write is immediately visible to any connection opened
+afterward. `dispatch_all_clients` (the beat entrypoint) reads each client's own
+`ClientConfig.sync_interval_hours` to decide whether it's due; `celery_app.py`'s
+`beat_schedule` ticks it hourly plus a daily 07:00 forced run (`force=True`, ignoring
+cadence) — both real, settled facts from the historical schedule, not arbitrary.
+Broker/backend default to `redis://localhost:6379/0`, overridable via
+`CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND`.
+
+Tests run Celery tasks with `task_always_eager`/`task_eager_propagates` (the
+`celery_eager` fixture in `tests/conftest.py`) — in-process, no broker needed, same
+task semantics either way. `docker/smoke_check_celery.py` (via `docker/smoke_test.sh`,
+Docker-only) is the one thing eager-mode tests structurally can't prove: a real chord
+round-tripping through a real Redis broker and real `worker`/`beat` containers.
 
 ## Connectors (`agent_parity/connectors/`)
 
@@ -351,13 +421,13 @@ would re-resolve against `uv.lock`'s full `[dev]` group on every container
 start, silently reinstalling `moto`/`boto3-stubs`/etc. that `--no-dev`
 deliberately excluded from the image at build time). `docker-compose.yml`'s
 `agent-parity` service just wires that Dockerfile up alongside `minio`, so
-`docker compose run agent-parity run` works out of the box. Not part of
-this project's own deployment story — `cyberhub` supersedes this entirely
-once this package is consumed there; it exists purely so the CLI can run
-standalone (an analyst's laptop, a CI job) without a local `uv` install.
-Congruent with `credential-audit`'s own `docker/Dockerfile` — keep the two
-in sync (same layer-caching shape, same non-root-user + `--no-sync` fix) if
-one changes.
+`docker compose run agent-parity run` works out of the box. This is now this
+project's actual deployment story (see "Scheduling & persistence" above) —
+not a placeholder for a separate hub project's deployment, since that plan
+is archived; the `worker`/`beat`/`redis` services in the same compose file
+are the scheduled path, sharing this same image. Congruent with
+`credential-audit`'s own (archived) `docker/Dockerfile` history — no longer
+needs to stay in sync with a project that isn't being developed further.
 
 ## Credential resolution (`agent_parity/config.py`)
 

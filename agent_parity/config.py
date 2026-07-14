@@ -63,6 +63,12 @@ class ClientConfig:
     # single-domain client is just the len == 1 case of this same tuple,
     # not a special case.
     ad_target_devices: tuple[str, ...]
+    # How often (in hours) agent_parity.tasks.dispatch_all_clients' beat
+    # entrypoint re-syncs this client — a real per-client fact (some clients
+    # were synced more aggressively than others), not a global constant.
+    # Unused by the synchronous `run`/`sync` CLI paths, which always run on
+    # demand regardless of cadence.
+    sync_interval_hours: int
     # vendor name -> one dict per site/tenant this client has within that
     # vendor's console (almost always a single-element tuple). For a
     # per_client vendor (Carbon Black) each entry is a complete, independent
@@ -179,6 +185,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
             name=entry["name"],
             slug=entry["slug"],
             ad_target_devices=tuple(entry.get("ad_target_devices") or ()),
+            sync_interval_hours=int(entry.get("sync_interval_hours", 24)),
             vendors=client_vendors,
         )
         for vendor_name in client.vendors:

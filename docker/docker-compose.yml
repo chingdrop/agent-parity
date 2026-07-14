@@ -1,25 +1,43 @@
 # Bare-bones local dev/test setup for agent-parity:
 #
 # * `agent-parity` — builds docker/Dockerfile so the CLI can be run without a
-#   local uv install: `docker compose run agent-parity run`. Runs fully
-#   offline against sample_data/ by default (no .env required) — pass
-#   `--env-file ../.env` on the command line for live credentials.
+#   local uv install: `docker compose run agent-parity run` (or `sync` for
+#   the SQLite-persisted path). Runs fully offline against sample_data/ by
+#   default (no .env required) — pass `--env-file ../.env` on the command
+#   line for live credentials.
 # * `minio` — S3-compatible object storage for locally exercising the real
-#   AD-export handoff path (see agent_parity/storage.py). Everything else in
+#   AD-export handoff path (see shared_tools.storage). Everything else in
 #   this package runs directly via `uv run agent-parity` — no other services
-#   needed.
+#   needed for that path.
+# * `redis` / `worker` / `beat` — the scheduled path: `worker` runs Celery
+#   tasks (agent_parity/tasks.py), `beat` fires `dispatch_all_clients` on
+#   the schedule in agent_parity/celery_app.py, `redis` is both the broker
+#   and result backend. All three, plus the `agent-parity` service's own
+#   `sync` runs, share one SQLite file via the `dbdata` volume — SQLite is a
+#   file, not a service, so (unlike Postgres in the historical Django-era
+#   stack this restores) there's nothing else to run for persistence.
 #
-# cyberhub's own deployment supersedes this entirely once this package is
-# consumed there; this is just enough to run things standalone if needed.
+# This is a standalone dev/demo stack, not this project's production
+# deployment story — there is no separate "hub" project superseding it
+# (that was planned once; it's archived and won't be built), so this is the
+# real shape a production deployment of this package would extend.
+
+x-celery-env: &celery-env
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/0
+  AGENT_PARITY_DB_URL: sqlite:////app/data/agent_parity.db
 
 services:
   agent-parity:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    environment:
+      <<: *celery-env
     volumes:
       - ../sample_data:/app/sample_data:ro
       - ../output:/app/output
+      - dbdata:/app/data
     depends_on:
       - minio
 
@@ -37,5 +55,42 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: ["uv", "run", "--no-sync", "celery", "-A", "agent_parity.celery_app", "worker", "--loglevel=info"]
+    environment:
+      <<: *celery-env
+    volumes:
+      - ../sample_data:/app/sample_data:ro
+      - dbdata:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  beat:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    entrypoint: ["uv", "run", "--no-sync", "celery", "-A", "agent_parity.celery_app", "beat", "--loglevel=info"]
+    environment:
+      <<: *celery-env
+    volumes:
+      - ../sample_data:/app/sample_data:ro
+      - dbdata:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+
 volumes:
   miniodata:
+  dbdata:

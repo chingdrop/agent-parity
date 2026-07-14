@@ -24,6 +24,7 @@ def _client(vendors: tuple[str, ...]) -> ClientConfig:
         name="Test Client",
         slug="test",
         ad_target_devices=("TEST-DC01",),
+        sync_interval_hours=24,
         vendors={v: ({},) for v in vendors},
     )
 
@@ -73,6 +74,7 @@ def test_global_scope_rejects_an_unknown_account_name():
         name="Test Client",
         slug="test",
         ad_target_devices=("TEST-DC01",),
+        sync_interval_hours=24,
         vendors={"sentinelone": ({"account": "nope"},)},
     )
     config = load_config()
