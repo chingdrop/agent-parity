@@ -165,7 +165,15 @@ class AgentConnector(VendorConnector):
         return self._fixture_fetch_inventory()
 
     def _fixture_fetch_inventory(self) -> list[AgentDevice]:
-        path = self._fixture_path(f"{self.vendor}_inventory.json")
+        # A labeled site/tenant (see AppConfig.sites_for) gets its own
+        # fixture file — for a per_client vendor (Carbon Black) each tenant
+        # really is a separate account, so one filtered file wouldn't be
+        # honest; for a global vendor's site filter this just keeps the
+        # demo data legible. Unlabeled (the common single-site/tenant case)
+        # keeps today's plain per-vendor filename, unchanged.
+        label = self.credentials.get("label")
+        filename = f"{self.vendor}_inventory_{label}.json" if label else f"{self.vendor}_inventory.json"
+        path = self._fixture_path(filename)
         with open(path) as fh:
             payload = json.load(fh)
         return rebase_timestamps(self._parse_inventory(payload))

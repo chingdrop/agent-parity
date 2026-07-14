@@ -60,11 +60,18 @@ class ClientConfig:
     # single-domain client is just the len == 1 case of this same tuple,
     # not a special case.
     ad_target_devices: tuple[str, ...]
-    # vendor name -> one credentials/override dict. For a per_client vendor
-    # (Carbon Black) this is the client's own complete credential block; for
-    # a global vendor (SentinelOne, BitDefender) it's merged on top of the
-    # vendor-level shared credentials in AppConfig.sites_for (usually empty).
-    vendors: dict[str, dict] = field(default_factory=dict)
+    # vendor name -> one dict per site/tenant this client has within that
+    # vendor's console (almost always a single-element tuple). For a
+    # per_client vendor (Carbon Black) each entry is a complete, independent
+    # credential block — a second entry means a second, fully separate CB
+    # org/tenant. For a global vendor (SentinelOne, BitDefender) each entry
+    # is just an optional site filter (e.g. {"site_ids": "..."}), merged
+    # onto the shared vendor-level credentials in AppConfig.sites_for — an
+    # empty dict (the common case) means "the whole account, no site
+    # filter." An optional "label" key names a site/tenant for display and
+    # for the fixture file it maps to (see connectors/base.py); omitted for
+    # the common single-site case.
+    vendors: dict[str, tuple[dict, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -82,11 +89,15 @@ class AppConfig:
 
     def sites_for(self, client_slug: str, vendor_name: str) -> tuple[dict, ...]:
         """One merged credential dict per site/tenant for a (client, vendor)
-        pair — a one-element tuple for every client today. ``global`` scope
-        merges the vendor's shared credentials with the client's own
-        (usually empty) override; ``per_client`` scope returns the client's
-        own dict as-is, since it's already a complete, independent
-        credential block with nothing to merge it with.
+        pair — almost always a one-element tuple, more for a client with
+        multiple sites (global scope) or tenants (per_client scope).
+        ``global`` scope merges each of the client's site filters (if any)
+        on top of the shared vendor-level credentials — every site shares
+        the same secret, just scoped to a different slice of the account
+        (e.g. SentinelOne's Sites). ``per_client`` scope returns each of the
+        client's tenant blocks as-is: unlike global scope these are already
+        complete, independent credential sets (e.g. separate Carbon Black
+        orgs), so there's nothing to merge them with.
         """
         try:
             vendor = self.vendors[vendor_name]
@@ -98,10 +109,10 @@ class AppConfig:
             raise ConfigError(
                 f"Client {client_slug!r} does not enable vendor {vendor_name!r}"
             )
-        site = client.vendors[vendor_name]
+        sites = client.vendors[vendor_name]
         if vendor.scope == "global":
-            return ({**vendor.credentials, **site},)
-        return (dict(site),)
+            return tuple({**vendor.credentials, **site} for site in sites)
+        return tuple(dict(site) for site in sites)
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
@@ -122,11 +133,19 @@ def load_config(path: str | Path | None = None) -> AppConfig:
 
     clients = {}
     for entry in raw.get("clients") or []:
+        # Each vendor's value is a list of site/tenant dicts — one element
+        # for the common single-site case, more for a client spanning
+        # multiple sites (global scope) or tenants (per_client scope). An
+        # empty/missing list still means "enabled, one default site."
+        client_vendors = {
+            v: tuple((site or {}) for site in (sites or [{}]))
+            for v, sites in (entry.get("vendors") or {}).items()
+        }
         client = ClientConfig(
             name=entry["name"],
             slug=entry["slug"],
             ad_target_devices=tuple(entry.get("ad_target_devices") or ()),
-            vendors={v: dict(site or {}) for v, site in (entry.get("vendors") or {}).items()},
+            vendors=client_vendors,
         )
         for vendor_name in client.vendors:
             if vendor_name not in vendors:

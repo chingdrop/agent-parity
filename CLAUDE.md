@@ -366,16 +366,17 @@ one changes.
 reference; an unset variable resolves to `None` rather than raising, which is exactly
 what puts a connector into fixture mode. This is the *only* config entrypoint — there
 is no database, so there's nothing else for a consuming project to call.
-`sites_for(client_slug, vendor_name)` returns a one-element tuple per (client, vendor)
-pair today — it's the one place that knows `global` vs `per_client` scope
-(`VendorConfig.scope`) — SentinelOne/BitDefender are global (same credentials for
-every client), Carbon Black is per-client. When adding a vendor or a client, this is
-the function whose behavior actually matters; don't special-case scope logic in a
-connector or in `pipeline.py`. `get_connectors(config, client_slug, vendor_name)`
-builds one connector per entry `sites_for()` returns — always one today; more than
-one (multi-site/tenant per client) is a planned follow-up stage, and `sites_for`'s
-tuple return is deliberately already shaped for it so `pipeline.py` won't need to
-change again when it lands.
+`sites_for(client_slug, vendor_name)` returns one merged dict per site/tenant a
+(client, vendor) pair has — almost always a one-element tuple, more for a client
+with multiple sites/tenants (see "Multi-site/tenant" below) — it's the one place
+that knows `global` vs `per_client` scope (`VendorConfig.scope`) — SentinelOne/
+BitDefender are global (same credentials for every client), Carbon Black is
+per-client. When adding a vendor or a client, this is the function whose behavior
+actually matters; don't special-case scope logic in a connector or in `pipeline.py`.
+`get_connectors(config, client_slug, vendor_name)` builds one connector per entry
+`sites_for()` returns and needed no changes at all when multi-site/tenant landed —
+that tuple return was deliberately shaped for it from the start so `pipeline.py`
+and `get_connectors` would never need to change again.
 
 `pick_ad_export_vendor(client_cfg)` picks which of a client's enabled vendors carries
 the AD export — filtered to `supports_remote_execution = True` connectors, then broken
@@ -412,6 +413,44 @@ Fixture mode picks the CSV by target device — `sample_data/<client>/ad_export_
 (`GLOBEX-DC01` + a branch office `GLOBEX-BR-DC01`, both in `config.yaml` and
 `sample_data/globex/`) so this path has real test/demo coverage; `acme` stays
 single-domain.
+
+## Multi-site/tenant (`ClientConfig.vendors`, `AppConfig.sites_for`)
+
+A client can have more than one site/tenant *within* a single vendor's console —
+`ClientConfig.vendors` maps a vendor name to a tuple of dicts, one per site/tenant
+(almost always a one-element tuple), mirroring the AD multi-domain shape above.
+What each dict holds depends on the vendor's `scope`:
+
+- **`per_client` (Carbon Black)**: each entry is a complete, independent credential
+  block — a second entry means a second, genuinely separate CB org (e.g. a branch
+  office on its own tenant). `sites_for` returns these as-is; there's nothing to
+  merge them with, and the connector itself needed zero code changes to support
+  this — it was always just "build one connector per site_for() entry."
+- **`global` (SentinelOne, BitDefender)**: one shared credential set covers the
+  whole account, but a client's endpoints can be scoped to a slice of it via an
+  optional filter key merged onto the shared credentials in `sites_for`.
+  SentinelOne's is `site_ids` (a real, documented "Sites" concept — a
+  comma-separated list matched against each item's own `siteId`, sent as the
+  `GET /web/api/v2.1/agents` `siteIds` query param live, or filtered locally in
+  fixture mode via `SentinelOneConnector._in_scoped_sites`). BitDefender's is
+  `company_id` (GravityZone Cloud MSP's "Company" tenant concept, matched against
+  `companyId` via `BitDefenderConnector._in_scoped_company`) — **this one is not
+  verified against real GravityZone API docs or a live tenant**, only plausible
+  given GravityZone's own MSP company hierarchy; treat it the same way this
+  project already treats its one other invented-then-removed GravityZone
+  capability (`createCustomScriptTask`) — confirm before relying on it live. An
+  unset filter (the common case) means the whole account, unchanged from before
+  this existed.
+
+A site/tenant can carry an optional `label` (e.g. `"branch"`) which does two
+things: it's what `pipeline.site_status_key` uses instead of a bare index in
+`vendor_status` (`carbonblack:branch` rather than `carbonblack:1`), and it's what
+`connectors/base.py`'s `_fixture_fetch_inventory` uses to pick a distinct fixture
+file (`{vendor}_inventory_{label}.json`) — a labeled tenant is real, independent
+data, so it shouldn't silently share the unlabeled tenant's fixture. The demo's
+`acme` client is the multi-tenant one: two real Carbon Black tenants (primary,
+unlabeled, plus a `label: branch` one reading `ACME_CB2_*` env vars and
+`sample_data/acme/carbonblack_inventory_branch.json`).
 
 ## Testing conventions
 

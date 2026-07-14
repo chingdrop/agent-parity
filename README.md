@@ -200,6 +200,45 @@ models multi-domain: it has two domains (`GLOBEX-DC01` and a branch office
 `GLOBEX-BR-DC01`) in `config.yaml`/`sample_data/globex/`, while `acme` stays
 single-domain.
 
+### Multi-site/tenant: more than one site/tenant within a single vendor's console
+
+Separately from multi-domain AD, a client can also have more than one
+site/tenant *within one vendor's console* — `ClientConfig.vendors` maps a
+vendor name to a tuple of dicts, one per site/tenant (almost always a
+one-element tuple). What each dict holds depends on the vendor's real
+credential model:
+
+- **Carbon Black** (`scope: per_client`) — each entry is a complete,
+  independent credential block. A second entry means a second, genuinely
+  separate CB org (e.g. a branch office on its own tenant) — not a filter
+  over shared data, since Carbon Black's `org_key` already *is* the tenant
+  identifier. The connector needed **zero code changes** to support this:
+  `AppConfig.sites_for` already returned each entry as-is, and
+  `get_connectors` already built one connector per entry.
+- **SentinelOne / BitDefender** (`scope: global`) — one shared credential
+  set covers the whole account, but a client's endpoints can be scoped to a
+  slice of it via an optional filter key merged onto the shared credentials.
+  SentinelOne's is `site_ids` (a real, documented "Sites" concept —
+  comma-separated site IDs matched against each item's own `siteId`, sent as
+  the live `siteIds` query param or filtered locally in fixture mode).
+  BitDefender's is `company_id` (GravityZone Cloud MSP's "Company" tenant
+  concept, matched against `companyId`) — **this filter is not verified
+  against real GravityZone API docs or a live tenant**, only plausible given
+  GravityZone's own MSP company hierarchy; the same caution this project
+  already applied to one other invented-then-removed GravityZone capability
+  (`createCustomScriptTask`). An unset filter (the common case) means the
+  whole account.
+
+An entry can carry an optional `label` (e.g. `branch`), which does two
+things: it becomes the `vendor_status` key (`carbonblack:branch` instead of
+a bare index) via `pipeline.site_status_key`, and it picks a distinct
+fixture file (`{vendor}_inventory_{label}.json`) via
+`connectors/base.py`'s `_fixture_fetch_inventory` — a labeled tenant is real,
+independent data, so it doesn't silently share the unlabeled tenant's
+fixture. The demo's `acme` client is the multi-tenant one: its primary
+Carbon Black org (unlabeled) plus a second `label: branch` tenant reading
+`ACME_CB2_*` env vars and `sample_data/acme/carbonblack_inventory_branch.json`.
+
 ### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
 Vendor remote-execution output channels are not a reliable way to get a full
@@ -384,13 +423,22 @@ clients:
     slug: acme
     ad_target_devices: [ACME-DC01]
     vendors:
-      sentinelone: {}
+      sentinelone: [{}]
       carbonblack:
-        api_url: ${ACME_CB_API_URL}
-        api_id: ${ACME_CB_API_ID}
-        api_key: ${ACME_CB_API_KEY}
-        org_key: ${ACME_CB_ORG_KEY}
+        - api_url: ${ACME_CB_API_URL}
+          api_id: ${ACME_CB_API_ID}
+          api_key: ${ACME_CB_API_KEY}
+          org_key: ${ACME_CB_ORG_KEY}
+        - label: branch
+          api_url: ${ACME_CB2_API_URL}
+          api_id: ${ACME_CB2_API_ID}
+          api_key: ${ACME_CB2_API_KEY}
+          org_key: ${ACME_CB2_ORG_KEY}
 ```
+
+Each vendor's value is a *list* of site/tenant entries, not a single block —
+see "Multi-site/tenant" below for what a client with more than one looks like
+(Acme's two Carbon Black tenants above).
 
 Any vendor registered in `agent_parity.connectors.CONNECTOR_CLASSES` works
 here — adding support for a vendor beyond SentinelOne/Carbon Black/BitDefender
@@ -408,13 +456,19 @@ precisely what puts a connector into fixture mode — a fresh checkout with no
 
 Two synthetic clients with deliberate, reviewable gap scenarios:
 
-|                     | Acme Corp (`acme`)                                                            | Globex (`globex`)         |
-|---------------------|-------------------------------------------------------------------------------|---------------------------|
-| AD computer objects | 44                                                                            | 37                        |
-| Vendors             | SentinelOne + Carbon Black + BitDefender                                      | SentinelOne + BitDefender |
-| Missing agent       | 5 (new server, new-hire imaging gaps, a rebuild, a disabled stray)            | 7                         |
-| Stale coverage      | 3 (15–30 days quiet, one per vendor)                                          | 3                         |
-| Orphaned agents     | 4 (decommissioned server, shadow-IT laptop, workgroup kiosk, renamed machine) | 3                         |
+|                     | Acme Corp (`acme`)                                                                                     | Globex (`globex`)         |
+|---------------------|----------------------------------------------------------------------------------------------------------|---------------------------|
+| AD computer objects | 44                                                                                                        | 37                        |
+| Vendors             | SentinelOne + Carbon Black (2 tenants) + BitDefender                                                      | SentinelOne + BitDefender |
+| Missing agent       | 5 (new server, new-hire imaging gaps, a rebuild, a disabled stray)                                        | 7                         |
+| Stale coverage      | 3 (15–30 days quiet, one per vendor)                                                                      | 3                         |
+| Orphaned agents     | 7 (decommissioned server, shadow-IT laptop, workgroup kiosk, renamed machine, 3 unmatched branch devices) | 3                         |
+
+Acme's second Carbon Black tenant (`sample_data/acme/carbonblack_inventory_branch.json`)
+adds 3 more devices that have no matching AD object in Acme's single AD
+domain — a realistic case for a branch office whose endpoints report to a
+separate tenant but haven't (yet, or ever will) been domain-joined to the
+same AD — all three land as `orphaned_agent`.
 
 Details worth noticing: some devices report to two vendors (exercising the
 one-row-per-vendor merge); one agent per client reports its FQDN while AD has

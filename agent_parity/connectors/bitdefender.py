@@ -18,6 +18,20 @@ vendor configured) can't have its AD export collected at all — the pipeline
 raises a clear error rather than silently skipping it.
 
 Authentication is HTTP Basic with the API key as the username.
+
+GravityZone Cloud MSP editions support multiple "Company" tenants under one
+partner API key, and a client can be scoped to one or more via an optional
+``company_id`` key merged onto the shared credentials (see
+``AppConfig.sites_for``), mirroring SentinelOne's ``site_ids`` mechanism —
+**unlike that one, the exact live filter shape here is not verified**: this
+assumes ``getEndpointsList`` accepts a company-scoping filter (plausible
+given GravityZone's own MSP company hierarchy, but not confirmed against
+current API docs or a live tenant). This project already removed one
+invented GravityZone capability (``createCustomScriptTask``) rather than
+leave a guess in place; treat this filter the same way — verify against real
+docs/a tenant before depending on it live. Fixture-mode filtering (matching
+each item's own ``companyId``) works regardless, since it's just local
+filtering of already-known data.
 """
 
 from __future__ import annotations
@@ -70,10 +84,21 @@ class BitDefenderConnector(AgentConnector):
             raise ConnectorError(f"{self.vendor}: RPC {method} failed: {payload['error']}")
         return payload.get("result") or {}
 
+    def _in_scoped_company(self, item: dict) -> bool:
+        """True unless this client's ``company_id`` is set and ``item``
+        belongs to a different company — see the module docstring's hedge
+        on whether GravityZone's real API actually supports this filter."""
+        company_id = self.credentials.get("company_id")
+        if not company_id:
+            return True
+        return str(item.get("companyId")) == str(company_id)
+
     def _parse_inventory(self, payload: dict) -> list[AgentDevice]:
         items = (payload.get("result") or payload).get("items", [])
         devices = []
         for item in items:
+            if not self._in_scoped_company(item):
+                continue
             os_version = item.get("operatingSystemVersion", "")
             devices.append(
                 AgentDevice(
@@ -98,6 +123,12 @@ class BitDefenderConnector(AgentConnector):
         page = 1
         while True:
             params: dict[str, object] = {"page": page, "perPage": 100}
+            company_id = self.credentials.get("company_id")
+            if company_id:
+                # Unverified — see the module docstring's hedge. Filtering
+                # again in _parse_inventory means an incorrect/no-op server
+                # filter here still narrows correctly, just less efficiently.
+                params["filters"] = {"companyId": company_id}
             result = self._rpc("network", "getEndpointsList", params)
             devices.extend(self._parse_inventory({"result": result}))
             if page >= int(result.get("pagesCount", 1)):

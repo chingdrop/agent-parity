@@ -102,6 +102,34 @@ def test_collect_vendor_inventory_reports_failure_without_raising(tmp_path, monk
     assert status["sentinelone"].startswith("error")
 
 
+def test_collect_vendor_inventory_concatenates_acmes_two_carbonblack_tenants():
+    """Acme has two Carbon Black tenants in config.yaml — both fixture
+    exports must be collected and concatenated."""
+    config = load_config()
+    records, status = collect_vendor_inventory(config, "acme", "carbonblack")
+
+    assert status == {"carbonblack:0": "ok", "carbonblack:branch": "ok"}
+    hostnames = {r.hostname for r in records}
+    assert "ACME-DC02" in hostnames  # from the primary (unlabeled) tenant
+    assert "ACME-BR-WS01" in hostnames  # from the branch tenant
+
+
+def test_collect_vendor_inventory_tolerates_one_tenant_failing():
+    config = load_config()
+    acme = config.client("acme")
+    primary, branch = acme.vendors["carbonblack"]
+    broken_acme = replace(
+        acme, vendors={**acme.vendors, "carbonblack": (primary, {**branch, "label": "nonexistent"})}
+    )
+    config = replace(config, clients={**config.clients, "acme": broken_acme})
+
+    records, status = collect_vendor_inventory(config, "acme", "carbonblack")
+
+    assert status["carbonblack:0"] == "ok"
+    assert status["carbonblack:nonexistent"].startswith("error")
+    assert any(r.hostname == "ACME-DC02" for r in records)
+
+
 # --- run_correlation_for_client ---------------------------------------------------
 
 
