@@ -323,6 +323,38 @@ Tests run Celery tasks eagerly (`task_always_eager`, no broker needed) —
 thing that can't prove: a real chord round-tripping through a real Redis
 broker and real worker/beat containers.
 
+### Splunk delta export
+
+Real, restored production behavior — confirmed via the git history commit that
+removed it once a since-permanently-removed Django dashboard took over
+visualization. Splunk is a *sink*, never the system of record (SQLite stays
+authoritative), and forwarding is entirely opt-in:
+`agent_parity/config.py`'s `SplunkConfig.enabled` is `False` unless both
+`hec_url` and `hec_token` are configured — the same opt-in shape as object
+storage or a vendor's own credentials.
+
+**Deltas, not snapshots**: `persistence.export_deltas_to_splunk` diffs a run's
+`CoverageSnapshot` rows against the client's previous run (keyed by
+`(device, vendor)`) and only forwards rows whose status is new or changed —
+re-indexing every device every run would just bloat a Splunk license for
+data the run history already has. `reporting/splunk_export.send_deltas` does
+the actual HTTP Event Collector POST: newline-delimited JSON envelopes,
+batched at 100 events per request.
+
+```yaml
+splunk:
+  hec_url: ${SPLUNK_HEC_URL}
+  hec_token: ${SPLUNK_HEC_TOKEN}
+  index: security_coverage
+  sourcetype: agent_parity:coverage_delta
+```
+
+**A Splunk outage never fails a run** — `persistence.finalize_run` catches
+`SplunkExportError` and logs it; the run's own `COMPLETE`/`PARTIAL` status
+depends only on collection/correlation, never on whether the delta export
+succeeded. Only the persisted paths (`sync`, Celery) touch Splunk at all —
+`run`/`compare` have no run history to diff against.
+
 ### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
 Vendor remote-execution output channels are not a reliable way to get a full
@@ -649,6 +681,13 @@ manually, e.g. before cutting a release.
   the FAILED-on-no-AD-data path through the real callback, a duplicate
   callback delivery not double-counting, and `dispatch_all_clients` respecting
   (and `force`-overriding) each client's `sync_interval_hours`.
+- **Splunk delta export** (`test_splunk_export.py`, plus cases in
+  `test_persistence.py`): the HEC forwarder — disabled/no-op when
+  unconfigured, correct envelope shape, batching above 100 events,
+  `SplunkExportError` on a failed POST — and the diffing logic itself: a
+  first run with no history emits every snapshot as new, a second run only
+  emits genuinely changed statuses, an unchanged run emits nothing, and a
+  simulated Splunk outage never fails the underlying `finalize_run`.
 - **HTTP transport and object storage in isolation**: `RestAdapter`'s
   content-type-based parsing, retry configuration, header merging, `files=`
   passthrough; `ObjectStorage`'s presigned-URL round trip. These live in
@@ -665,7 +704,8 @@ network. That's what `docker/smoke_test.sh` is for; see
 
 - A web dashboard — there is no plan to build one; this package's own
   reporting surface is `CorrelationResult`/`CoverageSnapshot` history plus
-  Splunk export (still being restored — see recent git history), not a UI.
+  Splunk delta export (see [Splunk delta export](#splunk-delta-export)
+  below), not a UI.
 - Fuzzy hostname matching beyond normalization (a natural next step for the
   renamed-machine orphans).
 - Real-time ingestion — this is a batch tool on a schedule, not a streaming one.

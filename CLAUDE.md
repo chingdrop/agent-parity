@@ -28,10 +28,10 @@ each with its own AD domain(s) and enabled vendor(s) — `clients:`/`vendors:` n
 `ClientConfig`/`VendorConfig`, and per-vendor `scope` (`global` vs `per_client`) are all
 deliberate, not incidental. This matches what was actually run in production; Django
 and the web dashboard never were (that was a rebuild-only addition, and it stays gone).
-Celery-based scheduling/fan-out (see "Scheduling & persistence" below) is real and now
-restored; Splunk export is real too and is still being restored in stages (see recent
-git history) — check current source before assuming a feature described here has
-landed yet.
+Celery-based scheduling/fan-out (see "Scheduling & persistence" below) and Splunk
+delta export (see "Splunk delta export" below) are both real and both now restored —
+this was a staged restoration (see recent git history), but every feature described
+in this file has landed as of this revision.
 
 ## Commands
 
@@ -198,6 +198,39 @@ Tests run Celery tasks with `task_always_eager`/`task_eager_propagates` (the
 task semantics either way. `docker/smoke_check_celery.py` (via `docker/smoke_test.sh`,
 Docker-only) is the one thing eager-mode tests structurally can't prove: a real chord
 round-tripping through a real Redis broker and real `worker`/`beat` containers.
+
+## Splunk delta export (`agent_parity/reporting/splunk_export.py`, `persistence.py`)
+
+Confirmed real via `git show 41d3dc5` (the commit that removed it once the
+now-permanently-gone Django dashboard took over visualization) — restored now that
+Stage 4's `CorrelationRun`/`CoverageSnapshot` schema gives delta computation
+something to diff against. Splunk is a **sink**, never the system of record — SQLite
+stays authoritative — and forwarding is entirely opt-in: `SplunkConfig.enabled` is
+`False` unless both `hec_url` and `hec_token` are configured, matching every other
+optional integration in this project (object storage, live vendor credentials).
+
+**Deltas, not snapshots** — `persistence.export_deltas_to_splunk(session, run, splunk)`
+finds the client's most recent non-`PENDING` `CorrelationRun` before `run`, diffs
+`CoverageSnapshot` rows keyed by `(device_id, vendor)`, and only forwards rows whose
+status is new or changed. Re-indexing every device every run would just bloat a
+Splunk license for data the run history already has. `reporting/splunk_export.send_deltas`
+does the actual HEC POST — newline-delimited JSON envelopes
+(`index`/`sourcetype`/`source`/`event`), batched at 100 events per request, raising
+`SplunkExportError` on any `requests.RequestException`. This module has zero SQLAlchemy
+imports; it only ever sees plain delta dicts, the same "collection knows nothing about
+persistence, persistence knows nothing about the sink" boundary the rest of this file
+follows.
+
+**A Splunk outage must never fail a run** — `persistence.finalize_run`'s optional
+`splunk` parameter wraps the `export_deltas_to_splunk` call in a
+`try`/`except SplunkExportError`, logging and swallowing it; the run itself stays
+`COMPLETE`/`PARTIAL` based on collection/correlation outcome alone. Both persisted
+entrypoints thread a live `SplunkConfig` through: `run_and_persist_for_client` passes
+`config.splunk`, and `tasks.correlate_client` (the Celery chord callback, which has no
+live `AppConfig` in scope) loads one fresh via `load_config().splunk` the same way its
+own fan-out tasks already do. The pure `run`/`compare` CLI paths never touch Splunk at
+all — delta computation needs run history to diff against, which only the persisted
+paths have.
 
 ## Connectors (`agent_parity/connectors/`)
 

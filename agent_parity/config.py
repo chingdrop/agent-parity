@@ -84,11 +84,30 @@ class ClientConfig:
 
 
 @dataclass(frozen=True)
+class SplunkConfig:
+    """HTTP Event Collector settings for the coverage-delta export (see
+    ``agent_parity.reporting.splunk_export``). A no-op unless both
+    ``hec_url`` and ``hec_token`` are configured — same opt-in shape as
+    object storage or a vendor's own credentials.
+    """
+
+    hec_url: str | None = None
+    hec_token: str | None = None
+    index: str = "security_coverage"
+    sourcetype: str = "agent_parity:coverage_delta"
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.hec_url and self.hec_token)
+
+
+@dataclass(frozen=True)
 class AppConfig:
     stale_days: int
     vendors: dict[str, VendorConfig]
     clients: dict[str, ClientConfig]
     storage: StorageConfig
+    splunk: SplunkConfig
 
     def client(self, slug: str) -> ClientConfig:
         try:
@@ -195,11 +214,20 @@ def load_config(path: str | Path | None = None) -> AppConfig:
                 )
         clients[client.slug] = client
 
+    splunk_raw = raw.get("splunk") or {}
+    splunk = SplunkConfig(
+        hec_url=splunk_raw.get("hec_url"),
+        hec_token=splunk_raw.get("hec_token"),
+        index=splunk_raw.get("index") or "security_coverage",
+        sourcetype=splunk_raw.get("sourcetype") or "agent_parity:coverage_delta",
+    )
+
     return AppConfig(
         stale_days=int(raw.get("stale_days", 14)),
         vendors=vendors,
         clients=clients,
         storage=parse_storage_config(raw),
+        splunk=splunk,
     )
 
 

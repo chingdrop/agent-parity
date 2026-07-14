@@ -23,11 +23,13 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from agent_parity.config import AppConfig, ClientConfig
+from agent_parity.config import AppConfig, ClientConfig, SplunkConfig
 from agent_parity.correlation.engine import CorrelationResult, agents_to_frame, correlate
 from agent_parity.db import Client, CorrelationRun, CoverageSnapshot, Device, RunStatus
 from agent_parity.models import AgentDevice
 from agent_parity.pipeline import collect_ad_frame, collect_vendor_inventory
+from agent_parity.reporting import splunk_export
+from agent_parity.reporting.splunk_export import SplunkExportError
 
 logger = logging.getLogger(__name__)
 
@@ -156,14 +158,69 @@ def persist_correlation(
     return count
 
 
+def export_deltas_to_splunk(session: Session, run: CorrelationRun, splunk: SplunkConfig) -> int:
+    """Diff this run against the client's previous run and forward transitions.
+
+    Splunk is a pure sink for state transitions, not a snapshot dump — see
+    ``agent_parity.reporting.splunk_export``'s module docstring for why.
+    """
+    if not splunk.enabled:
+        return 0
+
+    previous = session.scalar(
+        select(CorrelationRun)
+        .where(
+            CorrelationRun.client_id == run.client_id,
+            CorrelationRun.started_at < run.started_at,
+            CorrelationRun.status != RunStatus.PENDING.value,
+        )
+        .order_by(CorrelationRun.started_at.desc())
+        .limit(1)
+    )
+
+    def snapshot_map(r: CorrelationRun | None) -> dict[tuple[int, str], CoverageSnapshot]:
+        if r is None:
+            return {}
+        rows = session.scalars(select(CoverageSnapshot).where(CoverageSnapshot.run_id == r.id))
+        return {(s.device_id, s.vendor): s for s in rows}
+
+    before = snapshot_map(previous)
+    current_snapshots = session.scalars(
+        select(CoverageSnapshot).where(CoverageSnapshot.run_id == run.id)
+    ).all()
+    client = session.get(Client, run.client_id)
+
+    deltas = []
+    for snap in current_snapshots:
+        old = before.get((snap.device_id, snap.vendor))
+        if old is not None and old.status == snap.status:
+            continue
+        device = session.get(Device, snap.device_id)
+        deltas.append(
+            {
+                "client": client.slug,
+                "join_key": device.join_key,
+                "hostname": device.hostname,
+                "vendor": snap.vendor or None,
+                "previous_status": old.status if old else None,
+                "status": snap.status,
+                "run_id": run.id,
+                "run_started_at": run.started_at.isoformat(),
+            }
+        )
+    return splunk_export.send_deltas(deltas, splunk)
+
+
 def finalize_run(
         session: Session,
         run: CorrelationRun,
         ad_df: pd.DataFrame | None,
         agent_records: list[AgentDevice],
         vendor_status: dict[str, str],
+        splunk: SplunkConfig | None = None,
 ) -> int:
-    """Correlate + persist — the shared fan-in for both entrypoints below.
+    """Correlate + persist + (optionally) forward deltas — the shared fan-in
+    for both entrypoints below.
 
     ``ad_df`` is ``None`` when every one of a client's domains failed to
     export (see ``pipeline.collect_ad_frame``) — there's nothing to
@@ -176,7 +233,14 @@ def finalize_run(
         session.flush()
         return 0
     result = correlate(ad_df, agents_to_frame(agent_records), stale_days=run.stale_days)
-    return persist_correlation(session, run, result, vendor_status)
+    count = persist_correlation(session, run, result, vendor_status)
+    if count and splunk is not None:
+        try:
+            export_deltas_to_splunk(session, run, splunk)
+        except SplunkExportError:
+            # A reporting sink outage must never fail the run itself.
+            logger.exception("Splunk delta export failed for run %s", run.id)
+    return count
 
 
 def run_and_persist_for_client(session: Session, config: AppConfig, client_cfg: ClientConfig) -> CorrelationRun:
@@ -199,6 +263,6 @@ def run_and_persist_for_client(session: Session, config: AppConfig, client_cfg: 
         agent_records.extend(records)
         vendor_status.update(site_status)
 
-    finalize_run(session, run, ad_df, agent_records, vendor_status)
+    finalize_run(session, run, ad_df, agent_records, vendor_status, splunk=config.splunk)
     session.commit()
     return run

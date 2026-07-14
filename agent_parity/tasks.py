@@ -167,7 +167,11 @@ def correlate_client(results: list[dict], run_id: int) -> dict:
         # concat_ad_frames/finalize_run handle "every domain failed" (ad_csvs
         # empty) by failing the run outright — nothing to reconcile against.
         ad_df = concat_ad_frames([parse_ad_export(csv) for csv in ad_csvs]) if ad_csvs else None
-        count = finalize_run(session, run, ad_df, agent_records, vendor_status)
+        # No live AppConfig in scope here (this callback only receives the
+        # fanned-out payloads + run_id) — loaded fresh, same as
+        # _vendor_payload/collect_ad_export already do.
+        splunk = load_config().splunk
+        count = finalize_run(session, run, ad_df, agent_records, vendor_status, splunk=splunk)
         session.commit()
         return {"run_id": run_id, "status": run.status, "snapshots": count}
 

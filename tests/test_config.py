@@ -93,6 +93,7 @@ def test_global_scope_with_no_accounts_configured_resolves_to_empty_dict():
         vendors={"sentinelone": vendor},
         clients={"test": client},
         storage=load_config().storage,
+        splunk=load_config().splunk,
     )
     assert config.sites_for("test", "sentinelone") == ({},)
 
