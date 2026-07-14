@@ -1,31 +1,31 @@
-"""Configuration loading: one organization, one vendor, one credential set.
+"""Configuration loading: client topology and the (client, vendor) ->
+connector resolver.
 
-``config.yaml`` holds topology (which vendor, which AD domains) with every
-secret value written as a ``${VAR}`` reference; ``.env`` / the process
-environment holds the actual values. A ``${VAR}`` pointing at an unset
-environment variable resolves to ``None``, which is what puts the connector
-into fixture mode — so a fresh checkout with no ``.env`` runs the entire
-pipeline against ``sample_data/``. The ``${VAR}`` resolution rule itself lives
-in ``shared_tools.config`` (``py-shared-tools``), shared verbatim with
-``credential-audit``'s ``config.py`` rather than duplicated; this module only
-owns the ``AppConfig`` shape and its own section parsing.
+``config.yaml`` holds topology: which vendors exist, whether their
+credentials are ``global`` (one credential set for the whole organization,
+e.g. SentinelOne) or ``per_client`` (a distinct credential set per client,
+e.g. Carbon Black), and which vendors each client uses. Secret values in the
+file are never literal — they are ``${VAR}`` references resolved from the
+environment at load time. The ``${VAR}`` resolution rule itself lives in
+``shared_tools.config`` (``py-shared-tools``), shared with other projects
+that follow the same convention; this module only owns the ``AppConfig``
+shape and its own section parsing.
 
 The same file also declares a ``storage:`` section (object storage for the
 AD-export handoff — see ``shared_tools.script_export``), resolved the same
 way: unset ``${VAR}``s mean unconfigured, and ``get_storage()`` returns
-``None`` rather than raising. ``None`` is only a valid state with no live
-vendor credentials either (pure fixture/demo mode) —
+``None`` rather than raising. ``None`` is only a valid state for clients
+with no live vendor credentials at all (pure fixture/demo mode) —
 ``deployment.script_runner.run_ad_export`` treats a live connector with no
 storage as a configuration error, not a fallback. ``StorageConfig``/
-``get_storage`` themselves live in ``shared_tools.config`` too — same
-byte-for-byte logic ``credential-audit``'s own AD-metadata export handoff
-needs, so it isn't redefined here either.
+``get_storage`` themselves live in ``shared_tools.config`` too, so they
+aren't redefined here.
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -38,82 +38,175 @@ SAMPLE_DATA_DIR = REPO_ROOT / "sample_data"
 
 
 @dataclass(frozen=True)
+class VendorConfig:
+    name: str
+    scope: str  # "global" or "per_client"
+    # Only meaningful for global scope — the one shared credential set every
+    # client resolving to this vendor uses. per_client vendors declare no
+    # credentials here at all; real credentials live on each client's own
+    # vendor entry instead.
+    credentials: dict = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ClientConfig:
+    name: str
+    slug: str
+    # One domain-joined endpoint per AD domain — a client spanning multiple
+    # domains/forests needs the export script run separately in each (no
+    # single domain controller can enumerate computer objects outside its
+    # own domain); the resulting CSVs are concatenated into one master AD
+    # frame before correlation (see pipeline.collect_ad_frame). A
+    # single-domain client is just the len == 1 case of this same tuple,
+    # not a special case.
+    ad_target_devices: tuple[str, ...]
+    # vendor name -> one credentials/override dict. For a per_client vendor
+    # (Carbon Black) this is the client's own complete credential block; for
+    # a global vendor (SentinelOne, BitDefender) it's merged on top of the
+    # vendor-level shared credentials in AppConfig.sites_for (usually empty).
+    vendors: dict[str, dict] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class AppConfig:
     stale_days: int
-    vendor: str
-    credentials: dict
-    # One domain-joined endpoint per AD domain — an organization spanning
-    # multiple domains/forests needs the export script run separately in
-    # each (no single domain controller can enumerate computer objects
-    # outside its own domain); the resulting CSVs are concatenated into one
-    # master AD frame before correlation (see pipeline.collect_ad_frame). A
-    # single-domain organization is just the len == 1 case of this same
-    # tuple, not a special case.
-    ad_target_devices: tuple[str, ...]
+    vendors: dict[str, VendorConfig]
+    clients: dict[str, ClientConfig]
     storage: StorageConfig
+
+    def client(self, slug: str) -> ClientConfig:
+        try:
+            return self.clients[slug]
+        except KeyError:
+            raise ConfigError(f"Unknown client {slug!r} in config.yaml") from None
+
+    def sites_for(self, client_slug: str, vendor_name: str) -> tuple[dict, ...]:
+        """One merged credential dict per site/tenant for a (client, vendor)
+        pair — a one-element tuple for every client today. ``global`` scope
+        merges the vendor's shared credentials with the client's own
+        (usually empty) override; ``per_client`` scope returns the client's
+        own dict as-is, since it's already a complete, independent
+        credential block with nothing to merge it with.
+        """
+        try:
+            vendor = self.vendors[vendor_name]
+        except KeyError:
+            raise ConfigError(f"Unknown vendor {vendor_name!r} in config.yaml") from None
+
+        client = self.client(client_slug)
+        if vendor_name not in client.vendors:
+            raise ConfigError(
+                f"Client {client_slug!r} does not enable vendor {vendor_name!r}"
+            )
+        site = client.vendors[vendor_name]
+        if vendor.scope == "global":
+            return ({**vendor.credentials, **site},)
+        return (dict(site),)
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
-    """Load config.yaml, resolving ``${VAR}`` secret references as we go.
-
-        vendor: sentinelone
-        credentials: {api_url: ..., api_token: ...}
-        ad_target_devices: [DC01]
-
-    ``vendor:`` is validated against ``CONNECTOR_CLASSES`` (see
-    ``connectors/base.py``'s registry) — any registered connector works
-    here, not a hardcoded list, so adding vendor support is "write a
-    connector class," not "edit this function."
-    """
-    # Imported here, not at module level, to keep topology-only config
-    # loading free of the connector dependency chain (requests) for callers
-    # that don't need it.
-    from agent_parity.connectors import CONNECTOR_CLASSES
-
+    """Load config.yaml, resolving ``${VAR}`` secret references as we go."""
     config_path = Path(path or os.environ.get("AGENT_PARITY_CONFIG") or DEFAULT_CONFIG_PATH)
     with open(config_path) as fh:
         raw: dict = resolve_env_refs(yaml.safe_load(fh))
 
-    vendor_name = raw["vendor"]
-    if vendor_name not in CONNECTOR_CLASSES:
-        raise ConfigError(
-            f"Unknown vendor {vendor_name!r}; registered connectors: {sorted(CONNECTOR_CLASSES)}"
+    vendors = {}
+    for name, block in (raw.get("vendors") or {}).items():
+        block = block or {}
+        scope = block.get("scope", "global")
+        if scope not in ("global", "per_client"):
+            raise ConfigError(f"Vendor {name!r} has invalid scope {scope!r}")
+        vendors[name] = VendorConfig(
+            name=name, scope=scope, credentials=dict(block.get("credentials") or {})
         )
+
+    clients = {}
+    for entry in raw.get("clients") or []:
+        client = ClientConfig(
+            name=entry["name"],
+            slug=entry["slug"],
+            ad_target_devices=tuple(entry.get("ad_target_devices") or ()),
+            vendors={v: dict(site or {}) for v, site in (entry.get("vendors") or {}).items()},
+        )
+        for vendor_name in client.vendors:
+            if vendor_name not in vendors:
+                raise ConfigError(
+                    f"Client {client.slug!r} references undeclared vendor {vendor_name!r}"
+                )
+        clients[client.slug] = client
 
     return AppConfig(
         stale_days=int(raw.get("stale_days", 14)),
-        vendor=vendor_name,
-        credentials=dict(raw.get("credentials") or {}),
-        ad_target_devices=tuple(raw.get("ad_target_devices") or ()),
+        vendors=vendors,
+        clients=clients,
         storage=parse_storage_config(raw),
     )
 
 
-def get_connector(config: AppConfig):
-    """Build the configured connector, falling back to ``sample_data/``
-    fixtures when it has no usable credentials."""
-    # Imported here, not at module level, for the same reason as in
-    # load_config: keep topology-only config loading free of the connector
-    # dependency chain (requests) for callers that don't need it.
+def pick_ad_export_vendor(client_cfg: ClientConfig) -> str:
+    """Pick the vendor to carry ``client_cfg``'s AD export.
+
+    Only vendors whose connector sets ``supports_remote_execution = True``
+    are eligible — not every EDR vendor's API can push and run an arbitrary
+    script, and picking one that can't would silently misrepresent it. Ties
+    break by each connector's own ``ad_export_priority`` class attribute
+    (see ``connectors/base.py``), then alphabetically — not just a
+    technical preference: SentinelOne's default priority reflects that it
+    covered the bulk of the original client base, Carbon Black a handful.
+    """
+    # Imported here (not at module level) for the same reason as in
+    # get_connectors: keep topology-only config loading free of the
+    # connector dependency chain (requests) for callers that don't need it.
+    from agent_parity.connectors import CONNECTOR_CLASSES
+
+    capable = [
+        vendor_name
+        for vendor_name in client_cfg.vendors
+        if CONNECTOR_CLASSES[vendor_name].supports_remote_execution
+    ]
+    if not capable:
+        raise ConfigError(
+            f"Client {client_cfg.slug!r} has no vendor capable of remote script "
+            f"execution (needed to carry the AD export); enabled vendors: "
+            f"{sorted(client_cfg.vendors)}"
+        )
+
+    def preference_key(vendor_name: str) -> tuple[int, str]:
+        return CONNECTOR_CLASSES[vendor_name].ad_export_priority, vendor_name
+
+    return min(capable, key=preference_key)
+
+
+def get_connectors(config: AppConfig, client_slug: str, vendor_name: str) -> tuple:
+    """Build one configured connector per site/tenant for a (client, vendor)
+    pair — almost always a one-element tuple. Connectors with no usable
+    credentials fall back to the client's fixtures under
+    ``sample_data/<client_slug>/``.
+    """
+    # Imported here to keep config loading importable without the connector
+    # dependency chain (requests) in contexts that only need topology.
     from agent_parity.connectors import CONNECTOR_CLASSES
 
     try:
-        connector_cls = CONNECTOR_CLASSES[config.vendor]
+        connector_cls = CONNECTOR_CLASSES[vendor_name]
     except KeyError:
-        raise ConfigError(f"No connector implemented for vendor {config.vendor!r}") from None
-    return connector_cls(credentials=config.credentials, fixture_dir=SAMPLE_DATA_DIR)
+        raise ConfigError(f"No connector implemented for vendor {vendor_name!r}") from None
+
+    fixture_dir = SAMPLE_DATA_DIR / client_slug
+    return tuple(
+        connector_cls(credentials=credentials, fixture_dir=fixture_dir)
+        for credentials in config.sites_for(client_slug, vendor_name)
+    )
 
 
 def get_storage(config: AppConfig):
     """Build the object-storage client for the AD-export handoff, or None.
 
     None means "not configured." That's only a valid state for the uv demo
-    path (the vendor has no live credentials either, so no script ever
-    actually runs); ``deployment.script_runner.run_ad_export`` raises a
-    clear error if a live connector reaches it with no storage configured,
-    rather than falling back to the vendor's own (unreliable) output
-    channel. Delegates to ``shared_tools.config.get_storage`` — same
-    byte-for-byte logic ``credential-audit`` needs for its own AD-metadata
-    export handoff, so it isn't redefined here.
+    path (no vendor has live credentials, so no script ever actually
+    runs); ``deployment.script_runner.run_ad_export`` raises a clear error
+    if a live connector reaches it with no storage configured, rather than
+    falling back to the vendor's own (unreliable) output channel. Delegates
+    to ``shared_tools.config.get_storage`` so the logic isn't redefined here.
     """
     return _shared_get_storage(config.storage)

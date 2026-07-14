@@ -1,6 +1,6 @@
 """Tests for agent_parity/pipeline.py: the collection helpers (multi-domain
 concatenation and partial-failure tolerance) and the top-level
-run_correlation/correlate_from_csvs orchestration.
+run_correlation_for_client/correlate_from_csvs orchestration.
 """
 
 from dataclasses import replace
@@ -12,45 +12,69 @@ from agent_parity.pipeline import (
     collect_ad_frame,
     collect_vendor_inventory,
     correlate_from_csvs,
-    run_correlation,
+    run_correlation_for_client,
+    site_status_key,
 )
-
 
 # --- collect_ad_frame: multi-domain concatenation + partial-failure tolerance ---
 
 
-def test_collect_ad_frame_concatenates_two_domains():
-    """A second, real fixture file (a separate domain controller's export)
-    must be collected and concatenated into one master frame alongside the
-    default demo domain."""
-    config = replace(load_config(), ad_target_devices=("ACME-DC01", "ACME-BR-DC01"))
-    ad_df, status = collect_ad_frame(config)
+def test_collect_ad_frame_concatenates_globexs_two_domains():
+    """Globex declares two AD domains in config.yaml — both fixture exports
+    must be collected and concatenated into one master frame."""
+    config = load_config()
+    ad_df, status = collect_ad_frame(config, "globex")
 
     assert ad_df is not None
-    assert status == {"ad:ACME-DC01": "ok", "ad:ACME-BR-DC01": "ok"}
+    assert status == {"ad:GLOBEX-DC01": "ok", "ad:GLOBEX-BR-DC01": "ok"}
     join_keys = set(ad_df["join_key"])
-    assert "acme-dc01" in join_keys  # from the primary domain
-    assert "acme-br-ws01" in join_keys  # from the second domain
+    assert "globex-dc01" in join_keys  # from the primary domain
+    assert "globex-br-ws01" in join_keys  # from the branch domain
 
 
 def test_collect_ad_frame_tolerates_one_domain_failing():
     """One domain's export failing (bad target device, unreachable DC, ...)
-    must not stop the others — same tolerance as vendor collection."""
-    config = replace(load_config(), ad_target_devices=("ACME-DC01", "NONEXISTENT-DC99"))
-    ad_df, status = collect_ad_frame(config)
+    must not stop the others — same tolerance as per-vendor collection."""
+    config = load_config()
+    broken_globex = replace(
+        config.client("globex"), ad_target_devices=("GLOBEX-DC01", "NONEXISTENT-DC99")
+    )
+    config = replace(config, clients={**config.clients, "globex": broken_globex})
+
+    ad_df, status = collect_ad_frame(config, "globex")
 
     assert ad_df is not None
-    assert status["ad:ACME-DC01"] == "ok"
+    assert status["ad:GLOBEX-DC01"] == "ok"
     assert status["ad:NONEXISTENT-DC99"].startswith("error")
-    assert "acme-dc01" in set(ad_df["join_key"])
+    assert "globex-dc01" in set(ad_df["join_key"])
 
 
 def test_collect_ad_frame_returns_none_when_every_domain_fails():
-    config = replace(load_config(), ad_target_devices=("NONEXISTENT-DC98", "NONEXISTENT-DC99"))
-    ad_df, status = collect_ad_frame(config)
+    config = load_config()
+    broken_globex = replace(
+        config.client("globex"), ad_target_devices=("NONEXISTENT-DC98", "NONEXISTENT-DC99")
+    )
+    config = replace(config, clients={**config.clients, "globex": broken_globex})
+
+    ad_df, status = collect_ad_frame(config, "globex")
 
     assert ad_df is None
     assert all(v.startswith("error") for v in status.values())
+
+
+# --- site_status_key -------------------------------------------------------------
+
+
+def test_site_status_key_is_plain_vendor_name_for_a_single_site():
+    assert site_status_key("sentinelone", {}, 0, 1) == "sentinelone"
+
+
+def test_site_status_key_uses_an_explicit_label_when_present():
+    assert site_status_key("carbonblack", {"label": "branch"}, 1, 2) == "carbonblack:branch"
+
+
+def test_site_status_key_falls_back_to_index_when_unlabeled_but_multiple():
+    assert site_status_key("carbonblack", {}, 0, 2) == "carbonblack:0"
 
 
 # --- collect_vendor_inventory ------------------------------------------------------
@@ -58,7 +82,7 @@ def test_collect_ad_frame_returns_none_when_every_domain_fails():
 
 def test_collect_vendor_inventory_returns_fixture_records():
     config = load_config()
-    records, status = collect_vendor_inventory(config)
+    records, status = collect_vendor_inventory(config, "acme", "sentinelone")
 
     assert status == {"sentinelone": "ok"}
     assert records
@@ -72,18 +96,18 @@ def test_collect_vendor_inventory_reports_failure_without_raising(tmp_path, monk
     monkeypatch.setattr("agent_parity.config.SAMPLE_DATA_DIR", tmp_path)
     config = load_config()
 
-    records, status = collect_vendor_inventory(config)
+    records, status = collect_vendor_inventory(config, "acme", "sentinelone")
 
     assert records == []
     assert status["sentinelone"].startswith("error")
 
 
-# --- run_correlation ---------------------------------------------------------------
+# --- run_correlation_for_client ---------------------------------------------------
 
 
-def test_run_correlation_returns_a_classified_result():
+def test_run_correlation_for_client_returns_a_classified_result():
     config = load_config()
-    result, vendor_status = run_correlation(config)
+    result, vendor_status = run_correlation_for_client(config, config.client("acme"))
 
     assert result is not None
     assert all(state == "ok" for state in vendor_status.values())
@@ -91,9 +115,12 @@ def test_run_correlation_returns_a_classified_result():
     assert statuses == {s.value for s in CoverageStatus}
 
 
-def test_run_correlation_returns_none_when_every_ad_domain_fails():
-    config = replace(load_config(), ad_target_devices=("NONEXISTENT-DC99",))
-    result, vendor_status = run_correlation(config)
+def test_run_correlation_for_client_returns_none_when_every_ad_domain_fails():
+    config = load_config()
+    broken_acme = replace(config.client("acme"), ad_target_devices=("NONEXISTENT-DC99",))
+    config = replace(config, clients={**config.clients, "acme": broken_acme})
+
+    result, vendor_status = run_correlation_for_client(config, config.client("acme"))
 
     assert result is None
     assert vendor_status["ad:NONEXISTENT-DC99"].startswith("error")

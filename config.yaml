@@ -1,39 +1,76 @@
-# agent-parity configuration: one organization, one security console.
+# agent-parity topology configuration.
 #
 # This file is safe to commit: every secret value is a ${VAR} reference
 # resolved from the environment at load time (see .env.example for the
 # variable names). A ${VAR} pointing at an *unset* variable resolves to
-# null, which puts the connector into fixture mode against sample_data/ —
+# null, which puts that connector into fixture mode against sample_data/ —
 # so a fresh checkout with no .env runs the full pipeline on synthetic data.
 
 stale_days: 14
 
-# Any vendor registered in agent_parity.connectors.CONNECTOR_CLASSES works
-# here (sentinelone / carbonblack / bitdefender today) — adding support for
-# another vendor is writing one connector class, not editing this file's
-# structure.
-vendor: sentinelone
-credentials:
-  api_url: ${SENTINELONE_API_URL}
-  api_token: ${SENTINELONE_API_TOKEN}
+vendors:
+  # SentinelOne: global scope — one shared API token used by every client
+  # that enables it.
+  sentinelone:
+    scope: global
+    credentials:
+      api_url: ${SENTINELONE_API_URL}
+      api_token: ${SENTINELONE_API_TOKEN}
 
-# Domain-joined endpoint(s) the AD export script is pushed to — one per AD
-# domain/forest the organization spans. Most orgs are single-domain.
-ad_target_devices:
-  - ACME-DC01
+  # Carbon Black Cloud: each client environment has its own API ID / secret
+  # key / org key, so credentials live on the client entries below instead
+  # of here.
+  carbonblack:
+    scope: per_client
 
-# Object-storage handoff for the AD export — required for any live vendor
-# connector. Vendor remote-execution output channels (SentinelOne RSO,
-# Carbon Black Live Response) don't reliably preserve a CSV's exact
-# formatting and have real output-size limits a full AD export can exceed,
-# so the remote script uploads its CSV directly to object storage via a
-# short-lived presigned URL instead of returning it through the vendor
+  # BitDefender GravityZone: one shared Control Center API key.
+  bitdefender:
+    scope: global
+    credentials:
+      api_url: ${BITDEFENDER_API_URL}
+      api_key: ${BITDEFENDER_API_KEY}
+
+clients:
+  - name: Acme Corp
+    slug: acme
+    # Domain-joined endpoint(s) the AD export script is pushed to — one per
+    # AD domain. Acme is single-domain.
+    ad_target_devices:
+      - ACME-DC01
+    vendors:
+      sentinelone: {}
+      carbonblack:
+        api_url: ${ACME_CB_API_URL}
+        api_id: ${ACME_CB_API_ID}
+        api_key: ${ACME_CB_API_KEY}
+        org_key: ${ACME_CB_ORG_KEY}
+      bitdefender: {}
+
+  - name: Globex
+    slug: globex
+    # Globex spans two AD domains (a branch-office child domain in addition
+    # to its primary one) — the export script runs on a domain controller
+    # in each, and the resulting CSVs are concatenated into one master AD
+    # list before correlation (see agent_parity/pipeline.py's collect_ad_frame).
+    ad_target_devices:
+      - GLOBEX-DC01
+      - GLOBEX-BR-DC01
+    vendors:
+      sentinelone: {}
+      bitdefender: {}
+
+# Object-storage handoff for the AD export — required for any client with
+# live vendor credentials. Vendor remote-execution output channels
+# (SentinelOne RSO, Carbon Black Live Response) don't reliably preserve a
+# CSV's exact formatting and have real output-size limits a full AD export
+# can exceed, so the remote script uploads its CSV directly to object storage
+# via a short-lived presigned URL instead of returning it through the vendor
 # channel. Built against the S3 API (boto3): point endpoint_url at a
 # self-hosted MinIO instance (docker/docker-compose.yml runs one) for
 # local/dev use, or leave it unset to use real AWS S3 in production — same
-# code either way. Unconfigured (the uv demo default, since these all
-# resolve to null with no .env) is only valid because the demo path has no
-# live vendor credentials either — no script ever actually runs.
+# code either way. Unconfigured (the uv demo default, since these all resolve
+# to null with no .env) is only valid because the demo path has no live
+# vendor credentials either — no script ever actually runs.
 storage:
   backend: s3
   endpoint_url: ${STORAGE_ENDPOINT_URL}

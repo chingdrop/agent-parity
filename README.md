@@ -27,13 +27,13 @@ it. All three are first-class in this rebuild, not just implied by the raw
 data — see [High-value assets](#high-value-assets-servers-as-the-prioritization-signal)
 and [OS end-of-life](#os-end-of-life-a-third-prioritization-axis) below.
 
-This package is a standalone library and CLI — no Django, no Celery, no
-database. It's meant to be used either directly (the CLI below) or as a
-pinned git dependency (`uv add git+https://.../agent-parity@vX.Y.Z`) inside a
-larger project that provides its own persistence/scheduling/dashboard.
-It's deliberately scoped to one organization, one vendor per run — see
-[Credentials](#credentials-configyaml--env) below for what that means in
-practice.
+This package is a standalone library and CLI — no Django, no database. It's
+meant to be used either directly (the CLI below) or as a pinned git
+dependency (`uv add git+https://.../agent-parity@vX.Y.Z`) inside a larger
+project that provides its own dashboard. It models a real MSSP-style
+topology: multiple client organizations in one `config.yaml`, each with its
+own AD domain(s) and enabled vendor(s) — see
+[Credentials](#credentials-configyaml--env) below.
 
 ## Quick start
 
@@ -43,14 +43,15 @@ server or database either way:
 ```console
 uv sync
 uv run agent-parity compare ad_export.csv agent_export.csv   # your own two CSVs, zero config
-uv run agent-parity run                                       # config.yaml + connector (demo: sample_data/)
+uv run agent-parity run --all                                 # config.yaml + connectors, every client
+uv run agent-parity run --client acme                         # just one client
 uv run pytest                                                  # 190+ tests, all offline
 ```
 
 `compare` needs no vendor connector, no `config.yaml`, and no credentials at
 all — see [Bring your own CSVs](#bring-your-own-csvs) right below. `run` is
 the config.yaml/connector-driven path; with no `.env` (or unset credentials
-in it) the connector falls back to `sample_data/` fixtures — see
+in it) every connector falls back to `sample_data/` fixtures — see
 [Sample data](#sample-data) below for what's in them.
 
 ## Bring your own CSVs
@@ -91,24 +92,24 @@ below) is the next step up.
 ## Architecture
 
 ```
-      `agent-parity compare`                    `agent-parity run` (config.yaml + connector)
-   two CSVs, zero config                  ┌──────────────────────────────────────────────┐
-              │                           │                                              │
-              │           config.yaml ──► agent_parity/config.py ──► connector (S1/CB/BD) │
-              │            + .env             │                       │            │      │
-              │                                │            deploy_and_run()   fetch_inventory()
-              │                                │                       │            │      │
-              │                                │        Export-ADDevices.ps1     AgentDevice
-              │                                │          runs REMOTELY on a     records   │
-              │                                │          domain-joined endpoint    │      │
-              │                                └───────────────│───────────────────│───────┘
-              ▼                                                ▼                    ▼
-    ad_sync/parser.py + agent_csv.py              ad_sync/parser.py          correlation/engine.py
-      (CSV -> DataFrame, both sides)               (CSV -> DataFrame)   (outer merge + classification)
+      `agent-parity compare`               `agent-parity run` (config.yaml + connectors)
+   two CSVs, zero config             ┌──────────────────────────────────────────────┐
+              │                      │            per (client, vendor)              │
+              │      config.yaml ──► agent_parity/config.py ──► connector (S1/CB/BD) │
+              │       + .env             │                       │            │      │
+              │                          │            deploy_and_run()   fetch_inventory()
+              │                          │                       │            │      │
+              │                          │        Export-ADDevices.ps1     AgentDevice
+              │                          │          runs REMOTELY on a     records   │
+              │                          │          domain-joined endpoint    │      │
+              │                          └───────────────│───────────────────│───────┘
+              ▼                                          ▼                    ▼
+    ad_sync/parser.py + agent_csv.py        ad_sync/parser.py          correlation/engine.py
+      (CSV -> DataFrame, both sides)         (CSV -> DataFrame)   (outer merge + classification)
               └────────────────────────┬──────────────────────┘
                                        ▼
                           agent_parity/pipeline.py
-                  correlate_from_csvs() / run_correlation()
+        correlate_from_csvs() / run_correlation_for_client()
                                        │
                     ┌──────────────────┴──────────────────┐
                     ▼                                     ▼
@@ -150,8 +151,14 @@ organization on BitDefender alone can't have its AD export collected at all.
 
 `deployment/script_runner.py` is the uniform entry point; each connector's
 `deploy_and_run()` implements the vendor mechanics. AD collection and agent
-inventory both flow through the same authenticated channel: whichever one
-vendor is configured.
+inventory both flow through the same authenticated channel per vendor — for
+whichever vendor is actually carrying the AD export. Every client needs at
+least one enabled vendor with real remote-execution capability;
+`agent_parity/config.py`'s `pick_ad_export_vendor()` picks it, preferring
+SentinelOne over Carbon Black (reflecting real deployment prevalence — the
+bulk of the original client base was on SentinelOne, a handful on Carbon
+Black, one on BitDefender) and raising a clear `ConfigError` if a client has
+neither.
 
 All three connectors share one HTTP transport —
 `shared_tools.rest_adapter` (`RestAdapter`, from `py-shared-tools`) —
@@ -172,24 +179,26 @@ are reused as-is by other projects. Import as
 `from shared_tools.storage import ObjectStorage`. `uv sync` fetches it
 directly from GitHub; no submodule init step is needed.
 
-### Multi-domain AD: one export per domain, concatenated into a master list
+### Multi-domain clients: one export per domain, concatenated into a master list
 
-An organization isn't always a single AD domain — some span multiple domains
-or forests, and no one domain controller can enumerate computer objects
-outside its own domain. `AppConfig.ad_target_devices` (`agent_parity/config.py`)
-is a list, not a single hostname: `Export-ADDevices.ps1` runs once per entry,
-and `agent_parity/pipeline.py`'s `collect_ad_frame` parses and concatenates
-the resulting CSVs (`agent_parity/ad_sync/parser.py`'s `concat_ad_frames`)
-into one master AD DataFrame before correlation ever runs. A single-domain
-organization (the common case) is just the one-element case of the same
-list — not a special code path.
+A client isn't always a single AD domain — some span multiple domains or
+forests, and no one domain controller can enumerate computer objects outside
+its own domain. `ClientConfig.ad_target_devices` (`agent_parity/config.py`) is
+a list, not a single hostname: `Export-ADDevices.ps1` runs once per entry, and
+`agent_parity/pipeline.py`'s `collect_ad_frame` parses and concatenates the
+resulting CSVs (`agent_parity/ad_sync/parser.py`'s `concat_ad_frames`) into
+one master AD DataFrame before correlation ever runs. A single-domain client
+is just the one-element case of the same list — not a special code path.
 
-Collection is tolerant of partial failure the same way vendor inventory
+Collection is tolerant of partial failure the same way per-vendor inventory
 collection already is: one domain being unreachable doesn't sink the others.
-Only when *every* domain fails does `run_correlation` return `None` (nothing
-at all to correlate against). Per-domain outcomes show up in `vendor_status`
-keyed `ad:<target_device>` (e.g. `ad:ACME-DC01`), alongside the plain vendor
-name for agent inventory.
+Only when *every* domain fails does `run_correlation_for_client` return
+`None` (nothing at all to correlate against). Per-domain outcomes show up in
+`vendor_status` keyed `ad:<target_device>` (e.g. `ad:GLOBEX-DC01`), alongside
+the plain vendor-name keys for agent inventory. The demo's `globex` client
+models multi-domain: it has two domains (`GLOBEX-DC01` and a branch office
+`GLOBEX-BR-DC01`) in `config.yaml`/`sample_data/globex/`, while `acme` stays
+single-domain.
 
 ### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
@@ -353,48 +362,66 @@ percentages fall out of `groupby`/`value_counts` (`summarize()`).
 
 ### Credentials: config.yaml + .env
 
-`config.yaml` (committed) is deliberately small — one organization, one
-vendor: which vendor, its credentials (as `${VAR}` references, never
-literal), and the AD domain(s) to export from:
+Vendors have genuinely different credential shapes: SentinelOne is one API
+token shared by every client; Carbon Black needs a distinct API ID / secret /
+org key **per client**. `config.yaml` (committed) declares topology — which
+vendors exist, their scope, each client's enabled vendors/domains — with
+every secret value written as a `${VAR}` reference; `.env` (gitignored; see
+`.env.example`) holds the actual values:
 
 ```yaml
-vendor: sentinelone
-credentials:
-  api_url: ${SENTINELONE_API_URL}
-  api_token: ${SENTINELONE_API_TOKEN}
-ad_target_devices:
-  - DC01
+vendors:
+  sentinelone:
+    scope: global
+    credentials:
+      api_url: ${SENTINELONE_API_URL}
+      api_token: ${SENTINELONE_API_TOKEN}
+  carbonblack:
+    scope: per_client
+
+clients:
+  - name: Acme Corp
+    slug: acme
+    ad_target_devices: [ACME-DC01]
+    vendors:
+      sentinelone: {}
+      carbonblack:
+        api_url: ${ACME_CB_API_URL}
+        api_id: ${ACME_CB_API_ID}
+        api_key: ${ACME_CB_API_KEY}
+        org_key: ${ACME_CB_ORG_KEY}
 ```
 
-`vendor:` can be any connector registered in
-`agent_parity.connectors.CONNECTOR_CLASSES` — adding support for a vendor
-beyond SentinelOne/Carbon Black/BitDefender is writing one connector class
-decorated `@register_connector` (`agent_parity/connectors/base.py`), not
-editing a central table — and an unknown name raises a clear `ConfigError`
-listing what's actually registered. `.env` (gitignored; see `.env.example`)
-holds the actual credential values; `agent_parity/config.py`'s
-`load_config()` is the single entrypoint that resolves both into an
-`AppConfig` — there's no database and no second config path, so this is also
-exactly what a consuming project should call.
+Any vendor registered in `agent_parity.connectors.CONNECTOR_CLASSES` works
+here — adding support for a vendor beyond SentinelOne/Carbon Black/BitDefender
+is writing one connector class decorated `@register_connector`
+(`agent_parity/connectors/base.py`), not editing a central table.
+`agent_parity/config.py`'s `load_config()` is the single entrypoint that
+resolves both files into an `AppConfig` — there's no database and no second
+config path, so this is also exactly what a consuming project should call.
 
 A `${VAR}` pointing at an unset variable resolves to `None`, which is
-precisely what puts the connector into fixture mode — a fresh checkout with
-no `.env` runs the entire pipeline against `sample_data/`. Running this for
-more than one organization is several config files and several calls into
-`pipeline.run_correlation()` — not something this package's config format
-tries to represent in one file.
+precisely what puts a connector into fixture mode — a fresh checkout with no
+`.env` runs the entire pipeline against `sample_data/`.
 
 ## Sample data
 
-One synthetic organization (Acme Corp), one vendor configured
-(SentinelOne) — 41 AD computer objects, 21 missing coverage, 19 covered, 2
-orphaned agents, 1 stale. `sample_data/carbonblack_inventory.json` and
-`bitdefender_inventory.json` also ship (used directly by
-`tests/test_connectors.py` to prove each connector's fixture parsing in
-isolation) even though the default `config.yaml` only points at SentinelOne —
-switch `vendor:` to try either. Fixture timestamps are rebased at load so the
-newest check-in is always "now" and the authored stale/recent split stays
-stable regardless of when you run the demo.
+Two synthetic clients with deliberate, reviewable gap scenarios:
+
+|                     | Acme Corp (`acme`)                                                            | Globex (`globex`)         |
+|---------------------|-------------------------------------------------------------------------------|---------------------------|
+| AD computer objects | 44                                                                            | 37                        |
+| Vendors             | SentinelOne + Carbon Black + BitDefender                                      | SentinelOne + BitDefender |
+| Missing agent       | 5 (new server, new-hire imaging gaps, a rebuild, a disabled stray)            | 7                         |
+| Stale coverage      | 3 (15–30 days quiet, one per vendor)                                          | 3                         |
+| Orphaned agents     | 4 (decommissioned server, shadow-IT laptop, workgroup kiosk, renamed machine) | 3                         |
+
+Details worth noticing: some devices report to two vendors (exercising the
+one-row-per-vendor merge); one agent per client reports its FQDN while AD has
+the short name (normalization resolves it); one orphan per client is a
+renamed machine normalization deliberately *can't* resolve. Fixture
+timestamps are rebased at load so the newest check-in is always "now" and the
+authored stale/recent split stays stable regardless of when you run the demo.
 
 ## Optional: Docker
 
@@ -442,13 +469,14 @@ release.
   classified as `machine_type="server"` from AD's OS text alone, with zero
   agent data, and an agent-reported machine_type must never be overridden).
 - **Pipeline collection** (`test_pipeline.py`): multi-domain AD concatenation
-  and partial-failure tolerance, and `run_correlation`'s happy path plus its
-  "every AD domain failed" `None` case.
+  and partial-failure tolerance (Globex's two domains), and
+  `run_correlation_for_client`'s happy path plus its "every AD domain
+  failed" `None` case.
 - **Fixture scenarios** (`test_pipeline_sync.py`): named tests pin the
-  authored gap scenarios (`acme-sql02` is missing, `acme-byod-lt1` is
+  authored gap scenarios (`acme-sql02` is missing, `acme-fs-old` is
   orphaned, …) so a fixture edit that breaks a scenario fails loudly.
-- **Config resolver**: `${VAR}` resolution, fixture-mode fallback on unset
-  secrets, unknown-vendor rejection.
+- **Config resolver**: global vs. per-client scope, `${VAR}` resolution,
+  fixture-mode fallback on unset secrets, unknown-vendor rejection.
 - **Connectors and parser**: fixture normalization, timestamp rebasing,
   live-mode gating on complete credentials, platform/machine_type wording
   normalized to SentinelOne's conventions (Carbon Black's uppercase `os`
@@ -477,11 +505,10 @@ network. That's what `docker/smoke_test.sh` is for; see
 
 ## Out of scope for v1
 
-- Multiple organizations/tenants in one config — this package models one
-  organization per `config.yaml`; a caller that genuinely needs several is
-  expected to load several configs and call `pipeline.run_correlation()`
-  once per organization itself.
-- Persistence, scheduling, and a dashboard — deliberately left to a
-  consuming project; this package's contract ends at `CorrelationResult`.
-- Fuzzy hostname matching beyond normalization.
-- Real-time ingestion — this is a batch/on-demand tool, not a streaming one.
+- A web dashboard — deliberately left to a consuming project; this
+  package's contract ends at `CorrelationResult` (plus, going forward,
+  whatever Celery-based scheduling/Splunk export lands directly in this
+  package — see recent git history for where that stands).
+- Fuzzy hostname matching beyond normalization (a natural next step for the
+  renamed-machine orphans).
+- Real-time ingestion — this is a batch tool on a schedule, not a streaming one.

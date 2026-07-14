@@ -37,6 +37,9 @@ from agent_parity.os_eol import extract_build_number
 class SentinelOneConnector(SentinelOneRSOMixin, AgentConnector):
     vendor = Vendor.SENTINELONE.value
     required_credentials = ("api_url", "api_token")
+    # Covered the bulk of the original client base — preferred over Carbon
+    # Black when both are capable of carrying a client's AD export.
+    ad_export_priority = 0
 
     def _parse_inventory(self, payload: dict) -> list[AgentDevice]:
         devices = []

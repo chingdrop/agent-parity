@@ -73,7 +73,25 @@ def test_compare_reports_parse_errors_without_raising(tmp_path):
 def test_run_subcommand_dispatches_to_config_driven_pipeline(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
 
-    result = CliRunner().invoke(cli.cli, ["run"])
+    result = CliRunner().invoke(cli.cli, ["run", "--client", "acme"])
 
     assert result.exit_code == 0, result.output
-    assert (tmp_path / "output" / "report.csv").exists()
+    assert (tmp_path / "output" / "acme.csv").exists()
+
+
+def test_run_subcommand_all_writes_one_csv_per_client(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
+
+    result = CliRunner().invoke(cli.cli, ["run", "--all"])
+
+    assert result.exit_code == 0, result.output
+    assert (tmp_path / "output" / "acme.csv").exists()
+    assert (tmp_path / "output" / "globex.csv").exists()
+
+
+def test_run_subcommand_rejects_unknown_client(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
+
+    result = CliRunner().invoke(cli.cli, ["run", "--client", "nope"])
+
+    assert result.exit_code != 0

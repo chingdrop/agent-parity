@@ -1,0 +1,4 @@
+Name,DNSHostName,OperatingSystem,OperatingSystemVersion,LastLogonTimestamp,Enabled,DistinguishedName
+GLOBEX-BR-DC01,globex-br-dc01.br.globex.example,Windows Server 2022 Datacenter,10.0 (20348),2026-07-02T18:00:00+00:00,True,"CN=GLOBEX-BR-DC01,OU=Domain Controllers,DC=br,DC=globex,DC=example"
+GLOBEX-BR-WS01,globex-br-ws01.br.globex.example,Windows 11 Enterprise,10.0 (26100),2026-07-01T10:00:00+00:00,True,"CN=GLOBEX-BR-WS01,OU=Workstations,DC=br,DC=globex,DC=example"
+GLOBEX-BR-WS02,globex-br-ws02.br.globex.example,Windows 11 Enterprise,10.0 (22621),2026-06-30T09:00:00+00:00,True,"CN=GLOBEX-BR-WS02,OU=Workstations,DC=br,DC=globex,DC=example"

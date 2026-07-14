@@ -19,20 +19,22 @@ provides shared web/scheduling/persistence infrastructure for multiple tools. Ke
 that way — don't reintroduce a framework dependency here just because a consuming
 project happens to use one.
 
-Deliberately simple: one organization, one vendor, per `config.yaml`. There is no
-multi-client/multi-tenant/multi-account topology here (an earlier iteration had one,
-modeled on the original tool's MSSP heritage — it was removed on purpose, not
-incidentally, so don't reintroduce `clients:`/`vendors:` nesting or per-vendor
-account/site multiplicity). If a consuming project genuinely needs to run this for
-several organizations, that's several `AppConfig`s (e.g. several config files) and
-several calls into `pipeline.run_correlation` — not a feature of this package.
+Models a real MSSP-style topology: multiple client organizations in one `config.yaml`,
+each with its own AD domain(s) and enabled vendor(s) — `clients:`/`vendors:` nesting,
+`ClientConfig`/`VendorConfig`, and per-vendor `scope` (`global` vs `per_client`) are all
+deliberate, not incidental. This matches what was actually run in production; Django
+and the web dashboard never were (that was a rebuild-only addition, and it stays gone).
+Celery-based scheduling/fan-out and Splunk export are also real and are being restored
+in stages (see recent git history) — check current source before assuming a feature
+described here has landed yet.
 
 ## Commands
 
 ```console
 uv sync                                     # install deps
 uv run agent-parity compare ad.csv agent.csv   # two CSVs, zero config.yaml/connectors/credentials
-uv run agent-parity run                        # config.yaml + connector
+uv run agent-parity run --all                  # config.yaml + connectors, every client
+uv run agent-parity run --client acme          # config.yaml + connectors, just one client
 
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
@@ -57,10 +59,11 @@ Four layers, collect → correlate → report:
   inventory CSV, for callers with no connector/credentials at all.
 - **`agent_parity/correlation/engine.py`** — the pandas merge/classification core.
 - **`agent_parity/pipeline.py`** — two orchestration entrypoints that tie the above
-  together: `run_correlation()` (config.yaml + connector, live or fixture) and
-  `correlate_from_csvs()` (two CSVs, zero config). **`agent_parity/cli.py`** is a thin
-  `run`/`compare` wrapper around them for standalone use. A consuming project (the hub)
-  is expected to call `pipeline.run_correlation()` directly rather than shell out to
+  together: `run_correlation_for_client()` (config.yaml + connectors, live or fixture)
+  and `correlate_from_csvs()` (two CSVs, zero config). **`agent_parity/cli.py`** is a
+  thin `run`/`compare` wrapper around them for standalone use. A consuming project
+  (the hub) is expected to call `pipeline.run_correlation_for_client()` directly rather
+  than shell out to
   the CLI, since it will want the `CorrelationResult` in-process to persist itself.
 
 ## Correlation engine (`agent_parity/correlation/engine.py`)
@@ -106,21 +109,23 @@ correlation tests rather than re-testing pandas.
 
 ## Collection pipeline (`agent_parity/pipeline.py`)
 
-`run_correlation(config, stale_days=None)` is the config.yaml/connector entrypoint:
-collect the AD export (across every domain the organization spans — see "Multi-domain
-AD" below), collect the configured vendor's inventory, then call
-`correlation.engine.correlate()`. Returns `(CorrelationResult | None, vendor_status)` —
-`None` only when every AD domain failed, meaning there's nothing to correlate against.
+`run_correlation_for_client(config, client_cfg, stale_days=None)` is the config.yaml/
+connector entrypoint: collect the AD export (across every domain the client spans —
+see "Multi-domain clients" below), collect every enabled vendor's inventory (across
+every site/tenant it has), then call `correlation.engine.correlate()`. Returns
+`(CorrelationResult | None, vendor_status)` — `None` only when every AD domain failed,
+meaning there's nothing to correlate against.
 
 `correlate_from_csvs(ad_csv_text, agent_csv_text, stale_days=14)` is the zero-config
 counterpart — no `AppConfig`, no connector, no credentials, just
 `ad_sync.parser.parse_ad_export()` + `agent_csv.parse_agent_csv()` feeding straight into
 `correlate()`. This is the on-ramp for anyone without a supported vendor connector set
-up at all; `run_correlation` is the next step once collection needs to be
+up at all; `run_correlation_for_client` is the next step once collection needs to be
 repeatable/scheduled against a live API instead of a one-off export file.
 
 No persistence and no history live in either function on purpose: that's a consuming
-project's job, not this package's. `agent_parity/cli.py` is the only built-in
+project's job, not this package's (Celery-backed persistence is being restored
+separately — see recent git history). `agent_parity/cli.py` is the only built-in
 consumer — its `run`/`compare` subcommands wrap the two functions above, write
 `output/<name>.csv`, and print a summary, nothing more.
 
@@ -172,11 +177,11 @@ applied to `VendorConnector` and `SentinelOneRSOMixin`, not before.
 
 **Fixture fallback is not a test-only shim — it's the default runtime path.** `is_live`
 gates on whether all `required_credentials` are present; if not, `fetch_inventory()`
-reads `sample_data/<vendor>_inventory.json` and `deploy_and_run()` returns
-`sample_data/ad_export_<target_id>.csv` — one file per domain controller, since an
-organization spanning multiple AD domains (`AppConfig.ad_target_devices`, see
-"Multi-domain AD" below) has a distinct export per domain, not one shared file.
-Timestamps are rebased so the newest check-in is ~now (`rebase_timestamps` /
+reads `sample_data/<client>/<vendor>_inventory.json` and `deploy_and_run()` returns
+`sample_data/<client>/ad_export_<target_id>.csv` — one file per domain
+controller, since a client with multiple AD domains (`ClientConfig.ad_target_devices`,
+see "Multi-domain clients" below) has a distinct export per domain, not one
+shared file. Timestamps are rebased so the newest check-in is ~now (`rebase_timestamps` /
 `rebase_csv_timestamps`, still local to this project — they operate on `AgentDevice`
 and an AD-export-shaped CSV, not generic enough to share) — this is what keeps the
 authored stale/recent split in `sample_data/` stable regardless of when the demo is
@@ -356,47 +361,57 @@ one changes.
 
 ## Credential resolution (`agent_parity/config.py`)
 
-`load_config()` parses `config.yaml` (topology) + `.env` (secrets) into one
-`AppConfig` — every secret in `config.yaml` is a `${VAR}` reference; an unset
-variable resolves to `None` rather than raising, which is exactly what puts the
-connector into fixture mode. This is the *only* config entrypoint — there is no
-database and no second config shape, so this is also exactly what a consuming
-project should call.
+`load_config()` parses `config.yaml` (topology) + `.env` (secrets) into `AppConfig`/
+`ClientConfig`/`VendorConfig` dataclasses — every secret in `config.yaml` is a `${VAR}`
+reference; an unset variable resolves to `None` rather than raising, which is exactly
+what puts a connector into fixture mode. This is the *only* config entrypoint — there
+is no database, so there's nothing else for a consuming project to call.
+`sites_for(client_slug, vendor_name)` returns a one-element tuple per (client, vendor)
+pair today — it's the one place that knows `global` vs `per_client` scope
+(`VendorConfig.scope`) — SentinelOne/BitDefender are global (same credentials for
+every client), Carbon Black is per-client. When adding a vendor or a client, this is
+the function whose behavior actually matters; don't special-case scope logic in a
+connector or in `pipeline.py`. `get_connectors(config, client_slug, vendor_name)`
+builds one connector per entry `sites_for()` returns — always one today; more than
+one (multi-site/tenant per client) is a planned follow-up stage, and `sites_for`'s
+tuple return is deliberately already shaped for it so `pipeline.py` won't need to
+change again when it lands.
 
-`AppConfig` is flat and deliberately small: `stale_days`, `vendor` (a string
-validated against `CONNECTOR_CLASSES` — see "Connectors" above — so any registered
-connector works, not a hardcoded three), `credentials` (one dict, handed straight to
-the connector), `ad_target_devices` (a tuple — see "Multi-domain AD" below), and
-`storage`. There is no per-client/per-account/per-site nesting anywhere in this
-module — `get_connector(config)` builds the one connector directly from
-`config.vendor`/`config.credentials`, with `fixture_dir` always `SAMPLE_DATA_DIR`
-(no per-organization subfolder).
+`pick_ad_export_vendor(client_cfg)` picks which of a client's enabled vendors carries
+the AD export — filtered to `supports_remote_execution = True` connectors, then broken
+by each connector's own `ad_export_priority` class attribute, not alphabetically. That
+preference (SentinelOne before Carbon Black) is a real business fact (S1 covered most
+of the client base, CB a handful, BitDefender basically none) as much as a technical
+one. Raises `ConfigError` if a client has no capable vendor at all. Called from
+`pipeline.collect_ad_csv`; don't reintroduce a `sorted(client_cfg.vendors)[0]`-style
+pick elsewhere — that bug (silently routing AD export through whichever vendor happens
+to sort first, capable or not) is exactly what this function replaced.
 
-## Multi-domain AD (`AppConfig.ad_target_devices`)
+## Multi-domain clients (`ClientConfig.ad_target_devices`)
 
-An organization can span more than one AD domain/forest — no single domain
-controller can enumerate computer objects outside its own domain, so
-`ad_target_devices` is a tuple, not a single hostname, and the export script runs
-once per entry. `agent_parity/pipeline.py`'s `collect_ad_frame` is the orchestrator:
-it loops the tuple, calling `collect_ad_csv` + `parse_ad_export` per domain, and
-concatenates the results with `agent_parity/ad_sync/parser.py`'s `concat_ad_frames`
-into the one master DataFrame `correlate()` actually sees. A single-domain
-organization (the common case) is just the `len == 1` case of this same loop —
-there's no separate single-domain code path, by design.
+A client can span more than one AD domain/forest — no single domain controller can
+enumerate computer objects outside its own domain, so `ad_target_devices` is a tuple,
+not a single hostname, and the export script runs once per entry.
+`agent_parity/pipeline.py`'s `collect_ad_frame` is the orchestrator: it loops the tuple,
+calling `collect_ad_csv` + `parse_ad_export` per domain, and concatenates the results
+with `agent_parity/ad_sync/parser.py`'s `concat_ad_frames` into the one master
+DataFrame `correlate()` actually sees. A single-domain client (most of them) is just
+the `len == 1` case of this same loop — there's no separate single-domain code path,
+by design.
 
-Tolerant of partial failure the same way vendor collection already is: one domain's
-status is recorded independently (`f"ad:{target_device}"` in `vendor_status`, e.g.
-`ad:ACME-DC01`), and `collect_ad_frame` returns `None` for the frame only when
-*every* domain failed — `run_correlation` is where that "nothing to correlate
-against" case is handled (returns `None` up to its own caller rather than attempting
-to correlate against nothing); don't duplicate that check elsewhere.
+Tolerant of partial failure the same way per-vendor collection already is: one
+domain's status is recorded independently (`f"ad:{target_device}"` in `vendor_status`,
+e.g. `ad:GLOBEX-DC01`), and `collect_ad_frame` returns `None` for the frame only when
+*every* domain failed — `run_correlation_for_client` is where that "nothing to
+correlate against" case is handled (returns `None` up to its own caller rather than
+attempting to correlate against nothing); don't duplicate that check elsewhere.
 
-Fixture mode picks the CSV by target device — `sample_data/ad_export_<target_device>.csv`
+Fixture mode picks the CSV by target device — `sample_data/<client>/ad_export_<target_device>.csv`
 (`connectors/base.py`'s `deploy_and_run`) — one file per domain, not one shared
-`ad_export.csv`. `sample_data/ad_export_ACME-BR-DC01.csv` exists purely to give
-`tests/test_pipeline.py`'s multi-domain concatenation test a second, real fixture
-file to concatenate against the default demo domain (`ad_export_ACME-DC01.csv`) —
-it isn't part of the default `config.yaml`'s single-domain demo.
+`ad_export.csv`. The demo's `globex` client is intentionally multi-domain
+(`GLOBEX-DC01` + a branch office `GLOBEX-BR-DC01`, both in `config.yaml` and
+`sample_data/globex/`) so this path has real test/demo coverage; `acme` stays
+single-domain.
 
 ## Testing conventions
 
@@ -408,9 +423,9 @@ it isn't part of the default `config.yaml`'s single-domain demo.
 - `sample_data/` fixtures were originally generated by a one-off script that was
   never committed (it lived in a scratch directory outside the repo). The
   committed CSV/JSON files are the source of truth now; there's no
-  `generate_fixtures.py` in this repo to regenerate them from. The layout is flat
-  (no per-organization subfolder) — `get_connector`'s `fixture_dir` is always
-  `SAMPLE_DATA_DIR` directly.
+  `generate_fixtures.py` in this repo to regenerate them from. The layout is
+  per-client (`sample_data/<client_slug>/`) — `get_connectors`' `fixture_dir`
+  is always `SAMPLE_DATA_DIR / client_slug`.
 - Test coverage is intentionally close to 1:1 with source modules: `test_models.py` ↔
   `agent_parity/models.py`,
   `test_pipeline.py` ↔ `agent_parity/pipeline.py` (the collection helpers plus

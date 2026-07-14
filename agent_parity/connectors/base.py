@@ -37,6 +37,7 @@ from abc import abstractmethod
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import ClassVar
 
 from shared_tools.remote_exec import ConnectorError, ConnectorRegistry, VendorConnector
 
@@ -136,6 +137,25 @@ class AgentConnector(VendorConnector):
     ``_poll_until``); this class adds inventory fetching and this project's
     own AD-export fixture behavior.
     """
+
+    #: Whether this vendor's credentials are shared across every client
+    #: ("global" — one API token for the whole organization, e.g.
+    #: SentinelOne) or distinct per client ("per_client", e.g. Carbon Black
+    #: Cloud, where each environment has its own API ID/secret/org key). A
+    #: real, fixed fact about how each vendor's API is provisioned — not
+    #: something a config file should be able to override. Agent-parity's
+    #: own concept, not part of the shared ``VendorConnector`` base (that
+    #: class has no notion of multiple clients at all).
+    scope: ClassVar[str] = "global"
+
+    #: Tie-break priority among supports_remote_execution=True vendors when
+    #: picking who carries a client's AD export (see
+    #: agent_parity.config.pick_ad_export_vendor) — lower sorts first. Not
+    #: just a technical preference: it reflects real deployment prevalence
+    #: (SentinelOne covered the bulk of the original client base, Carbon
+    #: Black a handful). The default leaves a new vendor sorting after both,
+    #: alphabetically among any other default-priority vendors.
+    ad_export_priority: ClassVar[int] = 100
 
     # -- inventory ---------------------------------------------------------
 

@@ -1,91 +1,112 @@
-"""Config resolver tests: ${VAR} resolution, fixture-mode fallback, and the
-one-organization/one-vendor AppConfig shape."""
+"""Config resolver tests: ${VAR} resolution, credential scoping, and picking
+the vendor that carries a client's AD export."""
+
+from dataclasses import replace
 
 import pytest
 
-from agent_parity.config import ConfigError, get_connector, get_storage, load_config
-from agent_parity.connectors import SentinelOneConnector
+from agent_parity.config import (
+    ClientConfig,
+    ConfigError,
+    get_connectors,
+    get_storage,
+    load_config,
+    pick_ad_export_vendor,
+)
+from agent_parity.connectors import CarbonBlackConnector, SentinelOneConnector
 from shared_tools.storage import ObjectStorage
 
 
-def _write(tmp_path, text):
-    path = tmp_path / "config.yaml"
-    path.write_text(text)
-    return path
-
-
-def test_vendor_and_credentials_and_ad_target_devices_parse(tmp_path):
-    path = _write(
-        tmp_path,
-        """
-        stale_days: 7
-        vendor: sentinelone
-        credentials:
-          api_url: https://usea1.sentinelone.net
-          api_token: s1-token
-        ad_target_devices: [DC01, DC02]
-        """,
+def _client(vendors: tuple[str, ...]) -> ClientConfig:
+    return ClientConfig(
+        name="Test Client",
+        slug="test",
+        ad_target_devices=("TEST-DC01",),
+        vendors={v: {} for v in vendors},
     )
-    config = load_config(path)
-
-    assert config.stale_days == 7
-    assert config.vendor == "sentinelone"
-    assert config.credentials == {"api_url": "https://usea1.sentinelone.net", "api_token": "s1-token"}
-    assert config.ad_target_devices == ("DC01", "DC02")
 
 
-def test_omitted_fields_fall_back_to_sensible_defaults(tmp_path):
-    path = _write(tmp_path, "vendor: sentinelone\n")
-    config = load_config(path)
-
-    assert config.stale_days == 14
-    assert config.credentials == {}
-    assert config.ad_target_devices == ()
-
-
-def test_unknown_vendor_raises_with_the_registered_list(tmp_path):
-    path = _write(tmp_path, "vendor: not-a-real-vendor\n")
-    with pytest.raises(ConfigError, match="Unknown vendor.*not-a-real-vendor"):
-        load_config(path)
+@pytest.fixture
+def config_with_creds(monkeypatch):
+    monkeypatch.setenv("SENTINELONE_API_URL", "https://usea1.sentinelone.net")
+    monkeypatch.setenv("SENTINELONE_API_TOKEN", "s1-global-token")
+    monkeypatch.setenv("ACME_CB_API_URL", "https://defense.conferdeploy.net")
+    monkeypatch.setenv("ACME_CB_API_ID", "ACMEID")
+    monkeypatch.setenv("ACME_CB_API_KEY", "acme-cb-secret")
+    monkeypatch.setenv("ACME_CB_ORG_KEY", "ACMEORG")
+    return load_config()
 
 
-def test_env_var_resolution_and_fixture_mode_fallback(tmp_path, monkeypatch):
-    monkeypatch.setenv("TEST_S1_API_URL", "https://usea1.sentinelone.net")
-    monkeypatch.setenv("TEST_S1_API_TOKEN", "resolved-token")
-    path = _write(
-        tmp_path,
-        """
-        vendor: sentinelone
-        credentials:
-          api_url: ${TEST_S1_API_URL}
-          api_token: ${TEST_S1_API_TOKEN}
-        """,
+def test_global_scope_returns_same_credentials_for_every_client(config_with_creds):
+    acme = config_with_creds.sites_for("acme", "sentinelone")
+    globex = config_with_creds.sites_for("globex", "sentinelone")
+    assert acme == globex == (
+        {"api_url": "https://usea1.sentinelone.net", "api_token": "s1-global-token"},
     )
-    config = load_config(path)
 
-    connector = get_connector(config)
+
+def test_per_client_scope_returns_that_clients_block(config_with_creds):
+    sites = config_with_creds.sites_for("acme", "carbonblack")
+    assert len(sites) == 1
+    creds = sites[0]
+    assert creds["api_id"] == "ACMEID"
+    assert creds["api_key"] == "acme-cb-secret"
+    assert creds["org_key"] == "ACMEORG"
+
+
+def test_client_without_vendor_enabled_is_rejected(config_with_creds):
+    # Globex doesn't declare carbonblack at all.
+    with pytest.raises(ConfigError, match="does not enable"):
+        config_with_creds.sites_for("globex", "carbonblack")
+
+
+def test_unset_env_vars_resolve_to_none_enabling_fixture_mode(monkeypatch):
+    for var in ("SENTINELONE_API_URL", "SENTINELONE_API_TOKEN"):
+        monkeypatch.delenv(var, raising=False)
+    config = load_config()
+    connector = get_connectors(config, "acme", "sentinelone")[0]
     assert isinstance(connector, SentinelOneConnector)
-    assert connector.is_live
-    assert config.credentials["api_token"] == "resolved-token"
-
-
-def test_unset_env_var_falls_back_to_fixture_mode(tmp_path, monkeypatch):
-    monkeypatch.delenv("TEST_S1_UNSET_URL", raising=False)
-    monkeypatch.delenv("TEST_S1_UNSET_TOKEN", raising=False)
-    path = _write(
-        tmp_path,
-        """
-        vendor: sentinelone
-        credentials:
-          api_url: ${TEST_S1_UNSET_URL}
-          api_token: ${TEST_S1_UNSET_TOKEN}
-        """,
-    )
-    config = load_config(path)
-
-    connector = get_connector(config)
     assert not connector.is_live
-    assert connector.fixture_dir is not None
+    assert connector.fixture_dir.name == "acme"
+
+
+def test_get_connectors_wires_live_credentials(config_with_creds):
+    connectors = get_connectors(config_with_creds, "acme", "carbonblack")
+    assert len(connectors) == 1
+    connector = connectors[0]
+    assert isinstance(connector, CarbonBlackConnector)
+    assert connector.is_live
+    assert connector.credentials["org_key"] == "ACMEORG"
+
+
+def test_unknown_client_and_vendor_raise(config_with_creds):
+    with pytest.raises(ConfigError, match="Unknown client"):
+        config_with_creds.sites_for("nope", "sentinelone")
+    with pytest.raises(ConfigError, match="Unknown vendor"):
+        config_with_creds.sites_for("acme", "nope")
+
+
+def test_ad_export_prefers_sentinelone_over_carbonblack():
+    client = _client(("bitdefender", "carbonblack", "sentinelone"))
+    assert pick_ad_export_vendor(client) == "sentinelone"
+
+
+def test_ad_export_falls_back_to_carbonblack_without_sentinelone():
+    client = _client(("bitdefender", "carbonblack"))
+    assert pick_ad_export_vendor(client) == "carbonblack"
+
+
+def test_ad_export_raises_when_only_bitdefender_is_enabled():
+    client = _client(("bitdefender",))
+    with pytest.raises(ConfigError, match="no vendor capable of remote script execution"):
+        pick_ad_export_vendor(client)
+
+
+def test_ad_export_vendor_selection_matches_committed_topology(config_with_creds):
+    # acme (sentinelone+carbonblack+bitdefender) and globex (sentinelone+bitdefender)
+    # both resolve to sentinelone.
+    assert pick_ad_export_vendor(config_with_creds.client("acme")) == "sentinelone"
+    assert pick_ad_export_vendor(config_with_creds.client("globex")) == "sentinelone"
 
 
 def test_storage_unconfigured_by_default(monkeypatch):
@@ -114,8 +135,6 @@ def test_storage_rejects_unsupported_backend(monkeypatch):
     monkeypatch.setenv("STORAGE_ACCESS_KEY", "a")
     monkeypatch.setenv("STORAGE_SECRET_KEY", "s")
     config = load_config()
-    from dataclasses import replace
-
     bad_config = replace(config, storage=replace(config.storage, backend="azure_blob"))
     with pytest.raises(ConfigError, match="Unsupported storage backend"):
         get_storage(bad_config)

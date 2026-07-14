@@ -18,6 +18,9 @@ from agent_parity.connectors import (
 from agent_parity.connectors.base import infer_machine_type, infer_platform
 from shared_tools.rest_adapter import RestAdapter
 
+ACME = SAMPLE_DATA_DIR / "acme"
+GLOBEX = SAMPLE_DATA_DIR / "globex"
+
 CONNECTORS = [SentinelOneConnector, CarbonBlackConnector, BitDefenderConnector]
 
 
@@ -40,7 +43,7 @@ class _FakeResponse:
 
 @pytest.mark.parametrize("connector_cls", CONNECTORS)
 def test_fixture_inventory_is_normalized(connector_cls):
-    connector = connector_cls(credentials={}, fixture_dir=SAMPLE_DATA_DIR)
+    connector = connector_cls(credentials={}, fixture_dir=ACME)
     devices = connector.fetch_inventory()
     assert devices, "fixture should yield at least one device"
     for device in devices:
@@ -55,7 +58,7 @@ def test_fixture_inventory_normalizes_platform_and_machine_type_to_s1_wording(co
     """Regardless of vendor, platform/machine_type must read as SentinelOne's
     own wording ("windows"/"server"/"desktop") — that's the whole point of
     normalizing them, not just that they're non-empty."""
-    devices = connector_cls(credentials={}, fixture_dir=SAMPLE_DATA_DIR).fetch_inventory()
+    devices = connector_cls(credentials={}, fixture_dir=ACME).fetch_inventory()
     assert devices
     for device in devices:
         assert device.platform == "windows", device
@@ -66,7 +69,7 @@ def test_carbonblack_lowercases_its_uppercase_os_enum():
     # CBC's real "os" field is an uppercase enum ("WINDOWS"); SentinelOne's
     # own osType wording is lowercase — this is a straight casing fix, no
     # inference needed since Carbon Black does report the field directly.
-    devices = CarbonBlackConnector(credentials={}, fixture_dir=SAMPLE_DATA_DIR).fetch_inventory()
+    devices = CarbonBlackConnector(credentials={}, fixture_dir=ACME).fetch_inventory()
     assert all(d.platform == "windows" for d in devices)
 
 
@@ -74,7 +77,7 @@ def test_bitdefender_maps_its_numeric_machine_type_enum_to_s1_wording():
     # GravityZone's machineType is a numeric enum (2 = server in our
     # fixtures); mapped to SentinelOne's string wording, not inferred, since
     # BitDefender does report this directly.
-    devices = BitDefenderConnector(credentials={}, fixture_dir=SAMPLE_DATA_DIR).fetch_inventory()
+    devices = BitDefenderConnector(credentials={}, fixture_dir=ACME).fetch_inventory()
     servers = [d for d in devices if "Server" in d.os]
     desktops = [d for d in devices if "Server" not in d.os]
     assert servers and all(d.machine_type == "server" for d in servers)
@@ -85,7 +88,7 @@ def test_sentinelone_parses_a_windows_build_number_from_its_revision_field():
     """The whole point of capturing os_build at all: SentinelOne devices
     with the identical free-text "Windows 11 Enterprise" name resolve to
     different, real build numbers."""
-    devices = SentinelOneConnector(credentials={}, fixture_dir=SAMPLE_DATA_DIR).fetch_inventory()
+    devices = SentinelOneConnector(credentials={}, fixture_dir=ACME).fetch_inventory()
     windows_11 = [d for d in devices if d.os == "Windows 11 Enterprise"]
     assert windows_11
     assert all(d.os_build is not None for d in windows_11)
@@ -99,7 +102,7 @@ def test_sentinelone_parses_a_windows_build_number_from_its_revision_field():
 def test_carbonblack_and_bitdefender_never_set_os_build(connector_cls):
     """Neither vendor's real API exposes a build-number-carrying field —
     os_build must stay unset rather than something guessed."""
-    devices = connector_cls(credentials={}, fixture_dir=SAMPLE_DATA_DIR).fetch_inventory()
+    devices = connector_cls(credentials={}, fixture_dir=ACME).fetch_inventory()
     assert devices
     assert all(d.os_build is None for d in devices)
 
@@ -134,13 +137,13 @@ def test_infer_machine_type(os_text, expected):
 def test_fixture_timestamps_are_rebased_to_now(connector_cls):
     """Static fixture dates are shifted so the newest check-in is ~now,
     keeping the authored stale/recent split stable over time."""
-    devices = connector_cls(credentials={}, fixture_dir=SAMPLE_DATA_DIR).fetch_inventory()
+    devices = connector_cls(credentials={}, fixture_dir=ACME).fetch_inventory()
     newest = max(d.last_seen for d in devices if d.last_seen)
     assert abs((datetime.now(timezone.utc) - newest).total_seconds()) < 300
 
 
 def test_deploy_and_run_fixture_returns_ad_csv():
-    connector = SentinelOneConnector(credentials={}, fixture_dir=SAMPLE_DATA_DIR)
+    connector = SentinelOneConnector(credentials={}, fixture_dir=ACME)
     output = connector.deploy_and_run("Export-ADDevices.ps1", "ACME-DC01")
     assert output.splitlines()[0].startswith("Name,")
     assert "ACME-DC01" in output
@@ -152,7 +155,7 @@ def test_bitdefender_does_not_support_remote_execution():
     in both fixture and live mode, rather than quietly handing back a fixture."""
     assert BitDefenderConnector.supports_remote_execution is False
 
-    fixture_mode = BitDefenderConnector(credentials={}, fixture_dir=SAMPLE_DATA_DIR)
+    fixture_mode = BitDefenderConnector(credentials={}, fixture_dir=ACME)
     with pytest.raises(ConnectorError, match="does not support remote script execution"):
         fixture_mode.deploy_and_run("Export-ADDevices.ps1", "ACME-DC01")
 
@@ -176,6 +179,15 @@ def test_every_connector_registers_itself_under_its_own_vendor_name():
         assert CONNECTOR_CLASSES[connector_cls.vendor] is connector_cls
 
 
+def test_scope_and_ad_export_priority_match_committed_topology():
+    """Pins the real business facts these class attributes drive
+    AppConfig.sites_for/pick_ad_export_vendor with."""
+    assert SentinelOneConnector.scope == "global"
+    assert CarbonBlackConnector.scope == "per_client"
+    assert BitDefenderConnector.scope == "global"
+    assert SentinelOneConnector.ad_export_priority < CarbonBlackConnector.ad_export_priority
+
+
 def test_is_live_requires_all_credentials():
     partial = CarbonBlackConnector(
         credentials={"api_url": "https://example", "api_id": "X", "api_key": None, "org_key": "Y"}
@@ -187,8 +199,9 @@ def test_is_live_requires_all_credentials():
     assert complete.is_live
 
 
-def test_missing_fixture_raises_clear_error(tmp_path):
-    connector = CarbonBlackConnector(credentials={}, fixture_dir=tmp_path)
+def test_missing_fixture_raises_clear_error():
+    # Globex doesn't use Carbon Black, so it has no CB fixture.
+    connector = CarbonBlackConnector(credentials={}, fixture_dir=GLOBEX)
     with pytest.raises(ConnectorError, match="fixture not found"):
         connector.fetch_inventory()
 

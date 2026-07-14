@@ -7,9 +7,10 @@ Live mode is shaped after the Carbon Black Cloud public APIs:
   create the session, ``put file`` to stage the script, ``create process``
   to run PowerShell against it, and read stdout from the session.
 
-Each Carbon Black Cloud environment has its own API ID / API secret key /
-org key, supplied directly in config.yaml's ``credentials:`` block like
-every other vendor.
+Carbon Black credentials are *per-client* scope: each client environment has
+its own API ID / API secret key / org key, so the config resolver hands this
+connector a different credential block per client (see ``scope = "per_client"``
+below, and ``agent_parity.config.AppConfig.sites_for``).
 """
 
 from __future__ import annotations
@@ -30,6 +31,10 @@ from agent_parity.models import AgentDevice, Vendor
 class CarbonBlackConnector(AgentConnector):
     vendor = Vendor.CARBONBLACK.value
     required_credentials = ("api_url", "api_id", "api_key", "org_key")
+    scope = "per_client"
+    # A handful of the original client base — second preference behind
+    # SentinelOne when both are capable of carrying a client's AD export.
+    ad_export_priority = 1
     scope = "per_client"
     # A handful of the original client base — second preference behind
     # SentinelOne when both are capable of carrying a client's AD export.
