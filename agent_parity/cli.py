@@ -22,9 +22,12 @@ scheduled instead of run by hand.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import click
+from shared_tools.atomic_io import atomic_write, ensure_dir
+from shared_tools.logging_setup import setup_logging
 
 from agent_parity.ad_sync.parser import ADParseError
 from agent_parity.agent_csv import AgentCSVParseError
@@ -36,9 +39,20 @@ from agent_parity.pipeline import correlate_from_csvs, run_correlation_for_clien
 OUT_DIR = Path("output")
 
 
+def _write_csv(frame, out_path: Path) -> None:
+    """Write ``frame`` to ``out_path`` without a reader ever observing a
+    truncated file — a plain ``to_csv(out_path)`` isn't atomic."""
+    atomic_write(out_path, frame.to_csv(index=False))
+
+
 @click.group()
 def cli() -> None:
     """Collect + correlate device coverage, no server required."""
+    # WARNING, not the module's own INFO default: this only needs to make
+    # existing logger.warning/.exception calls (a failed vendor API, a
+    # Splunk outage) readable — click.echo already covers the per-client
+    # summary an INFO level would otherwise duplicate.
+    setup_logging(level=logging.WARNING)
 
 
 @cli.command()
@@ -61,7 +75,7 @@ def run(client: str | None, run_all: bool) -> None:
     else:
         slugs = [sorted(config.clients)[0]]
 
-    OUT_DIR.mkdir(exist_ok=True)
+    ensure_dir(OUT_DIR)
     had_failure = False
     for slug in slugs:
         try:
@@ -78,7 +92,7 @@ def run(client: str | None, run_all: bool) -> None:
             continue
 
         out_path = OUT_DIR / f"{slug}.csv"
-        result.frame.to_csv(out_path, index=False)
+        _write_csv(result.frame, out_path)
         counts = ", ".join(f"{k}={v}" for k, v in sorted(result.summary["status_counts"].items()))
         click.echo(
             f"[{slug}] {len(result.frame)} rows -> {out_path} "
@@ -159,8 +173,8 @@ def compare(ad_csv: Path, agent_csv: Path, stale_days: int, out_path: Path | Non
         raise click.ClickException(str(exc)) from exc
 
     out_path = out_path or OUT_DIR / f"{agent_csv.stem}_correlated.csv"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    result.frame.to_csv(out_path, index=False)
+    ensure_dir(out_path.parent)
+    _write_csv(result.frame, out_path)
     counts = ", ".join(f"{k}={v}" for k, v in sorted(result.summary["status_counts"].items()))
     click.echo(f"{len(result.frame)} rows -> {out_path} (coverage {result.summary['coverage_pct']}%; {counts})")
     click.echo(

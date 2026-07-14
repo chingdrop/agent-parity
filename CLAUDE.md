@@ -327,6 +327,31 @@ plain git dependency pinned to the same tag in both projects resolves as one
 package. Bumping the pin means updating the `rev` in `[tool.uv.sources]`, not
 `git submodule update`.
 
+**Currently pinned to `v1.2.0`.** Two more shared, dependency-light modules
+were adopted from that bump (both stdlib-only, no new dependency): `agent_parity/db.py`'s
+`get_engine()` calls `shared_tools.atomic_io.ensure_dir()` on a file-based
+`AGENT_PARITY_DB_URL`'s parent directory before `create_engine()` (a fresh
+Docker-volume path with no directory yet would otherwise fail); `cli.py`'s
+group callback calls `shared_tools.logging_setup.setup_logging(level=WARNING)`
+so the `logger.warning`/`.exception` calls already scattered across
+`pipeline.py`/`persistence.py`/`tasks.py` print with a timestamp and logger
+name instead of Python's unconfigured bare-message default — `run`/`sync`
+also switched their CSV/output writes to `shared_tools.atomic_io.ensure_dir()`/
+`atomic_write()` instead of `Path.mkdir()`/`DataFrame.to_csv(path)` directly,
+so a crash mid-write can never leave a truncated CSV or DB file behind.
+`shared_tools.config_loader.ConfigLoader` (also new since `v1.0.0`) is
+**not** adopted here — it's a generic flat/nested JSON-or-YAML
+`MutableMapping`, and `config.py`'s own `load_config()` already does far more
+domain-specific work (`${VAR}` resolution, `VendorConfig`/`ClientConfig`
+construction, multi-site/account resolution) than that module is for;
+using it would be a regression, not a simplification. `shared_tools.retry
+.call_with_retry` (new in `v1.1.0`) also isn't used — it exists for a
+"200 OK but unusable body" failure mode (a flaky public API returning an
+error page or wrong-shaped JSON) that no connector here has actually hit;
+`RestAdapter`'s own transport-level retry already covers 429/5xx, and this
+project's history is to wire in cross-project tooling when a real need
+shows up, not preemptively.
+
 `RestAdapter.request()` returns already-parsed content (`dict` for JSON, `str`
 for text/html, `bytes` otherwise), not a `Response` object, so connector call
 sites use `self._request_json(...)` when they know the endpoint returns a

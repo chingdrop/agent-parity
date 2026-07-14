@@ -26,7 +26,9 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from enum import StrEnum
+from pathlib import Path
 
+from shared_tools.atomic_io import ensure_dir
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
@@ -145,6 +147,13 @@ def get_engine(url: str | None = None) -> Engine:
     """
     resolved = url or os.environ.get("AGENT_PARITY_DB_URL") or DEFAULT_DB_URL
     connect_args = {"check_same_thread": False} if resolved.startswith("sqlite") else {}
+    if resolved.startswith("sqlite:///") and resolved != "sqlite:///:memory:":
+        # A file-based URL (not in-memory) needs its parent directory to
+        # exist before sqlite3 can create the file — e.g. AGENT_PARITY_DB_URL
+        # pointed at a fresh Docker-volume path (see docker-compose.yml).
+        db_path = Path(resolved.removeprefix("sqlite:///"))
+        if str(db_path.parent) not in ("", "."):
+            ensure_dir(db_path.parent)
     return create_engine(resolved, connect_args=connect_args)
 
 

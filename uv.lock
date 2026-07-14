@@ -42,7 +42,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=2.2" },
-    { name = "py-shared-tools", extras = ["storage"], git = "https://github.com/chingdrop/py-shared-tools?rev=v1.0.0" },
+    { name = "py-shared-tools", extras = ["storage"], git = "https://github.com/chingdrop/py-shared-tools?rev=v1.2.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "requests", specifier = ">=2.32" },
     { name = "sqlalchemy", specifier = ">=2.0" },
@@ -736,8 +736,8 @@ wheels = [
 
 [[package]]
 name = "py-shared-tools"
-version = "0.1.0"
-source = { git = "https://github.com/chingdrop/py-shared-tools?rev=v1.0.0#e30703b4baceba3ff8191bd47000c6a074735bc3" }
+version = "1.2.0"
+source = { git = "https://github.com/chingdrop/py-shared-tools?rev=v1.2.0#88083dd2f55772b9baf8fb7afe376be3bc71ae83" }
 dependencies = [
     { name = "certifi" },
     { name = "requests" },
