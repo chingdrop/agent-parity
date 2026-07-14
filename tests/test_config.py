@@ -6,8 +6,10 @@ from dataclasses import replace
 import pytest
 
 from agent_parity.config import (
+    AppConfig,
     ClientConfig,
     ConfigError,
+    VendorConfig,
     get_connectors,
     get_storage,
     load_config,
@@ -28,8 +30,10 @@ def _client(vendors: tuple[str, ...]) -> ClientConfig:
 
 @pytest.fixture
 def config_with_creds(monkeypatch):
-    monkeypatch.setenv("SENTINELONE_API_URL", "https://usea1.sentinelone.net")
-    monkeypatch.setenv("SENTINELONE_API_TOKEN", "s1-global-token")
+    monkeypatch.setenv("SENTINELONE_MSSP_API_URL", "https://usea1.sentinelone.net")
+    monkeypatch.setenv("SENTINELONE_MSSP_API_TOKEN", "s1-global-token")
+    monkeypatch.setenv("SENTINELONE_DFIR_API_URL", "https://usea1-dfir.sentinelone.net")
+    monkeypatch.setenv("SENTINELONE_DFIR_API_TOKEN", "s1-dfir-token")
     monkeypatch.setenv("ACME_CB_API_URL", "https://defense.conferdeploy.net")
     monkeypatch.setenv("ACME_CB_API_ID", "ACMEID")
     monkeypatch.setenv("ACME_CB_API_KEY", "acme-cb-secret")
@@ -42,11 +46,53 @@ def config_with_creds(monkeypatch):
 
 
 def test_global_scope_returns_same_credentials_for_every_client(config_with_creds):
+    # Both acme and globex select the "mssp" account in config.yaml.
     acme = config_with_creds.sites_for("acme", "sentinelone")
     globex = config_with_creds.sites_for("globex", "sentinelone")
     assert acme == globex == (
-        {"api_url": "https://usea1.sentinelone.net", "api_token": "s1-global-token"},
+        {
+            "api_url": "https://usea1.sentinelone.net",
+            "api_token": "s1-global-token",
+            "account": "mssp",
+        },
     )
+
+
+def test_global_scope_with_multiple_accounts_requires_an_explicit_choice():
+    """SentinelOne has two accounts (mssp/dfir) — a client that doesn't say
+    which one gets a clear ConfigError, not a silent pick."""
+    client = _client(("sentinelone",))
+    config = load_config()
+    config = replace(config, clients={**config.clients, "test": client})
+    with pytest.raises(ConfigError, match="must specify which .* account"):
+        config.sites_for("test", "sentinelone")
+
+
+def test_global_scope_rejects_an_unknown_account_name():
+    client = ClientConfig(
+        name="Test Client",
+        slug="test",
+        ad_target_devices=("TEST-DC01",),
+        vendors={"sentinelone": ({"account": "nope"},)},
+    )
+    config = load_config()
+    config = replace(config, clients={**config.clients, "test": client})
+    with pytest.raises(ConfigError, match="unknown 'sentinelone' account"):
+        config.sites_for("test", "sentinelone")
+
+
+def test_global_scope_with_no_accounts_configured_resolves_to_empty_dict():
+    """A fresh install with nothing in .env yet — same fixture-mode
+    graceful degradation as before this feature existed."""
+    vendor = VendorConfig(name="sentinelone", scope="global", accounts={})
+    client = _client(("sentinelone",))
+    config = AppConfig(
+        stale_days=14,
+        vendors={"sentinelone": vendor},
+        clients={"test": client},
+        storage=load_config().storage,
+    )
+    assert config.sites_for("test", "sentinelone") == ({},)
 
 
 def test_per_client_scope_returns_that_clients_block(config_with_creds):
@@ -75,7 +121,10 @@ def test_client_without_vendor_enabled_is_rejected(config_with_creds):
 
 
 def test_unset_env_vars_resolve_to_none_enabling_fixture_mode(monkeypatch):
-    for var in ("SENTINELONE_API_URL", "SENTINELONE_API_TOKEN"):
+    for var in (
+        "SENTINELONE_MSSP_API_URL", "SENTINELONE_MSSP_API_TOKEN",
+        "SENTINELONE_DFIR_API_URL", "SENTINELONE_DFIR_API_TOKEN",
+    ):
         monkeypatch.delenv(var, raising=False)
     config = load_config()
     connector = get_connectors(config, "acme", "sentinelone")[0]

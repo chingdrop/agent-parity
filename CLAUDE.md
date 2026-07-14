@@ -426,9 +426,10 @@ What each dict holds depends on the vendor's `scope`:
   office on its own tenant). `sites_for` returns these as-is; there's nothing to
   merge them with, and the connector itself needed zero code changes to support
   this — it was always just "build one connector per site_for() entry."
-- **`global` (SentinelOne, BitDefender)**: one shared credential set covers the
-  whole account, but a client's endpoints can be scoped to a slice of it via an
-  optional filter key merged onto the shared credentials in `sites_for`.
+- **`global` (SentinelOne, BitDefender)**: one shared credential set (per named
+  account — see "Multiple named accounts" below) covers the whole account, but
+  a client's endpoints can be scoped to a slice of it via an optional filter
+  key merged onto the resolved account's credentials in `sites_for`.
   SentinelOne's is `site_ids` (a real, documented "Sites" concept — a
   comma-separated list matched against each item's own `siteId`, sent as the
   `GET /web/api/v2.1/agents` `siteIds` query param live, or filtered locally in
@@ -451,6 +452,28 @@ data, so it shouldn't silently share the unlabeled tenant's fixture. The demo's
 `acme` client is the multi-tenant one: two real Carbon Black tenants (primary,
 unlabeled, plus a `label: branch` one reading `ACME_CB2_*` env vars and
 `sample_data/acme/carbonblack_inventory_branch.json`).
+
+## Multiple named accounts per global vendor (`VendorConfig.accounts`)
+
+A global vendor doesn't mean *one* credential set, either: `VendorConfig.accounts`
+is `dict[str, dict]` — account name -> credentials — always named, even a lone
+one (BitDefender's `"default"` today), same "no special-cased single case"
+principle as `ad_target_devices`/`ClientConfig.vendors`. This is real, not
+hypothetical: there were two genuinely separate SentinelOne consoles in
+practice (`"mssp"` for ordinary managed-services clients, `"dfir"` for clients
+under active incident response) — a distinct engagement, a distinct console,
+not just a Site within one account (that's the previous section — orthogonal,
+and composable: a site dict can carry both `"account"` and a site filter like
+`site_ids` at once).
+
+`AppConfig._resolve_account(client_slug, vendor, site)` is where a site's
+`site.get("account")` gets resolved: explicit account name wins; omitted and
+the vendor has exactly one account, use it (today's implicit default,
+unchanged for every existing single-account setup); omitted and there's more
+than one, `ConfigError` — ambiguous is a config error, not a silent pick;
+unknown account name, `ConfigError` too. Don't special-case "just default to
+the first one alphabetically" here — that's exactly the kind of silent-pick
+bug `pick_ad_export_vendor` already exists to avoid elsewhere in this file.
 
 ## Testing conventions
 

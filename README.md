@@ -216,8 +216,9 @@ credential model:
   `AppConfig.sites_for` already returned each entry as-is, and
   `get_connectors` already built one connector per entry.
 - **SentinelOne / BitDefender** (`scope: global`) — one shared credential
-  set covers the whole account, but a client's endpoints can be scoped to a
-  slice of it via an optional filter key merged onto the shared credentials.
+  set per named account (see "Multiple named accounts" below) covers the
+  whole account, but a client's endpoints can be scoped to a slice of it via
+  an optional filter key merged onto the resolved account's credentials.
   SentinelOne's is `site_ids` (a real, documented "Sites" concept —
   comma-separated site IDs matched against each item's own `siteId`, sent as
   the live `siteIds` query param or filtered locally in fixture mode).
@@ -238,6 +239,37 @@ independent data, so it doesn't silently share the unlabeled tenant's
 fixture. The demo's `acme` client is the multi-tenant one: its primary
 Carbon Black org (unlabeled) plus a second `label: branch` tenant reading
 `ACME_CB2_*` env vars and `sample_data/acme/carbonblack_inventory_branch.json`.
+
+### Multiple named accounts per global vendor
+
+"Global scope" doesn't mean *one* credential set for a vendor, either — it
+means every client that uses the same account shares that account's secret.
+There were genuinely two separate SentinelOne consoles in practice: one for
+ordinary managed-services clients (`"mssp"`), one for clients under active
+DFIR incident response (`"dfir"`) — a distinct engagement, a distinct
+console, by design, not just a Site within one account (that's the previous
+section — orthogonal, and composable: a site dict can carry both `"account"`
+and a site filter like `site_ids` at once). `VendorConfig.accounts`
+(`agent_parity/config.py`) is a dict of named credential sets, not a single
+block — always named, even when a vendor (BitDefender, today) only has one,
+the same "no special-cased single case" principle as everywhere else in this
+config layer:
+
+```yaml
+sentinelone:
+  scope: global
+  accounts:
+    mssp: { api_url: ..., api_token: ... }
+    dfir: { api_url: ..., api_token: ... }
+```
+
+A client's site dict gets an `"account"` key picking which one it's in
+(`config.yaml`'s `acme`/`globex` both pick `mssp`). Omitted, it resolves to
+the vendor's sole account when there's exactly one — still today's implicit
+default for a single-account vendor — or raises a clear `ConfigError` if
+there's more than one and no client made a choice
+(`AppConfig._resolve_account`); ambiguous is a config error, not a silent
+pick.
 
 ### AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
@@ -402,19 +434,21 @@ percentages fall out of `groupby`/`value_counts` (`summarize()`).
 ### Credentials: config.yaml + .env
 
 Vendors have genuinely different credential shapes: SentinelOne is one API
-token shared by every client; Carbon Black needs a distinct API ID / secret /
-org key **per client**. `config.yaml` (committed) declares topology — which
-vendors exist, their scope, each client's enabled vendors/domains — with
-every secret value written as a `${VAR}` reference; `.env` (gitignored; see
-`.env.example`) holds the actual values:
+token per named account (see "Multiple named accounts" below); Carbon Black
+needs a distinct API ID / secret / org key **per client**. `config.yaml`
+(committed) declares topology — which vendors exist, their scope, each
+client's enabled vendors/domains — with every secret value written as a
+`${VAR}` reference; `.env` (gitignored; see `.env.example`) holds the actual
+values:
 
 ```yaml
 vendors:
   sentinelone:
     scope: global
-    credentials:
-      api_url: ${SENTINELONE_API_URL}
-      api_token: ${SENTINELONE_API_TOKEN}
+    accounts:
+      mssp:
+        api_url: ${SENTINELONE_MSSP_API_URL}
+        api_token: ${SENTINELONE_MSSP_API_TOKEN}
   carbonblack:
     scope: per_client
 
@@ -423,7 +457,8 @@ clients:
     slug: acme
     ad_target_devices: [ACME-DC01]
     vendors:
-      sentinelone: [{}]
+      sentinelone:
+        - account: mssp
       carbonblack:
         - api_url: ${ACME_CB_API_URL}
           api_id: ${ACME_CB_API_ID}
@@ -437,8 +472,9 @@ clients:
 ```
 
 Each vendor's value is a *list* of site/tenant entries, not a single block —
-see "Multi-site/tenant" below for what a client with more than one looks like
-(Acme's two Carbon Black tenants above).
+see "Multi-site/tenant" above for what a client with more than one looks like
+(Acme's two Carbon Black tenants above), and "Multiple named accounts" above
+for what a global vendor's `account:` key picks between.
 
 Any vendor registered in `agent_parity.connectors.CONNECTOR_CLASSES` works
 here — adding support for a vendor beyond SentinelOne/Carbon Black/BitDefender

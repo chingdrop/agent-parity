@@ -41,11 +41,14 @@ SAMPLE_DATA_DIR = REPO_ROOT / "sample_data"
 class VendorConfig:
     name: str
     scope: str  # "global" or "per_client"
-    # Only meaningful for global scope — the one shared credential set every
-    # client resolving to this vendor uses. per_client vendors declare no
-    # credentials here at all; real credentials live on each client's own
-    # vendor entry instead.
-    credentials: dict = field(default_factory=dict)
+    # Only meaningful for global scope: account name -> credential dict.
+    # Always named, even when there's only one (e.g. "default") — there were
+    # genuinely two separate SentinelOne consoles in practice (one for MSSP
+    # clients, one for DFIR clients under active incident response), and a
+    # client's site entry picks which one it's in via an "account" key (see
+    # AppConfig.sites_for). per_client vendors declare no accounts at all;
+    # real credentials live on each client's own vendor entry instead.
+    accounts: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -91,13 +94,16 @@ class AppConfig:
         """One merged credential dict per site/tenant for a (client, vendor)
         pair — almost always a one-element tuple, more for a client with
         multiple sites (global scope) or tenants (per_client scope).
-        ``global`` scope merges each of the client's site filters (if any)
-        on top of the shared vendor-level credentials — every site shares
-        the same secret, just scoped to a different slice of the account
-        (e.g. SentinelOne's Sites). ``per_client`` scope returns each of the
-        client's tenant blocks as-is: unlike global scope these are already
-        complete, independent credential sets (e.g. separate Carbon Black
-        orgs), so there's nothing to merge them with.
+        ``global`` scope resolves which of the vendor's named accounts each
+        site uses (an explicit ``"account"`` key, or the vendor's sole
+        account when it only has one — ambiguous otherwise, see
+        ``_resolve_account``) and merges that account's credentials with the
+        site's own filter (e.g. SentinelOne's ``site_ids``) on top — every
+        site under the same account shares that account's secret, just
+        scoped to a different slice of it. ``per_client`` scope returns each
+        of the client's tenant blocks as-is: unlike global scope these are
+        already complete, independent credential sets (e.g. separate Carbon
+        Black orgs), so there's nothing to merge them with.
         """
         try:
             vendor = self.vendors[vendor_name]
@@ -111,8 +117,30 @@ class AppConfig:
             )
         sites = client.vendors[vendor_name]
         if vendor.scope == "global":
-            return tuple({**vendor.credentials, **site} for site in sites)
+            return tuple(
+                {**self._resolve_account(client_slug, vendor, site), **site} for site in sites
+            )
         return tuple(dict(site) for site in sites)
+
+    def _resolve_account(self, client_slug: str, vendor: VendorConfig, site: dict) -> dict:
+        """The credential dict for one global-scope site's chosen account."""
+        if not vendor.accounts:
+            return {}  # nothing configured yet -> fixture mode, same as today
+        account_name = site.get("account")
+        if account_name is None:
+            if len(vendor.accounts) == 1:
+                return next(iter(vendor.accounts.values()))
+            raise ConfigError(
+                f"Client {client_slug!r} must specify which {vendor.name!r} account "
+                f"to use (multiple configured: {sorted(vendor.accounts)})"
+            )
+        try:
+            return vendor.accounts[account_name]
+        except KeyError:
+            raise ConfigError(
+                f"Client {client_slug!r} references unknown {vendor.name!r} "
+                f"account {account_name!r}; configured: {sorted(vendor.accounts)}"
+            ) from None
 
 
 def load_config(path: str | Path | None = None) -> AppConfig:
@@ -127,9 +155,15 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         scope = block.get("scope", "global")
         if scope not in ("global", "per_client"):
             raise ConfigError(f"Vendor {name!r} has invalid scope {scope!r}")
-        vendors[name] = VendorConfig(
-            name=name, scope=scope, credentials=dict(block.get("credentials") or {})
-        )
+        # Only meaningful for global scope — named accounts (always named,
+        # even a lone "default" one; see VendorConfig.accounts). per_client
+        # vendors declare no accounts at all; real credentials live on each
+        # client's own site entries instead.
+        accounts = {
+            account_name: dict(account_block or {})
+            for account_name, account_block in (block.get("accounts") or {}).items()
+        }
+        vendors[name] = VendorConfig(name=name, scope=scope, accounts=accounts)
 
     clients = {}
     for entry in raw.get("clients") or []:
