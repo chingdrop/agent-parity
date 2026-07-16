@@ -19,7 +19,7 @@ import requests
 from moto import mock_aws
 from shared_tools.storage import ObjectStorage
 
-from agent_parity.deployment.script_runner import AD_EXPORT_SCRIPT, ScriptExecutionError, run_ad_export
+from agent_parity.script_runner import AD_EXPORT_SCRIPT, ScriptExecutionError, run_ad_export
 
 SAMPLE_CSV = "Name,Enabled\nACME-WS-001,True\n"
 

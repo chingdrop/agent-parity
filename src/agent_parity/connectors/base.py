@@ -46,7 +46,7 @@ from agent_parity.models import AgentDevice, infer_machine_type, infer_platform
 # infer_platform/infer_machine_type are re-exported here (not just imported
 # for internal use) for existing call sites (carbonblack.py, bitdefender.py,
 # seed_demo.py, tests) — the definitions live in agent_parity.models since
-# correlation/engine.py needs them too, for AD-only rows, without pulling in
+# correlation.py needs them too, for AD-only rows, without pulling in
 # this module's requests/RestAdapter dependency chain just for two pure
 # string-processing functions.
 __all__ = [

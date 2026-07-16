@@ -23,13 +23,13 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agent_parity import splunk_export
 from agent_parity.config import AppConfig, ClientConfig, SplunkConfig
-from agent_parity.correlation.engine import CorrelationResult, agents_to_frame, correlate
+from agent_parity.correlation import CorrelationResult, agents_to_frame, correlate
 from agent_parity.db import Client, CorrelationRun, CoverageSnapshot, Device, RunStatus
 from agent_parity.models import AgentDevice
 from agent_parity.pipeline import collect_ad_frame, collect_vendor_inventory
-from agent_parity.reporting import splunk_export
-from agent_parity.reporting.splunk_export import SplunkExportError
+from agent_parity.splunk_export import SplunkExportError
 
 logger = logging.getLogger(__name__)
 
@@ -157,7 +157,7 @@ def export_deltas_to_splunk(session: Session, run: CorrelationRun, splunk: Splun
     """Diff this run against the client's previous run and forward transitions.
 
     Splunk is a pure sink for state transitions, not a snapshot dump — see
-    ``agent_parity.reporting.splunk_export``'s module docstring for why.
+    ``agent_parity.splunk_export``'s module docstring for why.
     """
     if not splunk.enabled:
         return 0

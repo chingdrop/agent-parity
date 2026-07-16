@@ -29,7 +29,7 @@ from shared_tools.storage import ObjectStorage
 
 from agent_parity.connectors.base import AgentConnector
 
-AD_EXPORT_SCRIPT = Path(__file__).resolve().parent.parent / "ad_sync" / "Export-ADDevices.ps1"
+AD_EXPORT_SCRIPT = Path(__file__).resolve().parent / "scripts" / "Export-ADDevices.ps1"
 
 __all__ = ["AD_EXPORT_SCRIPT", "ScriptExecutionError", "run_ad_export"]
 

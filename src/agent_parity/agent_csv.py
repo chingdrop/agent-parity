@@ -1,7 +1,7 @@
 """Parse a generic, vendor-agnostic agent/EDR inventory CSV.
 
 Every real EDR vendor exports differently (SentinelOne's console export vs.
-CrowdStrike's vs. Microsoft Defender's), so unlike ``ad_sync/parser.py``
+CrowdStrike's vs. Microsoft Defender's), so unlike ``ad_export.py``
 (which parses exactly one script's known output), this expects the caller to
 have already mapped their tool's export into agent-parity's own column
 schema — a one-time exercise per tool, not something this module guesses at.
@@ -16,12 +16,12 @@ import io
 
 import pandas as pd
 
-from agent_parity.correlation.engine import AGENT_COLUMNS, add_join_key
+from agent_parity.correlation import AGENT_COLUMNS, add_join_key
 
 #: Every column ``parse_agent_csv`` understands. Only "hostname" is required;
 #: the rest default to blank/None/NaT when the column is absent entirely —
 #: the same "optional column, defaults for the whole frame" pattern
-#: ad_sync/parser.py already uses for the AD side.
+#: ad_export.py already uses for the AD side.
 AGENT_CSV_COLUMNS = [c for c in AGENT_COLUMNS if c != "join_key"]
 
 

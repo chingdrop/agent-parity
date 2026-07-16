@@ -59,20 +59,21 @@ Four layers, collect → correlate → report:
 
 - **`src/agent_parity/connectors/`** — one class per vendor (SentinelOne, Carbon Black,
   BitDefender), each implementing `fetch_inventory()`/`deploy_and_run()`.
-- **`src/agent_parity/ad_sync/`** + **`src/agent_parity/deployment/`** — parsing the AD export
-  script's CSV output and running it remotely through a vendor's own scripting capability.
+- **`src/agent_parity/ad_export.py`** + **`src/agent_parity/script_runner.py`** — parsing the
+  AD export script's CSV output and running it remotely through a vendor's own scripting
+  capability. `src/agent_parity/scripts/Export-ADDevices.ps1` is the script itself, bundled
+  into the installed package since `script_runner.py` pushes it to a live vendor at runtime,
+  not just a dev-time asset.
 - **`src/agent_parity/agent_csv.py`** — parsing a generic, vendor-agnostic agent/EDR
   inventory CSV, for callers with no connector/credentials at all.
-- **`src/agent_parity/correlation/engine.py`** — the pandas merge/classification core.
+- **`src/agent_parity/correlation.py`** — the pandas merge/classification core.
 - **`src/agent_parity/pipeline.py`** — two orchestration entrypoints that tie the above
   together: `run_correlation_for_client()` (config.yaml + connectors, live or fixture)
   and `correlate_from_csvs()` (two CSVs, zero config). **`src/agent_parity/cli.py`** is a
-  thin `run`/`compare` wrapper around them for standalone use. A consuming project
-  (the hub) is expected to call `pipeline.run_correlation_for_client()` directly rather
-  than shell out to
-  the CLI, since it will want the `CorrelationResult` in-process to persist itself.
+  thin `run`/`compare`/`sync` wrapper around them for standalone use; `persistence.py`/
+  `tasks.py` are the persisted callers (see "Scheduling & persistence" below).
 
-## Correlation engine (`src/agent_parity/correlation/engine.py`)
+## Correlation engine (`src/agent_parity/correlation.py`)
 
 This is the analytical core and is deliberately a `.pipe()` chain, not one function:
 `add_join_key` → `merge_with_agents` (`pd.merge(..., how="outer", indicator=True)`) →
@@ -118,13 +119,13 @@ correlation tests rather than re-testing pandas.
 `run_correlation_for_client(config, client_cfg, stale_days=None)` is the config.yaml/
 connector entrypoint: collect the AD export (across every domain the client spans —
 see "Multi-domain clients" below), collect every enabled vendor's inventory (across
-every site/tenant it has), then call `correlation.engine.correlate()`. Returns
+every site/tenant it has), then call `correlation.correlate()`. Returns
 `(CorrelationResult | None, vendor_status)` — `None` only when every AD domain failed,
 meaning there's nothing to correlate against.
 
 `correlate_from_csvs(ad_csv_text, agent_csv_text, stale_days=14)` is the zero-config
 counterpart — no `AppConfig`, no connector, no credentials, just
-`ad_sync.parser.parse_ad_export()` + `agent_csv.parse_agent_csv()` feeding straight into
+`ad_export.parse_ad_export()` + `agent_csv.parse_agent_csv()` feeding straight into
 `correlate()`. This is the on-ramp for anyone without a supported vendor connector set
 up at all; `run_correlation_for_client` is the next step once collection needs to be
 repeatable/scheduled against a live API instead of a one-off export file.
@@ -199,7 +200,7 @@ task semantics either way. `docker/smoke_check_celery.py` (via `docker/smoke_tes
 Docker-only) is the one thing eager-mode tests structurally can't prove: a real chord
 round-tripping through a real Redis broker and real `worker`/`beat` containers.
 
-## Splunk delta export (`src/agent_parity/reporting/splunk_export.py`, `persistence.py`)
+## Splunk delta export (`src/agent_parity/splunk_export.py`, `persistence.py`)
 
 Confirmed real via `git show 41d3dc5` (the commit that removed it once the
 now-permanently-gone Django dashboard took over visualization) — restored now that
@@ -376,7 +377,7 @@ BitDefender maps its numeric `machineType` enum to S1's string wording
 (`_MACHINE_TYPES` in `connectors/bitdefender.py`) and infers `platform` from OS
 text (`infer_platform`) since it has no equivalent field. `infer_platform`/
 `infer_machine_type` live in `models.py`, not `connectors/base.py`, specifically
-so `correlation/engine.py` can use them too (for AD-only rows — see
+so `correlation.py` can use them too (for AD-only rows — see
 `backfill_machine_type`) without pulling in the connector stack's
 `requests`/`RestAdapter` dependency chain (now `py-shared-tools`)
 just for two pure string functions.
@@ -523,7 +524,7 @@ enumerate computer objects outside its own domain, so `ad_target_devices` is a t
 not a single hostname, and the export script runs once per entry.
 `src/agent_parity/pipeline.py`'s `collect_ad_frame` is the orchestrator: it loops the tuple,
 calling `collect_ad_csv` + `parse_ad_export` per domain, and concatenates the results
-with `src/agent_parity/ad_sync/parser.py`'s `concat_ad_frames` into the one master
+with `src/agent_parity/ad_export.py`'s `concat_ad_frames` into the one master
 DataFrame `correlate()` actually sees. A single-domain client (most of them) is just
 the `len == 1` case of this same loop — there's no separate single-domain code path,
 by design.

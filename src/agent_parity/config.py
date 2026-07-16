@@ -16,7 +16,7 @@ AD-export handoff — see ``shared_tools.script_export``), resolved the same
 way: unset ``${VAR}``s mean unconfigured, and ``get_storage()`` returns
 ``None`` rather than raising. ``None`` is only a valid state for clients
 with no live vendor credentials at all (pure fixture/demo mode) —
-``deployment.script_runner.run_ad_export`` treats a live connector with no
+``script_runner.run_ad_export`` treats a live connector with no
 storage as a configuration error, not a fallback. ``StorageConfig``/
 ``get_storage`` themselves live in ``shared_tools.config`` too, so they
 aren't redefined here.
@@ -86,7 +86,7 @@ class ClientConfig:
 @dataclass(frozen=True)
 class SplunkConfig:
     """HTTP Event Collector settings for the coverage-delta export (see
-    ``agent_parity.reporting.splunk_export``). A no-op unless both
+    ``agent_parity.splunk_export``). A no-op unless both
     ``hec_url`` and ``hec_token`` are configured — same opt-in shape as
     object storage or a vendor's own credentials.
     """
@@ -283,7 +283,7 @@ def get_storage(config: AppConfig):
 
     None means "not configured." That's only a valid state for the uv demo
     path (no vendor has live credentials, so no script ever actually
-    runs); ``deployment.script_runner.run_ad_export`` raises a clear error
+    runs); ``script_runner.run_ad_export`` raises a clear error
     if a live connector reaches it with no storage configured, rather than
     falling back to the vendor's own (unreliable) output channel. Delegates
     to ``shared_tools.config.get_storage`` so the logic isn't redefined here.

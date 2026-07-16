@@ -70,7 +70,7 @@ def test_persist_correlation_is_idempotent_on_duplicate_call():
 
         # Re-correlate the same inputs and try to persist again against the
         # already-finalized run — must no-op, not double the snapshot count.
-        from agent_parity.correlation.engine import agents_to_frame, correlate
+        from agent_parity.correlation import agents_to_frame, correlate
         from agent_parity.pipeline import collect_ad_frame, collect_vendor_inventory
 
         ad_df, vendor_status = collect_ad_frame(config, "acme")

@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 import pandas as pd
 import pytest
 
-from agent_parity.correlation.engine import agents_to_frame, correlate
+from agent_parity.correlation import agents_to_frame, correlate
 from agent_parity.models import AgentDevice, CoverageStatus
 
 AS_OF: pd.Timestamp = pd.Timestamp("2026-07-03T00:00:00Z")
@@ -15,7 +15,7 @@ STALE = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)  # > 14 days old
 
 
 def ad_frame(*hostnames: str, os: str = "Windows 11", os_build: int | None = None) -> pd.DataFrame:
-    """Mirrors ad_sync.parser's real output shape (os_build included, even
+    """Mirrors ad_export's real output shape (os_build included, even
     when None) — without this column, a merge against agents_to_frame's
     output (which always has os_build) leaves it unsuffixed, which is not
     what production ever actually produces."""

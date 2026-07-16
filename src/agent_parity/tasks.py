@@ -39,7 +39,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from agent_parity.ad_sync.parser import concat_ad_frames, parse_ad_export
+from agent_parity.ad_export import concat_ad_frames, parse_ad_export
 from agent_parity.celery_app import app
 from agent_parity.config import AppConfig, ClientConfig, get_connectors, load_config
 from agent_parity.db import CorrelationRun, RunStatus, get_engine, init_db, session_factory

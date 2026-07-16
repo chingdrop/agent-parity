@@ -105,7 +105,7 @@ below) is the next step up.
               │                          │          domain-joined endpoint    │      │
               │                          └───────────────│───────────────────│───────┘
               ▼                                          ▼                    ▼
-    ad_sync/parser.py + agent_csv.py        ad_sync/parser.py          correlation/engine.py
+    ad_export.py + agent_csv.py              ad_export.py               correlation.py
       (CSV -> DataFrame, both sides)         (CSV -> DataFrame)   (outer merge + classification)
               └────────────────────────┬──────────────────────┘
                                        ▼
@@ -114,9 +114,8 @@ below) is the next step up.
                                        │
                     ┌──────────────────┴──────────────────┐
                     ▼                                     ▼
-             src/agent_parity/cli.py                  a consuming project
-          (writes output/<name>.csv)      (e.g. a hub: persists, dashboards,
-                                              schedules — its own concern)
+             src/agent_parity/cli.py              persistence.py / tasks.py
+          (writes output/<name>.csv)         (SQLite history, Celery scheduling)
 ```
 
 Everything above the `pipeline.py` line is pure, dependency-light Python:
@@ -187,7 +186,7 @@ forests, and no one domain controller can enumerate computer objects outside
 its own domain. `ClientConfig.ad_target_devices` (`src/agent_parity/config.py`) is
 a list, not a single hostname: `Export-ADDevices.ps1` runs once per entry, and
 `src/agent_parity/pipeline.py`'s `collect_ad_frame` parses and concatenates the
-resulting CSVs (`src/agent_parity/ad_sync/parser.py`'s `concat_ad_frames`) into
+resulting CSVs (`src/agent_parity/ad_export.py`'s `concat_ad_frames`) into
 one master AD DataFrame before correlation ever runs. A single-domain client
 is just the one-element case of the same list — not a special code path.
 
@@ -445,7 +444,7 @@ came from the *agent* side of the merge (see `AgentDevice`'s docstring) — a
 `missing_agent` row has no agent record at all, so it would have carried no
 criticality signal whatsoever, which is backwards for a coverage tool (a
 missing Domain Controller is exactly the row that most needs to stand out).
-`correlation/engine.py`'s `backfill_machine_type` stage closes it: AD's own
+`correlation.py`'s `backfill_machine_type` stage closes it: AD's own
 OS text gets the same `infer_machine_type()` heuristic, so *every* row —
 matched or not — gets a `machine_type`, without ever trying to infer
 anything from a hostname.
@@ -487,7 +486,7 @@ precisely instead:
 `"10.0 (22631)"` string and a full internal version string like
 `"10.0.22631.3155"`, distinguishing the true build (10000–99999) from the
 trailing UBR/revision component. `classify_eol_status()` in
-`correlation/engine.py` prefers a build number when either side of the merge
+`correlation.py` prefers a build number when either side of the merge
 has one — agent-reported first, then AD's — and only falls back to free-text
 matching when neither does. AD's own build number is captured for *every*
 device (the same backfill principle as `machine_type`), so even a
@@ -496,7 +495,7 @@ classification instead of `unknown`.
 
 ### The correlation: a pandas merge, kept honest
 
-`correlation/engine.py` reduces the whole reconciliation to one analytical
+`correlation.py` reduces the whole reconciliation to one analytical
 move, structured as a `.pipe()` chain so each stage is independently
 testable:
 

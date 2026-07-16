@@ -30,7 +30,7 @@ from shared_tools.atomic_io import ensure_dir
 from shared_tools.logging_setup import setup_logging
 from shared_tools.tabular_io import write_structured_file
 
-from agent_parity.ad_sync.parser import ADParseError
+from agent_parity.ad_export import ADParseError
 from agent_parity.agent_csv import AgentCSVParseError
 from agent_parity.config import ConfigError, load_config
 from agent_parity.db import get_engine, init_db, session_factory

@@ -55,7 +55,7 @@ def infer_platform(os_text: str | None) -> str:
     """Best-effort ``platform`` derivation from a free-text OS name, for
     sources with no equivalent to SentinelOne's ``osType`` field (Carbon
     Black/BitDefender's connectors; AD's own export has no such field
-    either, so ``correlation.engine`` uses this too, for AD-only rows).
+    either, so ``correlation`` uses this too, for AD-only rows).
 
     Wording matches SentinelOne's own lowercase convention (``"windows"``,
     ``"linux"``, ``"macos"``) so a device's platform reads the same

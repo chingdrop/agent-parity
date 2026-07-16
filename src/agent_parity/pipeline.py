@@ -4,7 +4,7 @@ The one entrypoint every caller of this package should use: given an
 ``AppConfig`` and a ``ClientConfig``, collect the AD export (across every
 domain the client spans) and every enabled vendor's inventory (across every
 site/tenant it has), then hand the result to
-``agent_parity.correlation.engine.correlate``. No persistence, no history —
+``agent_parity.correlation.correlate``. No persistence, no history —
 that's the caller's job (a CLI writing a CSV, or a hub project persisting to
 its own store).
 """
@@ -15,7 +15,7 @@ import logging
 
 import pandas as pd
 
-from agent_parity.ad_sync.parser import concat_ad_frames, parse_ad_export
+from agent_parity.ad_export import concat_ad_frames, parse_ad_export
 from agent_parity.agent_csv import parse_agent_csv
 from agent_parity.config import (
     AppConfig,
@@ -24,9 +24,9 @@ from agent_parity.config import (
     get_storage,
     pick_ad_export_vendor,
 )
-from agent_parity.correlation.engine import CorrelationResult, agents_to_frame, correlate
-from agent_parity.deployment.script_runner import run_ad_export
+from agent_parity.correlation import CorrelationResult, agents_to_frame, correlate
 from agent_parity.models import AgentDevice
+from agent_parity.script_runner import run_ad_export
 
 logger = logging.getLogger(__name__)
 

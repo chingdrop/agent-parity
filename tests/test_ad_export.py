@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from agent_parity.ad_sync.parser import ADParseError, concat_ad_frames, parse_ad_export
+from agent_parity.ad_export import ADParseError, concat_ad_frames, parse_ad_export
 
 SAMPLE_CSV = """\
 Name,DNSHostName,OperatingSystem,LastLogonTimestamp,Enabled,DistinguishedName
