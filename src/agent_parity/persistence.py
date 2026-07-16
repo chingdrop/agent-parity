@@ -86,12 +86,12 @@ def persist_correlation(
     real, disclosed difference from a `SELECT ... FOR UPDATE`-backed
     production database, not something to treat as equivalent.
     """
-    current = session.get(CorrelationRun, run.id)
+    current = session.get_one(CorrelationRun, run.id)
     if current.status != RunStatus.PENDING.value:
         logger.warning("Run %s already finalized (%s); skipping persist", run.id, current.status)
         return 0
 
-    client = session.get(Client, current.client_id)
+    client = session.get_one(Client, current.client_id)
     frame = result.frame
 
     existing = {d.join_key: d for d in session.scalars(select(Device).where(Device.client_id == client.id))}
@@ -129,17 +129,17 @@ def persist_correlation(
         session.add(
             CoverageSnapshot(
                 run_id=current.id,
-                device_id=devices[row.join_key].id,
+                device_id=devices[row.join_key].id,  # type: ignore[index]
                 status=row.status,
                 vendor="" if pd.isna(row.vendor) else str(row.vendor),
                 match_method=row.match_method,
                 agent_last_seen=(
-                    None if pd.isna(row.last_seen) else _naive_utc(pd.Timestamp(row.last_seen).to_pydatetime())
+                    None if pd.isna(row.last_seen) else _naive_utc(pd.Timestamp(row.last_seen).to_pydatetime())  # type: ignore[arg-type]
                 ),
                 platform="" if pd.isna(row.platform) else str(row.platform),
                 machine_type="" if pd.isna(row.machine_type) else str(row.machine_type),
                 eol_status=row.eol_status,
-                os_build=None if pd.isna(row.os_build) else int(row.os_build),
+                os_build=None if pd.isna(row.os_build) else int(row.os_build),  # type: ignore[arg-type]
             )
         )
 
@@ -181,14 +181,14 @@ def export_deltas_to_splunk(session: Session, run: CorrelationRun, splunk: Splun
 
     before = snapshot_map(previous)
     current_snapshots = session.scalars(select(CoverageSnapshot).where(CoverageSnapshot.run_id == run.id)).all()
-    client = session.get(Client, run.client_id)
+    client = session.get_one(Client, run.client_id)
 
     deltas = []
     for snap in current_snapshots:
         old = before.get((snap.device_id, snap.vendor))
         if old is not None and old.status == snap.status:
             continue
-        device = session.get(Device, snap.device_id)
+        device = session.get_one(Device, snap.device_id)
         deltas.append(
             {
                 "client": client.slug,

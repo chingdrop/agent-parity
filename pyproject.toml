@@ -28,6 +28,8 @@ dev = [
     "pandas-stubs~=3.0.3",
     "boto3-stubs~=1.43.40",
     "ruff>=0.8",
+    "mypy>=1.13",
+    "types-pyyaml",
 ]
 
 [tool.uv.sources]
@@ -51,3 +53,13 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["E501"]  # long CSV/fixture literals in triple-quoted strings
+
+[tool.mypy]
+python_version = "3.12"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "shared_tools.*"]
+ignore_missing_imports = true
