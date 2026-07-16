@@ -4,7 +4,7 @@ run_correlation_for_client/correlate_from_csvs orchestration.
 """
 
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from agent_parity.config import load_config
 from agent_parity.models import CoverageStatus
@@ -36,9 +36,7 @@ def test_collect_ad_frame_tolerates_one_domain_failing():
     """One domain's export failing (bad target device, unreachable DC, ...)
     must not stop the others — same tolerance as per-vendor collection."""
     config = load_config()
-    broken_globex = replace(
-        config.client("globex"), ad_target_devices=("GLOBEX-DC01", "NONEXISTENT-DC99")
-    )
+    broken_globex = replace(config.client("globex"), ad_target_devices=("GLOBEX-DC01", "NONEXISTENT-DC99"))
     config = replace(config, clients={**config.clients, "globex": broken_globex})
 
     ad_df, status = collect_ad_frame(config, "globex")
@@ -51,9 +49,7 @@ def test_collect_ad_frame_tolerates_one_domain_failing():
 
 def test_collect_ad_frame_returns_none_when_every_domain_fails():
     config = load_config()
-    broken_globex = replace(
-        config.client("globex"), ad_target_devices=("NONEXISTENT-DC98", "NONEXISTENT-DC99")
-    )
+    broken_globex = replace(config.client("globex"), ad_target_devices=("NONEXISTENT-DC98", "NONEXISTENT-DC99"))
     config = replace(config, clients={**config.clients, "globex": broken_globex})
 
     ad_df, status = collect_ad_frame(config, "globex")
@@ -118,9 +114,7 @@ def test_collect_vendor_inventory_tolerates_one_tenant_failing():
     config = load_config()
     acme = config.client("acme")
     primary, branch = acme.vendors["carbonblack"]
-    broken_acme = replace(
-        acme, vendors={**acme.vendors, "carbonblack": (primary, {**branch, "label": "nonexistent"})}
-    )
+    broken_acme = replace(acme, vendors={**acme.vendors, "carbonblack": (primary, {**branch, "label": "nonexistent"})})
     config = replace(config, clients={**config.clients, "acme": broken_acme})
 
     records, status = collect_vendor_inventory(config, "acme", "carbonblack")
@@ -156,7 +150,7 @@ def test_run_correlation_for_client_returns_none_when_every_ad_domain_fails():
 
 # --- correlate_from_csvs: zero-config, no connectors, no sample_data --------------
 
-_NOW = datetime.now(timezone.utc).isoformat()
+_NOW = datetime.now(UTC).isoformat()
 
 _AD_CSV = f"""\
 Name,DNSHostName,OperatingSystem,LastLogonTimestamp,Enabled,DistinguishedName

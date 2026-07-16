@@ -95,9 +95,7 @@ class SentinelOneConnector(SentinelOneRSOMixin, AgentConnector):
                 params["cursor"] = cursor
             if self.credentials.get("site_ids"):
                 params["siteIds"] = self.credentials["site_ids"]
-            payload = self._request_json(
-                "GET", f"{base}/web/api/v2.1/agents", headers=self._headers, params=params
-            )
+            payload = self._request_json("GET", f"{base}/web/api/v2.1/agents", headers=self._headers, params=params)
             devices.extend(self._parse_inventory(payload))
             cursor = (payload.get("pagination") or {}).get("nextCursor")
             if not cursor:

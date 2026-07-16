@@ -9,11 +9,11 @@ invocation) at the same tmp_path file.
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from agent_parity import tasks
 from agent_parity.config import load_config
 from agent_parity.connectors import CarbonBlackConnector
 from agent_parity.connectors.base import ConnectorError
 from agent_parity.db import CorrelationRun, get_engine, init_db, session_factory
-from agent_parity import tasks
 
 
 def _raise_connector_error(self):
@@ -31,9 +31,7 @@ def _get_run(db_url, run_id):
     both after this function's own session has closed."""
     with _sessionmaker(db_url)() as session:
         return session.scalar(
-            select(CorrelationRun)
-            .options(selectinload(CorrelationRun.snapshots))
-            .where(CorrelationRun.id == run_id)
+            select(CorrelationRun).options(selectinload(CorrelationRun.snapshots)).where(CorrelationRun.id == run_id)
         )
 
 
@@ -69,7 +67,10 @@ def test_chord_completes_cleanly_when_all_vendors_succeed(celery_eager, sqlite_d
     run = _get_run(sqlite_db, run_id)
     assert run.status == "complete"
     assert set(run.vendor_status) == {
-        "ad:GLOBEX-DC01", "ad:GLOBEX-BR-DC01", "sentinelone", "bitdefender",
+        "ad:GLOBEX-DC01",
+        "ad:GLOBEX-BR-DC01",
+        "sentinelone",
+        "bitdefender",
     }
     assert len(run.snapshots) > 0
 

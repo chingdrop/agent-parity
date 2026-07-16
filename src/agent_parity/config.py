@@ -137,14 +137,10 @@ class AppConfig:
 
         client = self.client(client_slug)
         if vendor_name not in client.vendors:
-            raise ConfigError(
-                f"Client {client_slug!r} does not enable vendor {vendor_name!r}"
-            )
+            raise ConfigError(f"Client {client_slug!r} does not enable vendor {vendor_name!r}")
         sites = client.vendors[vendor_name]
         if vendor.scope == "global":
-            return tuple(
-                {**self._resolve_account(client_slug, vendor, site), **site} for site in sites
-            )
+            return tuple({**self._resolve_account(client_slug, vendor, site), **site} for site in sites)
         return tuple(dict(site) for site in sites)
 
     def _resolve_account(self, client_slug: str, vendor: VendorConfig, site: dict) -> dict:
@@ -197,8 +193,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         # multiple sites (global scope) or tenants (per_client scope). An
         # empty/missing list still means "enabled, one default site."
         client_vendors = {
-            v: tuple((site or {}) for site in (sites or [{}]))
-            for v, sites in (entry.get("vendors") or {}).items()
+            v: tuple((site or {}) for site in (sites or [{}])) for v, sites in (entry.get("vendors") or {}).items()
         }
         client = ClientConfig(
             name=entry["name"],
@@ -209,9 +204,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         )
         for vendor_name in client.vendors:
             if vendor_name not in vendors:
-                raise ConfigError(
-                    f"Client {client.slug!r} references undeclared vendor {vendor_name!r}"
-                )
+                raise ConfigError(f"Client {client.slug!r} references undeclared vendor {vendor_name!r}")
         clients[client.slug] = client
 
     splunk_raw = raw.get("splunk") or {}
@@ -248,9 +241,7 @@ def pick_ad_export_vendor(client_cfg: ClientConfig) -> str:
     from agent_parity.connectors import CONNECTOR_CLASSES
 
     capable = [
-        vendor_name
-        for vendor_name in client_cfg.vendors
-        if CONNECTOR_CLASSES[vendor_name].supports_remote_execution
+        vendor_name for vendor_name in client_cfg.vendors if CONNECTOR_CLASSES[vendor_name].supports_remote_execution
     ]
     if not capable:
         raise ConfigError(

@@ -81,7 +81,10 @@ def test_concat_ad_frames_combines_rows_from_every_domain():
     frame = concat_ad_frames([parse_ad_export(SAMPLE_CSV), parse_ad_export(SECOND_DOMAIN_CSV)])
     assert len(frame) == 4
     assert set(frame["join_key"]) == {
-        "acme-ws-001", "acme-ws-002", "acme-dc01", "globex-br-ws01",
+        "acme-ws-001",
+        "acme-ws-002",
+        "acme-dc01",
+        "globex-br-ws01",
     }
 
 

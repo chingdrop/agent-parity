@@ -35,7 +35,7 @@ import io
 import json
 from abc import abstractmethod
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
@@ -64,13 +64,13 @@ def parse_timestamp(value) -> datetime | None:
     if not value:
         return None
     if isinstance(value, datetime):
-        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
     text = str(value).strip().replace("Z", "+00:00")
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
         return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
 def rebase_timestamps(devices: list[AgentDevice]) -> list[AgentDevice]:
@@ -85,11 +85,8 @@ def rebase_timestamps(devices: list[AgentDevice]) -> list[AgentDevice]:
     seen: list[datetime] = [d.last_seen for d in devices if d.last_seen is not None]
     if not seen:
         return devices
-    shift = datetime.now(timezone.utc) - max(seen)
-    return [
-        replace(d, last_seen=d.last_seen + shift) if d.last_seen else d
-        for d in devices
-    ]
+    shift = datetime.now(UTC) - max(seen)
+    return [replace(d, last_seen=d.last_seen + shift) if d.last_seen else d for d in devices]
 
 
 def rebase_csv_timestamps(csv_text: str, column: str = "LastLogonTimestamp") -> str:
@@ -103,7 +100,7 @@ def rebase_csv_timestamps(csv_text: str, column: str = "LastLogonTimestamp") -> 
     stamps: list[datetime] = [ts for ts in parsed.values() if ts is not None]
     if not stamps:
         return csv_text
-    shift = datetime.now(timezone.utc) - max(stamps)
+    shift = datetime.now(UTC) - max(stamps)
     for i, row in enumerate(rows):
         ts = parsed[i]
         if ts is not None:
@@ -180,9 +177,7 @@ class AgentConnector(VendorConnector):
 
     # -- remote script execution: this project's fixture behavior -----------
 
-    def _fixture_deploy_and_run(
-            self, script_path: Path, target_id: str, script_args: dict[str, str]
-    ) -> str:
+    def _fixture_deploy_and_run(self, script_path: Path, target_id: str, script_args: dict[str, str]) -> str:
         """The canned AD export for this specific domain controller stands in
         for the script output — one file per target_id, since a client with
         multiple AD domains has a distinct export per domain (see
@@ -199,5 +194,4 @@ class AgentConnector(VendorConnector):
         """Normalize a raw inventory payload (live or fixture) to AgentDevice."""
 
     @abstractmethod
-    def _live_fetch_inventory(self) -> list[AgentDevice]:
-        ...
+    def _live_fetch_inventory(self) -> list[AgentDevice]: ...

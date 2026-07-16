@@ -27,6 +27,7 @@ dev = [
     "moto[s3]>=5.0",
     "pandas-stubs~=3.0.3",
     "boto3-stubs~=1.43.40",
+    "ruff>=0.8",
 ]
 
 [tool.uv.sources]
@@ -40,3 +41,13 @@ packages = ["src/agent_parity"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E501"]  # long CSV/fixture literals in triple-quoted strings

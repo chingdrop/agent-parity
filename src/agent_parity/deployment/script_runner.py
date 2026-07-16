@@ -35,11 +35,11 @@ __all__ = ["AD_EXPORT_SCRIPT", "ScriptExecutionError", "run_ad_export"]
 
 
 def run_ad_export(
-        connector: AgentConnector,
-        target_id: str,
-        script_path: str | Path = AD_EXPORT_SCRIPT,
-        storage: ObjectStorage | None = None,
-        object_key: str | None = None,
+    connector: AgentConnector,
+    target_id: str,
+    script_path: str | Path = AD_EXPORT_SCRIPT,
+    storage: ObjectStorage | None = None,
+    object_key: str | None = None,
 ) -> str:
     """Run the AD export script on ``target_id`` and return its raw CSV text.
 

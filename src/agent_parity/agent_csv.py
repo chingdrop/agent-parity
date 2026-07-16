@@ -47,9 +47,7 @@ def parse_agent_csv(raw_csv: str) -> pd.DataFrame:
         raise AgentCSVParseError(f"agent CSV is not parseable: {exc}") from exc
 
     if "hostname" not in frame.columns:
-        raise AgentCSVParseError(
-            f"agent CSV is missing the required 'hostname' column (got: {list(frame.columns)})"
-        )
+        raise AgentCSVParseError(f"agent CSV is missing the required 'hostname' column (got: {list(frame.columns)})")
 
     def optional(col: str) -> pd.Series:
         return frame[col] if col in frame.columns else pd.Series([""] * len(frame))
@@ -59,9 +57,7 @@ def parse_agent_csv(raw_csv: str) -> pd.DataFrame:
             "hostname": frame["hostname"].str.strip(),
             "os": optional("os"),
             "os_build": (
-                frame["os_build"].map(lambda v: int(v) if v else None)
-                if "os_build" in frame.columns
-                else None
+                frame["os_build"].map(lambda v: int(v) if v else None) if "os_build" in frame.columns else None
             ),
             "vendor": optional("vendor"),
             "agent_id": optional("agent_id"),

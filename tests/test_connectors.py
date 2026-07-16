@@ -4,9 +4,10 @@ using a monkeypatched ``requests.Session.request`` rather than real network
 access.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
+from shared_tools.rest_adapter import RestAdapter
 
 from agent_parity.config import SAMPLE_DATA_DIR
 from agent_parity.connectors import (
@@ -16,7 +17,6 @@ from agent_parity.connectors import (
     SentinelOneConnector,
 )
 from agent_parity.connectors.base import infer_machine_type, infer_platform
-from shared_tools.rest_adapter import RestAdapter
 
 ACME = SAMPLE_DATA_DIR / "acme"
 GLOBEX = SAMPLE_DATA_DIR / "globex"
@@ -139,7 +139,7 @@ def test_fixture_timestamps_are_rebased_to_now(connector_cls):
     keeping the authored stale/recent split stable over time."""
     devices = connector_cls(credentials={}, fixture_dir=ACME).fetch_inventory()
     newest = max(d.last_seen for d in devices if d.last_seen)
-    assert abs((datetime.now(timezone.utc) - newest).total_seconds()) < 300
+    assert abs((datetime.now(UTC) - newest).total_seconds()) < 300
 
 
 def test_deploy_and_run_fixture_returns_ad_csv():
@@ -225,9 +225,7 @@ def test_live_fetch_inventory_round_trips_json_through_rest_adapter(monkeypatch)
     """Proves the connector -> _request_json -> RestAdapter -> parsed-dict path
     end to end, not just that fixture mode (which never touches RestAdapter)
     still works."""
-    connector = SentinelOneConnector(
-        credentials={"api_url": "https://usea1.example", "api_token": "tok"}
-    )
+    connector = SentinelOneConnector(credentials={"api_url": "https://usea1.example", "api_token": "tok"})
     payload = {
         "data": [
             {
@@ -240,9 +238,7 @@ def test_live_fetch_inventory_round_trips_json_through_rest_adapter(monkeypatch)
         ],
         "pagination": {"nextCursor": None},
     }
-    monkeypatch.setattr(
-        connector.session.session, "request", lambda **kwargs: _FakeResponse(json_data=payload)
-    )
+    monkeypatch.setattr(connector.session.session, "request", lambda **kwargs: _FakeResponse(json_data=payload))
 
     devices = connector.fetch_inventory()
 
@@ -284,23 +280,15 @@ def test_sentinelone_no_site_filter_returns_every_item():
 
 
 def test_sentinelone_site_filter_narrows_to_matching_sites():
-    connector = SentinelOneConnector(
-        credentials={"api_url": "x", "api_token": "y", "site_ids": "site-a"}
-    )
-    payload = {
-        "data": [_s1_item("1", "site-a"), _s1_item("2", "site-b"), _s1_item("3", "site-a")]
-    }
+    connector = SentinelOneConnector(credentials={"api_url": "x", "api_token": "y", "site_ids": "site-a"})
+    payload = {"data": [_s1_item("1", "site-a"), _s1_item("2", "site-b"), _s1_item("3", "site-a")]}
     devices = connector._parse_inventory(payload)
     assert {d.agent_id for d in devices} == {"1", "3"}
 
 
 def test_sentinelone_site_filter_accepts_a_comma_separated_list():
-    connector = SentinelOneConnector(
-        credentials={"api_url": "x", "api_token": "y", "site_ids": "site-a,site-c"}
-    )
-    payload = {
-        "data": [_s1_item("1", "site-a"), _s1_item("2", "site-b"), _s1_item("3", "site-c")]
-    }
+    connector = SentinelOneConnector(credentials={"api_url": "x", "api_token": "y", "site_ids": "site-a,site-c"})
+    payload = {"data": [_s1_item("1", "site-a"), _s1_item("2", "site-b"), _s1_item("3", "site-c")]}
     devices = connector._parse_inventory(payload)
     assert {d.agent_id for d in devices} == {"1", "3"}
 
@@ -332,9 +320,7 @@ def test_bitdefender_no_company_filter_returns_every_item():
 
 
 def test_bitdefender_company_filter_narrows_to_matching_company():
-    connector = BitDefenderConnector(
-        credentials={"api_url": "x", "api_key": "y", "company_id": "co-a"}
-    )
+    connector = BitDefenderConnector(credentials={"api_url": "x", "api_key": "y", "company_id": "co-a"})
     payload = {"result": {"items": [_bd_item("1", "co-a"), _bd_item("2", "co-b")]}}
     devices = connector._parse_inventory(payload)
     assert {d.agent_id for d in devices} == {"1"}

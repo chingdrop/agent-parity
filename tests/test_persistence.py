@@ -6,9 +6,7 @@ that's tests/test_tasks.py's job); same known scenarios
 tests/test_pipeline_sync.py already pins for the pure (unpersisted) path.
 """
 
-from datetime import datetime, timedelta, timezone
-
-import pytest
+from datetime import UTC, datetime, timedelta
 
 from agent_parity.config import SplunkConfig, load_config
 from agent_parity.db import CorrelationRun, CoverageSnapshot, RunStatus, get_engine, init_db, session_factory
@@ -55,7 +53,11 @@ def test_run_and_persist_for_client_persists_acmes_fixture_run():
         snapshots = session.query(CoverageSnapshot).filter_by(run_id=run.id).all()
         assert len(snapshots) == 51  # matches run --client acme's row count
         assert set(run.vendor_status) == {
-            "ad:ACME-DC01", "sentinelone", "carbonblack:0", "carbonblack:branch", "bitdefender",
+            "ad:ACME-DC01",
+            "sentinelone",
+            "carbonblack:0",
+            "carbonblack:branch",
+            "bitdefender",
         }
 
 
@@ -105,7 +107,6 @@ def _make_run(session, client, started_at, snapshots):
     """A CorrelationRun with a fixed set of (device, vendor, status) snapshots,
     built directly rather than through the full pipeline — export_deltas_to_splunk
     only cares about run history shape, not how it got there."""
-    from agent_parity.db import Client, Device
 
     run = CorrelationRun(
         client_id=client.id,
@@ -136,7 +137,7 @@ def test_export_deltas_emits_every_snapshot_as_new_when_no_previous_run(monkeypa
         session.add(device)
         session.flush()
 
-        run = _make_run(session, client, datetime.now(timezone.utc), [(device, "sentinelone", "covered")])
+        run = _make_run(session, client, datetime.now(UTC), [(device, "sentinelone", "covered")])
         session.commit()
 
         count = export_deltas_to_splunk(session, run, _splunk_config())
@@ -165,13 +166,17 @@ def test_export_deltas_only_emits_changed_statuses(monkeypatch):
         session.add_all([unchanged, changed])
         session.flush()
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _make_run(
-            session, client, now - timedelta(hours=1),
+            session,
+            client,
+            now - timedelta(hours=1),
             [(unchanged, "sentinelone", "covered"), (changed, "carbonblack", "missing_agent")],
         )
         second = _make_run(
-            session, client, now,
+            session,
+            client,
+            now,
             [(unchanged, "sentinelone", "covered"), (changed, "carbonblack", "orphaned_agent")],
         )
         session.commit()
@@ -200,7 +205,7 @@ def test_export_deltas_returns_zero_when_nothing_changed(monkeypatch):
         session.add(device)
         session.flush()
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         _make_run(session, client, now - timedelta(hours=1), [(device, "sentinelone", "covered")])
         second = _make_run(session, client, now, [(device, "sentinelone", "covered")])
         session.commit()
@@ -222,7 +227,7 @@ def test_export_deltas_is_a_noop_when_splunk_is_not_configured():
         session.add(device)
         session.flush()
 
-        run = _make_run(session, client, datetime.now(timezone.utc), [(device, "sentinelone", "covered")])
+        run = _make_run(session, client, datetime.now(UTC), [(device, "sentinelone", "covered")])
         session.commit()
 
         count = export_deltas_to_splunk(session, run, SplunkConfig())  # unconfigured

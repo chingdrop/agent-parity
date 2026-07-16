@@ -4,7 +4,7 @@ directly by any other test file, only indirectly through connectors/
 correlation.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -51,7 +51,7 @@ def test_agent_device_to_dict_and_from_dict_round_trip():
         agent_id="4197801",
         hostname="ACME-DC02",
         os="Windows Server 2022 Datacenter",
-        last_seen=datetime(2026, 7, 2, 21, 13, tzinfo=timezone.utc),
+        last_seen=datetime(2026, 7, 2, 21, 13, tzinfo=UTC),
         agent_version="4.0.1.128",
         platform="windows",
         machine_type="server",
@@ -73,9 +73,7 @@ def test_agent_device_round_trip_with_no_last_seen():
 def test_agent_device_round_trip_with_os_build():
     """SentinelOne is the one vendor that sets this — Carbon Black/
     BitDefender devices round-trip with it staying None (previous test)."""
-    original = AgentDevice(
-        vendor="sentinelone", agent_id="1", hostname="ACME-WS-001", os_build=22631
-    )
+    original = AgentDevice(vendor="sentinelone", agent_id="1", hostname="ACME-WS-001", os_build=22631)
     restored = AgentDevice.from_dict(original.to_dict())
     assert restored == original
     assert restored.os_build == 22631
@@ -87,7 +85,7 @@ def test_agent_device_to_dict_is_json_safe():
         agent_id="1",
         hostname="ACME-DC01",
         os_build=22631,
-        last_seen=datetime(2026, 7, 2, tzinfo=timezone.utc),
+        last_seen=datetime(2026, 7, 2, tzinfo=UTC),
     )
     data = device.to_dict()
     # Every value must be a JSON primitive — no datetime objects leaking

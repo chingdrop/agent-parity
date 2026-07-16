@@ -97,7 +97,7 @@ def site_status_key(vendor_name: str, site: dict, index: int, total: int) -> str
 
 
 def collect_vendor_inventory(
-        config: AppConfig, client_slug: str, vendor_name: str
+    config: AppConfig, client_slug: str, vendor_name: str
 ) -> tuple[list[AgentDevice], dict[str, str]]:
     """Fetch and concatenate this vendor's inventory across every
     site/tenant the client has (see ``AppConfig.sites_for``) — almost
@@ -109,7 +109,7 @@ def collect_vendor_inventory(
     connectors = get_connectors(config, client_slug, vendor_name)
     records: list[AgentDevice] = []
     status: dict[str, str] = {}
-    for index, (site, connector) in enumerate(zip(sites, connectors)):
+    for index, (site, connector) in enumerate(zip(sites, connectors, strict=True)):
         key = site_status_key(vendor_name, site, index, len(sites))
         try:
             records.extend(connector.fetch_inventory())
@@ -121,9 +121,9 @@ def collect_vendor_inventory(
 
 
 def run_correlation_for_client(
-        config: AppConfig,
-        client_cfg: ClientConfig,
-        stale_days: int | None = None,
+    config: AppConfig,
+    client_cfg: ClientConfig,
+    stale_days: int | None = None,
 ) -> tuple[CorrelationResult | None, dict[str, str]]:
     """Collect (AD + every enabled vendor) and correlate for one client.
 
@@ -153,9 +153,9 @@ def run_correlation_for_client(
 
 
 def correlate_from_csvs(
-        ad_csv_text: str,
-        agent_csv_text: str,
-        stale_days: int = 14,
+    ad_csv_text: str,
+    agent_csv_text: str,
+    stale_days: int = 14,
 ) -> CorrelationResult:
     """Correlate two CSVs directly — no config.yaml, no connectors, no
     credentials.

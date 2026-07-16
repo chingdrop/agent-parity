@@ -23,9 +23,9 @@ callback.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -111,9 +111,9 @@ def merge_with_agents(ad_df: pd.DataFrame, agents_df: pd.DataFrame) -> pd.DataFr
 
 
 def classify_coverage(
-        merged: pd.DataFrame,
-        stale_days: int = 14,
-        as_of: pd.Timestamp | None = None,
+    merged: pd.DataFrame,
+    stale_days: int = 14,
+    as_of: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """Stage 3: merge indicator + last_seen staleness -> CoverageStatus."""
     as_of = as_of or pd.Timestamp.now(tz="UTC")
@@ -157,9 +157,7 @@ def backfill_machine_type(classified: pd.DataFrame) -> pd.DataFrame:
     out = classified.copy()
     has_machine_type = out["machine_type"].notna() & (out["machine_type"] != "")
     if "os_ad" in out.columns:
-        inferred = out["os_ad"].map(
-            lambda text: infer_machine_type(text) if isinstance(text, str) else ""
-        )
+        inferred = out["os_ad"].map(lambda text: infer_machine_type(text) if isinstance(text, str) else "")
         out["machine_type"] = out["machine_type"].where(has_machine_type, inferred)
     return out
 
@@ -180,9 +178,9 @@ def _coalesce(df: pd.DataFrame, cols: list[str]) -> pd.Series:
 
 
 def classify_eol_status(
-        classified: pd.DataFrame,
-        as_of: pd.Timestamp | None = None,
-        warning_days: int = DEFAULT_EOL_WARNING_DAYS,
+    classified: pd.DataFrame,
+    as_of: pd.Timestamp | None = None,
+    warning_days: int = DEFAULT_EOL_WARNING_DAYS,
 ) -> pd.DataFrame:
     """Stage 5: classify every row's OS lifecycle status (end_of_life /
     eol_soon / supported / unknown) — an independent prioritization signal
@@ -210,13 +208,9 @@ def classify_eol_status(
         out["eol_status"] = pd.Series(dtype="object")
         return out
 
-    resolved_build = _coalesce(out, build_cols) if build_cols else pd.Series(
-        pd.NA, index=out.index, dtype="object"
-    )
+    resolved_build = _coalesce(out, build_cols) if build_cols else pd.Series(pd.NA, index=out.index, dtype="object")
     out["os_build"] = resolved_build.map(lambda v: int(v) if pd.notna(v) else None)
-    resolved_text = _coalesce(out, text_cols) if text_cols else pd.Series(
-        pd.NA, index=out.index, dtype="object"
-    )
+    resolved_text = _coalesce(out, text_cols) if text_cols else pd.Series(pd.NA, index=out.index, dtype="object")
     # pd.NA doesn't behave like None in a boolean context (eol_status_for_device
     # does `os_text or ""`, which raises on pd.NA) — normalize before the loop.
     resolved_text = resolved_text.where(resolved_text.notna(), None)
@@ -227,7 +221,7 @@ def classify_eol_status(
     # columns), not full-row Series reconstruction like .apply(axis=1) does.
     out["eol_status"] = [
         eol_status_for_device(text, build, as_of=as_of_date, warning_days=warning_days)
-        for text, build in zip(resolved_text, out["os_build"])
+        for text, build in zip(resolved_text, out["os_build"], strict=True)
     ]
     return out
 
@@ -241,10 +235,7 @@ def summarize(frame: pd.DataFrame) -> dict:
     denominator = covered + stale + missing  # AD-known device rows
 
     matched = frame[frame["vendor"].notna()]
-    by_vendor = {
-        vendor: group["status"].value_counts().to_dict()
-        for vendor, group in matched.groupby("vendor")
-    }
+    by_vendor = {vendor: group["status"].value_counts().to_dict() for vendor, group in matched.groupby("vendor")}
 
     # Servers stand in for "high-value assets" (Domain Controllers, file/
     # storage servers, ...) — reliably identifiable by OS SKU, unlike
@@ -278,20 +269,18 @@ def summarize(frame: pd.DataFrame) -> dict:
         "coverage_pct": round(100.0 * covered / denominator, 1) if denominator else 0.0,
         "by_vendor": by_vendor,
         "server_status_counts": {k: int(v) for k, v in server_status_counts.items()},
-        "server_coverage_pct": round(100.0 * server_covered / server_denominator, 1)
-        if server_denominator
-        else 0.0,
+        "server_coverage_pct": round(100.0 * server_covered / server_denominator, 1) if server_denominator else 0.0,
         "eol_status_counts": {k: int(v) for k, v in eol_counts.items()},
         "at_risk_status_counts": {k: int(v) for k, v in at_risk_status_counts.items()},
     }
 
 
 def correlate(
-        ad_df: pd.DataFrame,
-        agents_df: pd.DataFrame,
-        stale_days: int = 14,
-        as_of: pd.Timestamp | None = None,
-        eol_warning_days: int = DEFAULT_EOL_WARNING_DAYS,
+    ad_df: pd.DataFrame,
+    agents_df: pd.DataFrame,
+    stale_days: int = 14,
+    as_of: pd.Timestamp | None = None,
+    eol_warning_days: int = DEFAULT_EOL_WARNING_DAYS,
 ) -> CorrelationResult:
     """Run the full chain and return the classified frame plus aggregates."""
     frame = (

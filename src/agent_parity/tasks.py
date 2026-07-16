@@ -35,7 +35,7 @@ Three deliberate design points, unchanged from the original:
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -188,7 +188,7 @@ def mark_run_failed(_request, exc, _traceback, run_id: int) -> None:
         run = session.get(CorrelationRun, run_id)
         if run is not None and run.status == RunStatus.PENDING.value:
             run.status = RunStatus.FAILED.value
-            run.finished_at = datetime.now(timezone.utc)
+            run.finished_at = datetime.now(UTC)
             session.commit()
             logger.error("Run %s marked failed after callback error: %s", run_id, exc)
 
@@ -214,8 +214,7 @@ def dispatch_client(config: AppConfig, client_cfg: ClientConfig) -> int | None:
             key = site_status_key(vendor, site, index, len(sites))
             vendor_tasks.append(VENDOR_TASKS[vendor].s(client_cfg.slug, index, key))
     header = [
-        collect_ad_export.s(client_cfg.slug, target_device)
-        for target_device in client_cfg.ad_target_devices
+        collect_ad_export.s(client_cfg.slug, target_device) for target_device in client_cfg.ad_target_devices
     ] + vendor_tasks
     callback = correlate_client.s(run_id=run_id).on_error(mark_run_failed.s(run_id=run_id))
     chord(header)(callback)
@@ -234,8 +233,8 @@ def _client_is_due(client_cfg: ClientConfig) -> bool:
         return True
     started_at = latest.started_at
     if started_at.tzinfo is None:
-        started_at = started_at.replace(tzinfo=timezone.utc)
-    return started_at <= datetime.now(timezone.utc) - timedelta(hours=client_cfg.sync_interval_hours)
+        started_at = started_at.replace(tzinfo=UTC)
+    return started_at <= datetime.now(UTC) - timedelta(hours=client_cfg.sync_interval_hours)
 
 
 @app.task

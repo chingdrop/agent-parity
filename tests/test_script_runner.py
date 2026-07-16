@@ -17,9 +17,9 @@ import boto3
 import pytest
 import requests
 from moto import mock_aws
+from shared_tools.storage import ObjectStorage
 
 from agent_parity.deployment.script_runner import AD_EXPORT_SCRIPT, ScriptExecutionError, run_ad_export
-from shared_tools.storage import ObjectStorage
 
 SAMPLE_CSV = "Name,Enabled\nACME-WS-001,True\n"
 
@@ -69,7 +69,7 @@ def test_live_mode_without_storage_raises_clear_error():
 
 
 def test_wrong_header_is_rejected_using_this_projects_marker(moto_storage):
-    """"Name" is this project's own header_marker — proves it's actually
+    """ "Name" is this project's own header_marker — proves it's actually
     wired through, not left at run_script_export's generic default."""
 
     def fake_deploy_and_run(script_path, target_id, script_args=None):

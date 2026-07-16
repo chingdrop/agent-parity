@@ -157,9 +157,9 @@ def extract_build_number(text: str | None) -> int | None:
 
 
 def eol_status(
-        os_text: str | None,
-        as_of: date | None = None,
-        warning_days: int = DEFAULT_WARNING_DAYS,
+    os_text: str | None,
+    as_of: date | None = None,
+    warning_days: int = DEFAULT_WARNING_DAYS,
 ) -> str:
     """Classify an OS's lifecycle status from free-text name alone, as of
     ``as_of`` (default: today). Prefer ``eol_status_for_device`` when a
@@ -169,10 +169,10 @@ def eol_status(
 
 
 def eol_status_for_device(
-        os_text: str | None,
-        os_build: int | None = None,
-        as_of: date | None = None,
-        warning_days: int = DEFAULT_WARNING_DAYS,
+    os_text: str | None,
+    os_build: int | None = None,
+    as_of: date | None = None,
+    warning_days: int = DEFAULT_WARNING_DAYS,
 ) -> str:
     """Classify a device's OS lifecycle status, preferring an exact build
     number when one is available (AD, SentinelOne) and falling back to

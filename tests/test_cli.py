@@ -1,13 +1,13 @@
 """Tests for the CLI entrypoint (agent_parity/cli.py)."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 from click.testing import CliRunner
 
 from agent_parity import cli
 
-NOW = datetime.now(timezone.utc).isoformat()
+NOW = datetime.now(UTC).isoformat()
 
 AD_CSV = f"""\
 Name,DNSHostName,OperatingSystem,LastLogonTimestamp,Enabled,DistinguishedName
@@ -49,9 +49,7 @@ def test_compare_defaults_output_path_to_agent_csv_stem(tmp_path, monkeypatch):
 
 
 def test_compare_reports_missing_file_without_a_traceback(tmp_path):
-    result = CliRunner().invoke(
-        cli.cli, ["compare", str(tmp_path / "nope.csv"), str(tmp_path / "also-nope.csv")]
-    )
+    result = CliRunner().invoke(cli.cli, ["compare", str(tmp_path / "nope.csv"), str(tmp_path / "also-nope.csv")])
 
     assert result.exit_code != 0
     assert result.exception is None or isinstance(result.exception, SystemExit)
@@ -63,9 +61,7 @@ def test_compare_reports_parse_errors_without_raising(tmp_path):
     ad_csv.write_text("Oops,Something\nbroke,badly\n")
     agent_csv.write_text(AGENT_CSV)
 
-    result = CliRunner().invoke(
-        cli.cli, ["compare", str(ad_csv), str(agent_csv), "--out", str(tmp_path / "out.csv")]
-    )
+    result = CliRunner().invoke(cli.cli, ["compare", str(ad_csv), str(agent_csv), "--out", str(tmp_path / "out.csv")])
 
     assert result.exit_code == 1
 

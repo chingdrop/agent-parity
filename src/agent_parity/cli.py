@@ -68,9 +68,7 @@ def run(client: str | None, run_all: bool) -> None:
         slugs = sorted(config.clients)
     elif client:
         if client not in config.clients:
-            raise click.ClickException(
-                f"Unknown client {client!r}; configured: {', '.join(sorted(config.clients))}"
-            )
+            raise click.ClickException(f"Unknown client {client!r}; configured: {', '.join(sorted(config.clients))}")
         slugs = [client]
     else:
         slugs = [sorted(config.clients)[0]]
@@ -121,9 +119,7 @@ def sync(client: str | None, run_all: bool) -> None:
         slugs = sorted(config.clients)
     elif client:
         if client not in config.clients:
-            raise click.ClickException(
-                f"Unknown client {client!r}; configured: {', '.join(sorted(config.clients))}"
-            )
+            raise click.ClickException(f"Unknown client {client!r}; configured: {', '.join(sorted(config.clients))}")
         slugs = [client]
     else:
         slugs = [sorted(config.clients)[0]]
@@ -144,10 +140,7 @@ def sync(client: str | None, run_all: bool) -> None:
 
             status_summary = ", ".join(f"{name}={state}" for name, state in sorted(run_row.vendor_status.items()))
             snapshot_count = len(run_row.snapshots)
-            click.echo(
-                f"[{slug}] run {run_row.id}: {run_row.status} "
-                f"({snapshot_count} snapshots; {status_summary})"
-            )
+            click.echo(f"[{slug}] run {run_row.id}: {run_row.status} ({snapshot_count} snapshots; {status_summary})")
             if run_row.status == "failed":
                 had_failure = True
     if had_failure:

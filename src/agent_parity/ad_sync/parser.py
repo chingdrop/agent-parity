@@ -41,27 +41,21 @@ def parse_ad_export(raw_csv: str) -> pd.DataFrame:
         raise ADParseError(f"AD export is not parseable CSV: {exc}") from exc
 
     if "Name" not in frame.columns:
-        raise ADParseError(
-            f"AD export is missing the 'Name' column (got: {list(frame.columns)})"
-        )
+        raise ADParseError(f"AD export is missing the 'Name' column (got: {list(frame.columns)})")
 
     parsed = pd.DataFrame(
         {
             "hostname": frame["Name"].str.strip(),
             "dns_hostname": frame["DNSHostName"].astype(str) if "DNSHostName" in frame else "",
-            "os": frame["OperatingSystem"] if "OperatingSystem" in frame else "",
+            "os": frame.get("OperatingSystem", ""),
             "os_build": (
-                frame["OperatingSystemVersion"].map(extract_build_number)
-                if "OperatingSystemVersion" in frame
-                else None
+                frame["OperatingSystemVersion"].map(extract_build_number) if "OperatingSystemVersion" in frame else None
             ),
-            "last_logon": pd.to_datetime(
-                frame["LastLogonTimestamp"], errors="coerce", utc=True, format="ISO8601"
-            )
+            "last_logon": pd.to_datetime(frame["LastLogonTimestamp"], errors="coerce", utc=True, format="ISO8601")
             if "LastLogonTimestamp" in frame
             else pd.NaT,
             "enabled": frame["Enabled"].str.lower().eq("true") if "Enabled" in frame else True,
-            "distinguished_name": frame["DistinguishedName"] if "DistinguishedName" in frame else "",
+            "distinguished_name": frame.get("DistinguishedName", ""),
         }
     )
     parsed["join_key"] = parsed["hostname"].map(normalize_hostname)

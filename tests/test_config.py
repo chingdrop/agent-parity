@@ -4,6 +4,7 @@ the vendor that carries a client's AD export."""
 from dataclasses import replace
 
 import pytest
+from shared_tools.storage import ObjectStorage
 
 from agent_parity.config import (
     AppConfig,
@@ -16,7 +17,6 @@ from agent_parity.config import (
     pick_ad_export_vendor,
 )
 from agent_parity.connectors import CarbonBlackConnector, SentinelOneConnector
-from shared_tools.storage import ObjectStorage
 
 
 def _client(vendors: tuple[str, ...]) -> ClientConfig:
@@ -50,12 +50,16 @@ def test_global_scope_returns_same_credentials_for_every_client(config_with_cred
     # Both acme and globex select the "mssp" account in config.yaml.
     acme = config_with_creds.sites_for("acme", "sentinelone")
     globex = config_with_creds.sites_for("globex", "sentinelone")
-    assert acme == globex == (
-        {
-            "api_url": "https://usea1.sentinelone.net",
-            "api_token": "s1-global-token",
-            "account": "mssp",
-        },
+    assert (
+        acme
+        == globex
+        == (
+            {
+                "api_url": "https://usea1.sentinelone.net",
+                "api_token": "s1-global-token",
+                "account": "mssp",
+            },
+        )
     )
 
 
@@ -125,8 +129,10 @@ def test_client_without_vendor_enabled_is_rejected(config_with_creds):
 
 def test_unset_env_vars_resolve_to_none_enabling_fixture_mode(monkeypatch):
     for var in (
-        "SENTINELONE_MSSP_API_URL", "SENTINELONE_MSSP_API_TOKEN",
-        "SENTINELONE_DFIR_API_URL", "SENTINELONE_DFIR_API_TOKEN",
+        "SENTINELONE_MSSP_API_URL",
+        "SENTINELONE_MSSP_API_TOKEN",
+        "SENTINELONE_DFIR_API_URL",
+        "SENTINELONE_DFIR_API_TOKEN",
     ):
         monkeypatch.delenv(var, raising=False)
     config = load_config()

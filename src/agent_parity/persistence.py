@@ -17,7 +17,7 @@ was collected.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 from sqlalchemy import select
@@ -64,15 +64,15 @@ def _naive_utc(value: datetime) -> datetime:
     that mismatch entirely rather than juggling aware/naive per call site.
     """
     if value.tzinfo is not None:
-        value = value.astimezone(timezone.utc).replace(tzinfo=None)
+        value = value.astimezone(UTC).replace(tzinfo=None)
     return value
 
 
 def persist_correlation(
-        session: Session,
-        run: CorrelationRun,
-        result: CorrelationResult,
-        vendor_status: dict[str, str],
+    session: Session,
+    run: CorrelationRun,
+    result: CorrelationResult,
+    vendor_status: dict[str, str],
 ) -> int:
     """Load a classified frame into ``CoverageSnapshot`` rows for ``run``.
 
@@ -94,11 +94,8 @@ def persist_correlation(
     client = session.get(Client, current.client_id)
     frame = result.frame
 
-    existing = {
-        d.join_key: d
-        for d in session.scalars(select(Device).where(Device.client_id == client.id))
-    }
-    now = datetime.now(timezone.utc)
+    existing = {d.join_key: d for d in session.scalars(select(Device).where(Device.client_id == client.id))}
+    now = datetime.now(UTC)
     device_rows: dict[str, dict] = {}
     for row in frame.itertuples(index=False):
         seen = _first_valid(getattr(row, "last_seen", None), getattr(row, "last_logon", None))
@@ -115,9 +112,7 @@ def persist_correlation(
         hostname = str(info["hostname"] or join_key)
         os_name = str(info["os"] or "")
         last_seen = (
-            _naive_utc(pd.Timestamp(info["last_seen"]).to_pydatetime())
-            if info["last_seen"] is not None
-            else None
+            _naive_utc(pd.Timestamp(info["last_seen"]).to_pydatetime()) if info["last_seen"] is not None else None
         )
         if join_key in existing:
             device = existing[join_key]
@@ -185,9 +180,7 @@ def export_deltas_to_splunk(session: Session, run: CorrelationRun, splunk: Splun
         return {(s.device_id, s.vendor): s for s in rows}
 
     before = snapshot_map(previous)
-    current_snapshots = session.scalars(
-        select(CoverageSnapshot).where(CoverageSnapshot.run_id == run.id)
-    ).all()
+    current_snapshots = session.scalars(select(CoverageSnapshot).where(CoverageSnapshot.run_id == run.id)).all()
     client = session.get(Client, run.client_id)
 
     deltas = []
@@ -212,12 +205,12 @@ def export_deltas_to_splunk(session: Session, run: CorrelationRun, splunk: Splun
 
 
 def finalize_run(
-        session: Session,
-        run: CorrelationRun,
-        ad_df: pd.DataFrame | None,
-        agent_records: list[AgentDevice],
-        vendor_status: dict[str, str],
-        splunk: SplunkConfig | None = None,
+    session: Session,
+    run: CorrelationRun,
+    ad_df: pd.DataFrame | None,
+    agent_records: list[AgentDevice],
+    vendor_status: dict[str, str],
+    splunk: SplunkConfig | None = None,
 ) -> int:
     """Correlate + persist + (optionally) forward deltas — the shared fan-in
     for both entrypoints below.
@@ -229,7 +222,7 @@ def finalize_run(
     if ad_df is None:
         run.status = RunStatus.FAILED.value
         run.vendor_status = vendor_status
-        run.finished_at = datetime.now(timezone.utc)
+        run.finished_at = datetime.now(UTC)
         session.flush()
         return 0
     result = correlate(ad_df, agents_to_frame(agent_records), stale_days=run.stale_days)

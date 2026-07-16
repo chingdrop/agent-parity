@@ -94,7 +94,7 @@ def test_extract_build_number(text, expected):
 
 
 def test_extract_build_number_ignores_a_revision_suffix_below_the_build_floor():
-    """"3155" in "10.0.22631.3155" is the UBR/revision, not the build — must
+    """ "3155" in "10.0.22631.3155" is the UBR/revision, not the build — must
     not be mistaken for one just because it's also several digits long."""
     assert extract_build_number("10.0.22631.3155") == 22631
 
@@ -121,9 +121,7 @@ def test_eol_status_for_device_prefers_build_over_free_text():
     """A bare "Windows 11 Enterprise" string alone is unknown (Stage 1), but
     with a build number attached (AD/SentinelOne), it resolves precisely —
     this is the whole point of capturing the build at all."""
-    status = eol_status_for_device(
-        "Windows 11 Enterprise", os_build=22621, as_of=date(2026, 1, 1)
-    )
+    status = eol_status_for_device("Windows 11 Enterprise", os_build=22621, as_of=date(2026, 1, 1))
     assert status == OSLifecycleStatus.END_OF_LIFE  # 22H2 EOL'd 2024-10-08
 
 

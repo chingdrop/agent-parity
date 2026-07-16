@@ -1,7 +1,7 @@
 """Tests for the classification logic itself — the four CoverageStatus
 outcomes and the merge invariants — not re-verification of pd.merge."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -10,8 +10,8 @@ from agent_parity.correlation.engine import agents_to_frame, correlate
 from agent_parity.models import AgentDevice, CoverageStatus
 
 AS_OF: pd.Timestamp = pd.Timestamp("2026-07-03T00:00:00Z")
-RECENT = datetime(2026, 7, 2, 12, 0, tzinfo=timezone.utc)  # < 1 day old
-STALE = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)  # > 14 days old
+RECENT = datetime(2026, 7, 2, 12, 0, tzinfo=UTC)  # < 1 day old
+STALE = datetime(2026, 6, 1, 12, 0, tzinfo=UTC)  # > 14 days old
 
 
 def ad_frame(*hostnames: str, os: str = "Windows 11", os_build: int | None = None) -> pd.DataFrame:
@@ -30,11 +30,11 @@ def ad_frame(*hostnames: str, os: str = "Windows 11", os_build: int | None = Non
 
 
 def agent(
-        hostname: str,
-        last_seen: datetime | None = RECENT,
-        vendor="sentinelone",
-        os: str = "",
-        os_build: int | None = None,
+    hostname: str,
+    last_seen: datetime | None = RECENT,
+    vendor="sentinelone",
+    os: str = "",
+    os_build: int | None = None,
 ) -> AgentDevice:
     return AgentDevice(
         vendor=vendor,
@@ -211,8 +211,11 @@ def test_backfill_never_overwrites_an_agent_reported_machine_type():
 
 def test_orphaned_agent_keeps_its_own_machine_type_with_no_ad_row_to_backfill_from():
     device = AgentDevice(
-        vendor="bitdefender", agent_id="id-ghost", hostname="GHOST-9",
-        last_seen=RECENT, machine_type="server",
+        vendor="bitdefender",
+        agent_id="id-ghost",
+        hostname="GHOST-9",
+        last_seen=RECENT,
+        machine_type="server",
     )
     result = correlate(ad_frame("WS-01"), agents_to_frame([device]), as_of=AS_OF)
     orphan = result.frame[result.frame["join_key"] == "ghost-9"].iloc[0]

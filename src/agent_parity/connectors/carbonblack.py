@@ -15,6 +15,7 @@ below, and ``agent_parity.config.AppConfig.sites_for``).
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 
 from agent_parity.connectors.base import (
@@ -31,10 +32,6 @@ from agent_parity.models import AgentDevice, Vendor
 class CarbonBlackConnector(AgentConnector):
     vendor = Vendor.CARBONBLACK.value
     required_credentials = ("api_url", "api_id", "api_key", "org_key")
-    scope = "per_client"
-    # A handful of the original client base — second preference behind
-    # SentinelOne when both are capable of carrying a client's AD export.
-    ad_export_priority = 1
     scope = "per_client"
     # A handful of the original client base — second preference behind
     # SentinelOne when both are capable of carrying a client's AD export.
@@ -98,9 +95,7 @@ class CarbonBlackConnector(AgentConnector):
         parts = (f"-{name} {quote}{value.replace(quote, quote * 2)}{quote}" for name, value in script_args.items())
         return " " + " ".join(parts)
 
-    def _live_deploy_and_run(
-            self, script_path: Path, target_id: str, script_args: dict[str, str]
-    ) -> str:
+    def _live_deploy_and_run(self, script_path: Path, target_id: str, script_args: dict[str, str]) -> str:
         base = self.credentials["api_url"].rstrip("/")
         org = self.credentials["org_key"]
         lr = f"{base}/appservices/v6/orgs/{org}/liveresponse"
@@ -112,9 +107,7 @@ class CarbonBlackConnector(AgentConnector):
         session_id = session["id"]
 
         def session_ready() -> str | None:
-            state = self._request_json(
-                "GET", f"{lr}/sessions/{session_id}", headers=self._headers
-            )
+            state = self._request_json("GET", f"{lr}/sessions/{session_id}", headers=self._headers)
             return "ready" if state.get("status") == "ACTIVE" else None
 
         self._poll_until(session_ready, f"Live Response session on device {target_id}")
@@ -124,11 +117,15 @@ class CarbonBlackConnector(AgentConnector):
             # 2. Stage the script on the endpoint (put file).
             with open(script_path, "rb") as fh:
                 uploaded = self._request_json(
-                    "POST", f"{lr}/sessions/{session_id}/files", headers=self._headers,
+                    "POST",
+                    f"{lr}/sessions/{session_id}/files",
+                    headers=self._headers,
                     files={"file": (script_path.name, fh)},
                 )
             self._request(
-                "POST", f"{lr}/sessions/{session_id}/commands", headers=self._headers,
+                "POST",
+                f"{lr}/sessions/{session_id}/commands",
+                headers=self._headers,
                 json={"name": "put file", "file_id": uploaded["id"], "path": remote_path},
             )
 
@@ -138,7 +135,9 @@ class CarbonBlackConnector(AgentConnector):
             # directly as -Name 'value' parameters rather than through any
             # structured input-parameters field.
             command = self._request_json(
-                "POST", f"{lr}/sessions/{session_id}/commands", headers=self._headers,
+                "POST",
+                f"{lr}/sessions/{session_id}/commands",
+                headers=self._headers,
                 json={
                     "name": "create process",
                     "path": (
@@ -153,7 +152,8 @@ class CarbonBlackConnector(AgentConnector):
 
             def command_output() -> str | None:
                 state = self._request_json(
-                    "GET", f"{lr}/sessions/{session_id}/commands/{command_id}",
+                    "GET",
+                    f"{lr}/sessions/{session_id}/commands/{command_id}",
                     headers=self._headers,
                 )
                 status = state.get("status")
@@ -166,7 +166,5 @@ class CarbonBlackConnector(AgentConnector):
             return self._poll_until(command_output, f"script output on device {target_id}")
         finally:
             # Always close the session; LR sessions are a limited resource.
-            try:
+            with contextlib.suppress(ConnectorError):
                 self._request("DELETE", f"{lr}/sessions/{session_id}", headers=self._headers)
-            except ConnectorError:
-                pass
