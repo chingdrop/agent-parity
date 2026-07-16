@@ -26,8 +26,9 @@ import logging
 from pathlib import Path
 
 import click
-from shared_tools.atomic_io import atomic_write, ensure_dir
+from shared_tools.atomic_io import ensure_dir
 from shared_tools.logging_setup import setup_logging
+from shared_tools.tabular_io import write_structured_file
 
 from agent_parity.ad_sync.parser import ADParseError
 from agent_parity.agent_csv import AgentCSVParseError
@@ -42,7 +43,7 @@ OUT_DIR = Path("output")
 def _write_csv(frame, out_path: Path) -> None:
     """Write ``frame`` to ``out_path`` without a reader ever observing a
     truncated file — a plain ``to_csv(out_path)`` isn't atomic."""
-    atomic_write(out_path, frame.to_csv(index=False))
+    write_structured_file(frame, out_path, file_type="csv", index=False)
 
 
 @click.group()

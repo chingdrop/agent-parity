@@ -37,7 +37,7 @@ dev = [
 ]
 
 [tool.uv.sources]
-py-shared-tools = { git = "https://github.com/chingdrop/py-shared-tools", rev = "v1.2.0" }
+py-shared-tools = { git = "https://github.com/chingdrop/py-shared-tools", rev = "v1.3.1" }
 
 [project.scripts]
 agent-parity = "agent_parity.cli:cli"
@@ -65,5 +65,6 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "shared_tools.*"]
+# py-shared-tools ships py.typed as of v1.2.2 -- no longer needs an override.
+module = ["celery.*"]
 ignore_missing_imports = true
