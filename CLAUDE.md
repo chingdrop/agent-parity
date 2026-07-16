@@ -57,22 +57,22 @@ or `[tool.black]`) — formatting has so far been done via the IDE's reformatter
 
 Four layers, collect → correlate → report:
 
-- **`agent_parity/connectors/`** — one class per vendor (SentinelOne, Carbon Black,
+- **`src/agent_parity/connectors/`** — one class per vendor (SentinelOne, Carbon Black,
   BitDefender), each implementing `fetch_inventory()`/`deploy_and_run()`.
-- **`agent_parity/ad_sync/`** + **`agent_parity/deployment/`** — parsing the AD export
+- **`src/agent_parity/ad_sync/`** + **`src/agent_parity/deployment/`** — parsing the AD export
   script's CSV output and running it remotely through a vendor's own scripting capability.
-- **`agent_parity/agent_csv.py`** — parsing a generic, vendor-agnostic agent/EDR
+- **`src/agent_parity/agent_csv.py`** — parsing a generic, vendor-agnostic agent/EDR
   inventory CSV, for callers with no connector/credentials at all.
-- **`agent_parity/correlation/engine.py`** — the pandas merge/classification core.
-- **`agent_parity/pipeline.py`** — two orchestration entrypoints that tie the above
+- **`src/agent_parity/correlation/engine.py`** — the pandas merge/classification core.
+- **`src/agent_parity/pipeline.py`** — two orchestration entrypoints that tie the above
   together: `run_correlation_for_client()` (config.yaml + connectors, live or fixture)
-  and `correlate_from_csvs()` (two CSVs, zero config). **`agent_parity/cli.py`** is a
+  and `correlate_from_csvs()` (two CSVs, zero config). **`src/agent_parity/cli.py`** is a
   thin `run`/`compare` wrapper around them for standalone use. A consuming project
   (the hub) is expected to call `pipeline.run_correlation_for_client()` directly rather
   than shell out to
   the CLI, since it will want the `CorrelationResult` in-process to persist itself.
 
-## Correlation engine (`agent_parity/correlation/engine.py`)
+## Correlation engine (`src/agent_parity/correlation/engine.py`)
 
 This is the analytical core and is deliberately a `.pipe()` chain, not one function:
 `add_join_key` → `merge_with_agents` (`pd.merge(..., how="outer", indicator=True)`) →
@@ -89,14 +89,14 @@ signal whatsoever. That's backwards for a coverage tool whose whole point (see
 README's "High-value assets" section — this project's original purpose was a
 quarterly client report prioritizing exactly this) is flagging a missing Domain
 Controller *harder* than a missing workstation. It backfills from AD's own OS text
-via `infer_machine_type()` (`agent_parity/models.py`) — the same heuristic
+via `infer_machine_type()` (`src/agent_parity/models.py`) — the same heuristic
 Carbon Black/BitDefender's connectors use — but only for rows where `machine_type`
 isn't already set; an agent-reported value always wins. Don't try to infer
 criticality from the hostname — that's exactly the unreliable signal this design
 deliberately avoids (file/storage servers can be named anything; a Windows Server
 SKU can't fake being one).
 
-**`classify_eol_status` (see `agent_parity/os_eol.py`) is the third prioritization
+**`classify_eol_status` (see `src/agent_parity/os_eol.py`) is the third prioritization
 axis**, independent of coverage: a covered end-of-life server still needs an OS
 upgrade. It resolves `os_build` per row with the same both-sides-then-fallback
 precedence as `backfill_machine_type` — agent-reported build first (only
@@ -113,7 +113,7 @@ Tests for this module assert on classification outcomes and merge-invariants (ro
 count = union of join keys), not on `pd.merge` itself — follow that pattern for new
 correlation tests rather than re-testing pandas.
 
-## Collection pipeline (`agent_parity/pipeline.py`)
+## Collection pipeline (`src/agent_parity/pipeline.py`)
 
 `run_correlation_for_client(config, client_cfg, stale_days=None)` is the config.yaml/
 connector entrypoint: collect the AD export (across every domain the client spans —
@@ -130,15 +130,15 @@ up at all; `run_correlation_for_client` is the next step once collection needs t
 repeatable/scheduled against a live API instead of a one-off export file.
 
 No persistence and no history live in either function on purpose — that's kept as a
-separate layer (`agent_parity/persistence.py`, see "Scheduling & persistence" below),
+separate layer (`src/agent_parity/persistence.py`, see "Scheduling & persistence" below),
 not because this package avoids owning persistence (it doesn't, see "What this is"
 above), but because collection/correlation and persistence are a clean seam regardless
-of which package owns both sides of it. `agent_parity/cli.py`'s `run`/`compare`
+of which package owns both sides of it. `src/agent_parity/cli.py`'s `run`/`compare`
 subcommands call these two functions directly and stay pure (write `output/<name>.csv`,
-print a summary, nothing persisted); `sync` and `agent_parity/tasks.py` are the
+print a summary, nothing persisted); `sync` and `src/agent_parity/tasks.py` are the
 persisted callers, both going through `persistence.py` instead.
 
-## Scheduling & persistence (`agent_parity/db.py`, `persistence.py`, `celery_app.py`, `tasks.py`)
+## Scheduling & persistence (`src/agent_parity/db.py`, `persistence.py`, `celery_app.py`, `tasks.py`)
 
 Historically this layer lived in a separate Django project consuming `agent_parity`
 (never in this package itself); that project — and its planned non-Django successor —
@@ -146,7 +146,7 @@ are archived and won't be developed further (see "What this is"), so this restor
 folds the same layer into this package permanently, SQLAlchemy + SQLite in place of the
 Django ORM + Postgres.
 
-**`agent_parity/db.py`** is the schema: `Client` (an identity anchor only — topology
+**`src/agent_parity/db.py`** is the schema: `Client` (an identity anchor only — topology
 stays in `config.yaml`, this table isn't a config cache), `Device` (keyed by join key
 per client), `CorrelationRun` (one row per pipeline execution; `RunStatus` is
 `pending`/`complete`/`partial`/`failed`), `CoverageSnapshot` (one row per
@@ -157,7 +157,7 @@ already uses. `init_db()` is a plain `Base.metadata.create_all()` — no Alembic
 a lightweight run-history store sized for the demo/single-node case, not a
 migration-managed production schema.
 
-**`agent_parity/persistence.py`** is the layer between `pipeline.py` (pure) and a
+**`src/agent_parity/persistence.py`** is the layer between `pipeline.py` (pure) and a
 persisted caller: `persist_correlation` loads a classified frame into `CoverageSnapshot`
 rows, `finalize_run` correlates then persists (or marks the run `FAILED` outright when
 `ad_df is None`), `run_and_persist_for_client` is the synchronous entrypoint the `sync`
@@ -175,7 +175,7 @@ before storing or comparing; a comparison that skips it will crash the *second* 
 device's `last_seen` needs updating (this broke once during Stage 4a verification,
 fixed there, not a hypothetical).
 
-**`agent_parity/celery_app.py`**/**`tasks.py`** are the scaled path, ported from the
+**`src/agent_parity/celery_app.py`**/**`tasks.py`** are the scaled path, ported from the
 historical Django project's `tasks.py` — the shape is unchanged: one *group* of
 fan-out tasks per client (one AD export task per domain controller, one inventory-pull
 task per vendor/site-tenant), feeding a *chord* callback (`correlate_client`) that runs
@@ -199,7 +199,7 @@ task semantics either way. `docker/smoke_check_celery.py` (via `docker/smoke_tes
 Docker-only) is the one thing eager-mode tests structurally can't prove: a real chord
 round-tripping through a real Redis broker and real `worker`/`beat` containers.
 
-## Splunk delta export (`agent_parity/reporting/splunk_export.py`, `persistence.py`)
+## Splunk delta export (`src/agent_parity/reporting/splunk_export.py`, `persistence.py`)
 
 Confirmed real via `git show 41d3dc5` (the commit that removed it once the
 now-permanently-gone Django dashboard took over visualization) — restored now that
@@ -232,7 +232,7 @@ own fan-out tasks already do. The pure `run`/`compare` CLI paths never touch Spl
 all — delta computation needs run history to diff against, which only the persisted
 paths have.
 
-## Connectors (`agent_parity/connectors/`)
+## Connectors (`src/agent_parity/connectors/`)
 
 **Adding a vendor is "write one connector class"**, not "edit a central table."
 `connectors/base.py`'s `@register_connector` class decorator adds a connector to
@@ -255,7 +255,7 @@ project: `fetch_inventory()`/`_fixture_fetch_inventory()`/the abstract
 registry mechanism is shared, but each project's instance is independent, so
 `credential-audit` registering its own vendor connectors on the same base can never
 collide with these entries. **When touching connector internals, check whether the
-change belongs in `agent_parity/connectors/base.py` (this project's inventory/AD-export
+change belongs in `src/agent_parity/connectors/base.py` (this project's inventory/AD-export
 specifics) or `py-shared-tools`'s own `shared_tools/remote_exec.py` (generic vendor-API
 mechanics any consumer of the shared base would want) — don't add project-specific
 logic to the shared base, and don't duplicate generic mechanics back into this file.**
@@ -316,7 +316,7 @@ what `RestAdapter`/`ObjectStorage`'s own comments used to say before their
 extraction (and what `AgentConnector`'s own `deploy_and_run`/polling/registry
 logic said before `VendorConnector`'s). Editing any of them means editing the
 files in a separate clone of `py-shared-tools`, not anywhere in
-`agent_parity/`; there's no local copy left to accidentally diverge from.
+`src/agent_parity/`; there's no local copy left to accidentally diverge from.
 **This used to be a vendored git submodule at `vendor/py-shared-tools`** with a
 local editable path override — dropped in favor of a plain git dependency
 because `uv` can't reconcile two sibling projects (`agent-parity` and
@@ -328,7 +328,7 @@ package. Bumping the pin means updating the `rev` in `[tool.uv.sources]`, not
 `git submodule update`.
 
 **Currently pinned to `v1.2.0`.** Two more shared, dependency-light modules
-were adopted from that bump (both stdlib-only, no new dependency): `agent_parity/db.py`'s
+were adopted from that bump (both stdlib-only, no new dependency): `src/agent_parity/db.py`'s
 `get_engine()` calls `shared_tools.atomic_io.ensure_dir()` on a file-based
 `AGENT_PARITY_DB_URL`'s parent directory before `create_engine()` (a fresh
 Docker-volume path with no directory yet would otherwise fail); `cli.py`'s
@@ -370,7 +370,7 @@ via `uv run pytest`, not part of `uv run pytest` at the agent-parity root.
 `_parse_inventory` in each connector sets them: SentinelOne passes its own
 `osType`/`machineType` straight through; Carbon Black lowercases its uppercase
 `os` enum for `platform` and infers `machine_type` from OS text
-(`infer_machine_type`, defined in `agent_parity/models.py`, re-exported from
+(`infer_machine_type`, defined in `src/agent_parity/models.py`, re-exported from
 `connectors/base.py` for existing call sites) since it has no equivalent field;
 BitDefender maps its numeric `machineType` enum to S1's string wording
 (`_MACHINE_TYPES` in `connectors/bitdefender.py`) and infers `platform` from OS
@@ -487,7 +487,7 @@ are the scheduled path, sharing this same image. Congruent with
 `credential-audit`'s own (archived) `docker/Dockerfile` history — no longer
 needs to stay in sync with a project that isn't being developed further.
 
-## Credential resolution (`agent_parity/config.py`)
+## Credential resolution (`src/agent_parity/config.py`)
 
 `load_config()` parses `config.yaml` (topology) + `.env` (secrets) into `AppConfig`/
 `ClientConfig`/`VendorConfig` dataclasses — every secret in `config.yaml` is a `${VAR}`
@@ -521,9 +521,9 @@ to sort first, capable or not) is exactly what this function replaced.
 A client can span more than one AD domain/forest — no single domain controller can
 enumerate computer objects outside its own domain, so `ad_target_devices` is a tuple,
 not a single hostname, and the export script runs once per entry.
-`agent_parity/pipeline.py`'s `collect_ad_frame` is the orchestrator: it loops the tuple,
+`src/agent_parity/pipeline.py`'s `collect_ad_frame` is the orchestrator: it loops the tuple,
 calling `collect_ad_csv` + `parse_ad_export` per domain, and concatenates the results
-with `agent_parity/ad_sync/parser.py`'s `concat_ad_frames` into the one master
+with `src/agent_parity/ad_sync/parser.py`'s `concat_ad_frames` into the one master
 DataFrame `correlate()` actually sees. A single-domain client (most of them) is just
 the `len == 1` case of this same loop — there's no separate single-domain code path,
 by design.
@@ -617,12 +617,12 @@ bug `pick_ad_export_vendor` already exists to avoid elsewhere in this file.
   per-client (`sample_data/<client_slug>/`) — `get_connectors`' `fixture_dir`
   is always `SAMPLE_DATA_DIR / client_slug`.
 - Test coverage is intentionally close to 1:1 with source modules: `test_models.py` ↔
-  `agent_parity/models.py`,
-  `test_pipeline.py` ↔ `agent_parity/pipeline.py` (the collection helpers plus
+  `src/agent_parity/models.py`,
+  `test_pipeline.py` ↔ `src/agent_parity/pipeline.py` (the collection helpers plus
   `correlate_from_csvs`, deliberately exercised with hand-rolled CSVs rather than
   `sample_data/`, to prove that path has zero dependency on the demo fixtures),
-  `test_agent_csv.py` ↔ `agent_parity/agent_csv.py`, `test_cli.py` ↔
-  `agent_parity/cli.py`, `test_config.py` ↔ `agent_parity/config.py`. `RestAdapter`,
+  `test_agent_csv.py` ↔ `src/agent_parity/agent_csv.py`, `test_cli.py` ↔
+  `src/agent_parity/cli.py`, `test_config.py` ↔ `src/agent_parity/config.py`. `RestAdapter`,
   `ObjectStorage`, and `VendorConnector`/`ConnectorRegistry` (`remote_exec.py`) are
   the exception to "lives in this repo, tested in this repo's `tests/`" — they and
   their tests (`test_rest_adapter.py`, `test_storage.py`, `test_remote_exec.py`)

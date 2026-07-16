@@ -68,7 +68,7 @@ whoever manages the domain and run it against a domain controller (see
 below for why it's a script instead of a direct LDAP query).
 
 The **agent CSV** is whatever EDR/inventory tool you have, mapped into
-agent-parity's own column schema (`agent_parity/agent_csv.py`) — every vendor
+agent-parity's own column schema (`src/agent_parity/agent_csv.py`) — every vendor
 exports differently, so this is a one-time mapping exercise per tool rather
 than something agent-parity guesses at:
 
@@ -96,7 +96,7 @@ below) is the next step up.
       `agent-parity compare`               `agent-parity run` (config.yaml + connectors)
    two CSVs, zero config             ┌──────────────────────────────────────────────┐
               │                      │            per (client, vendor)              │
-              │      config.yaml ──► agent_parity/config.py ──► connector (S1/CB/BD) │
+              │      config.yaml ──► src/agent_parity/config.py ──► connector (S1/CB/BD) │
               │       + .env             │                       │            │      │
               │                          │            deploy_and_run()   fetch_inventory()
               │                          │                       │            │      │
@@ -109,12 +109,12 @@ below) is the next step up.
       (CSV -> DataFrame, both sides)         (CSV -> DataFrame)   (outer merge + classification)
               └────────────────────────┬──────────────────────┘
                                        ▼
-                          agent_parity/pipeline.py
+                          src/agent_parity/pipeline.py
         correlate_from_csvs() / run_correlation_for_client()
                                        │
                     ┌──────────────────┴──────────────────┐
                     ▼                                     ▼
-             agent_parity/cli.py                  a consuming project
+             src/agent_parity/cli.py                  a consuming project
           (writes output/<name>.csv)      (e.g. a hub: persists, dashboards,
                                               schedules — its own concern)
 ```
@@ -155,7 +155,7 @@ organization on BitDefender alone can't have its AD export collected at all.
 inventory both flow through the same authenticated channel per vendor — for
 whichever vendor is actually carrying the AD export. Every client needs at
 least one enabled vendor with real remote-execution capability;
-`agent_parity/config.py`'s `pick_ad_export_vendor()` picks it, preferring
+`src/agent_parity/config.py`'s `pick_ad_export_vendor()` picks it, preferring
 SentinelOne over Carbon Black (reflecting real deployment prevalence — the
 bulk of the original client base was on SentinelOne, a handful on Carbon
 Black, one on BitDefender) and raising a clear `ConfigError` if a client has
@@ -184,10 +184,10 @@ directly from GitHub; no submodule init step is needed.
 
 A client isn't always a single AD domain — some span multiple domains or
 forests, and no one domain controller can enumerate computer objects outside
-its own domain. `ClientConfig.ad_target_devices` (`agent_parity/config.py`) is
+its own domain. `ClientConfig.ad_target_devices` (`src/agent_parity/config.py`) is
 a list, not a single hostname: `Export-ADDevices.ps1` runs once per entry, and
-`agent_parity/pipeline.py`'s `collect_ad_frame` parses and concatenates the
-resulting CSVs (`agent_parity/ad_sync/parser.py`'s `concat_ad_frames`) into
+`src/agent_parity/pipeline.py`'s `collect_ad_frame` parses and concatenates the
+resulting CSVs (`src/agent_parity/ad_sync/parser.py`'s `concat_ad_frames`) into
 one master AD DataFrame before correlation ever runs. A single-domain client
 is just the one-element case of the same list — not a special code path.
 
@@ -251,7 +251,7 @@ DFIR incident response (`"dfir"`) — a distinct engagement, a distinct
 console, by design, not just a Site within one account (that's the previous
 section — orthogonal, and composable: a site dict can carry both `"account"`
 and a site filter like `site_ids` at once). `VendorConfig.accounts`
-(`agent_parity/config.py`) is a dict of named credential sets, not a single
+(`src/agent_parity/config.py`) is a dict of named credential sets, not a single
 block — always named, even when a vendor (BitDefender, today) only has one,
 the same "no special-cased single case" principle as everywhere else in this
 config layer:
@@ -280,7 +280,7 @@ non-Django successor — are archived and won't be developed further, so this
 package now owns scheduling and persistence permanently: SQLAlchemy +
 SQLite in place of the Django ORM + Postgres, Celery unchanged.
 
-`agent_parity/db.py` is the schema — `Client` (an identity anchor only;
+`src/agent_parity/db.py` is the schema — `Client` (an identity anchor only;
 topology stays in `config.yaml`), `Device`, `CorrelationRun` (one row per
 pipeline execution; status `pending`/`complete`/`partial`/`failed`),
 `CoverageSnapshot` (one row per classified-frame row). `get_engine()`
@@ -290,7 +290,7 @@ fixture-mode fallback. No Alembic: this is a lightweight run-history store
 sized for the demo/single-node case, not a migration-managed production
 schema.
 
-`agent_parity/persistence.py` sits between `pipeline.py` (pure, no
+`src/agent_parity/persistence.py` sits between `pipeline.py` (pure, no
 persistence) and a persisted caller: `finalize_run` correlates and writes
 `CoverageSnapshot` rows (or marks the run `FAILED` outright when every AD
 domain failed), `run_and_persist_for_client` is the synchronous entrypoint
@@ -301,7 +301,7 @@ SQLite has no equivalent row lock, so this instead relies on SQLite's own
 writer serialization, adequate at this single-node/demo scale but a real,
 disclosed difference from a Postgres-backed production database.
 
-`agent_parity/celery_app.py`/`tasks.py` are the scaled path: one *group* of
+`src/agent_parity/celery_app.py`/`tasks.py` are the scaled path: one *group* of
 fan-out tasks per client (one AD-export task per domain controller, one
 inventory-pull task per vendor/site-tenant) feeding a *chord* callback that
 runs the correlation exactly once against the client's complete result set.
@@ -329,7 +329,7 @@ Real, restored production behavior — confirmed via the git history commit that
 removed it once a since-permanently-removed Django dashboard took over
 visualization. Splunk is a *sink*, never the system of record (SQLite stays
 authoritative), and forwarding is entirely opt-in:
-`agent_parity/config.py`'s `SplunkConfig.enabled` is `False` unless both
+`src/agent_parity/config.py`'s `SplunkConfig.enabled` is `False` unless both
 `hec_url` and `hec_token` are configured — the same opt-in shape as object
 storage or a vendor's own credentials.
 
@@ -411,7 +411,7 @@ wording:
 - **Carbon Black** reports `os: "WINDOWS"` (uppercase) directly — lowercased
   to match S1's casing, no inference needed. It has no equivalent to `machineType`
   at all, so that's inferred from the OS name text instead
-  (`agent_parity/models.py`'s `infer_machine_type`).
+  (`src/agent_parity/models.py`'s `infer_machine_type`).
 - **BitDefender** reports `machineType` as a numeric enum (its own API
   convention) — mapped to S1's string wording (`_MACHINE_TYPES` in
   `connectors/bitdefender.py`). It has no equivalent to `osType`, so `platform`
@@ -458,11 +458,11 @@ one filter, not a manual search.
 ### OS end-of-life: a third prioritization axis
 
 [endoflife.date](https://endoflife.date/) is the source for a small,
-hand-typed reference table (`agent_parity/os_eol_data.json`,
+hand-typed reference table (`src/agent_parity/os_eol_data.json`,
 `os_eol_builds_data.json`) mapping OS names — and, where possible, exact
 Windows build numbers — to their end-of-life date. Every device gets
 classified against today's date into `unknown` / `supported` / `eol_soon`
-(within 180 days) / `end_of_life` (`agent_parity/os_eol.py`). This is
+(within 180 days) / `end_of_life` (`src/agent_parity/os_eol.py`). This is
 independent of coverage: a *covered* end-of-life server still means the OS
 itself needs upgrading — no agent fixes that — so `at_risk_status_counts`
 cross-tabs EOL status against coverage status to surface the worst case, an
@@ -483,7 +483,7 @@ precisely instead:
 - **Carbon Black and BitDefender** have no equivalent field — devices only
   seen through those vendors fall back to the free-text table.
 
-`extract_build_number()` (`agent_parity/os_eol.py`) parses both an AD-style
+`extract_build_number()` (`src/agent_parity/os_eol.py`) parses both an AD-style
 `"10.0 (22631)"` string and a full internal version string like
 `"10.0.22631.3155"`, distinguishing the true build (10000–99999) from the
 trailing UBR/revision component. `classify_eol_status()` in
@@ -563,8 +563,8 @@ for what a global vendor's `account:` key picks between.
 Any vendor registered in `agent_parity.connectors.CONNECTOR_CLASSES` works
 here — adding support for a vendor beyond SentinelOne/Carbon Black/BitDefender
 is writing one connector class decorated `@register_connector`
-(`agent_parity/connectors/base.py`), not editing a central table.
-`agent_parity/config.py`'s `load_config()` is the single entrypoint that
+(`src/agent_parity/connectors/base.py`), not editing a central table.
+`src/agent_parity/config.py`'s `load_config()` is the single entrypoint that
 resolves both files into an `AppConfig` — there's no database and no second
 config path, so this is also exactly what a consuming project should call.
 

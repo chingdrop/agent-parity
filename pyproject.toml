@@ -35,5 +35,8 @@ py-shared-tools = { git = "https://github.com/chingdrop/py-shared-tools", rev = 
 [project.scripts]
 agent-parity = "agent_parity.cli:cli"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_parity"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

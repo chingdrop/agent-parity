@@ -32,7 +32,7 @@ import yaml
 from shared_tools.config import ConfigError, StorageConfig, parse_storage_config, resolve_env_refs
 from shared_tools.config import get_storage as _shared_get_storage
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.yaml"
 SAMPLE_DATA_DIR = REPO_ROOT / "sample_data"
 
