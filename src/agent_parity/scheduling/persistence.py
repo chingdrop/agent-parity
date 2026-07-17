@@ -3,7 +3,7 @@
 ``pipeline.run_correlation_for_client``/``correlate_from_csvs`` stay pure —
 no persistence, no history — exactly as documented there. This module is
 the layer that gives a caller (the ``sync`` CLI subcommand, or a Celery
-chord callback — see ``agent_parity.tasks``) a place to record run history
+chord callback — see ``agent_parity.scheduling.tasks``) a place to record run history
 and, critically, to make a chord callback firing twice a no-op rather than
 double-counting data.
 
@@ -26,9 +26,9 @@ from sqlalchemy.orm import Session
 from agent_parity import splunk_export
 from agent_parity.config import AppConfig, ClientConfig, SplunkConfig
 from agent_parity.correlation import CorrelationResult, agents_to_frame, correlate
-from agent_parity.db import Client, CorrelationRun, CoverageSnapshot, Device, RunStatus
 from agent_parity.models import AgentDevice
 from agent_parity.pipeline import collect_ad_frame, collect_vendor_inventory
+from agent_parity.scheduling.db import Client, CorrelationRun, CoverageSnapshot, Device, RunStatus
 from agent_parity.splunk_export import SplunkExportError
 
 logger = logging.getLogger(__name__)
@@ -240,7 +240,7 @@ def run_and_persist_for_client(session: Session, config: AppConfig, client_cfg: 
     """Collect, correlate, and persist for one client, all in-process.
 
     This is what the ``sync`` CLI subcommand calls (demo/single-node path);
-    ``agent_parity.tasks.correlate_client`` is the Celery chord callback that
+    ``agent_parity.scheduling.tasks.correlate_client`` is the Celery chord callback that
     calls ``finalize_run`` the same way from fanned-out results instead.
     """
     client = sync_client_from_config(session, client_cfg)

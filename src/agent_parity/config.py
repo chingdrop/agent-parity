@@ -63,7 +63,7 @@ class ClientConfig:
     # single-domain client is just the len == 1 case of this same tuple,
     # not a special case.
     ad_target_devices: tuple[str, ...]
-    # How often (in hours) agent_parity.tasks.dispatch_all_clients' beat
+    # How often (in hours) agent_parity.scheduling.tasks.dispatch_all_clients' beat
     # entrypoint re-syncs this client — a real per-client fact (some clients
     # were synced more aggressively than others), not a global constant.
     # Unused by the synchronous `run`/`sync` CLI paths, which always run on

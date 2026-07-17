@@ -2,18 +2,18 @@
 
 Tasks run eagerly (in-process) via the ``celery_eager`` fixture — no broker
 needed; the semantics under test are identical either way. ``sqlite_db``
-points every fresh engine ``agent_parity.tasks`` opens (one per task
+points every fresh engine ``agent_parity.scheduling.tasks`` opens (one per task
 invocation) at the same tmp_path file.
 """
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from agent_parity import tasks
 from agent_parity.config import load_config
 from agent_parity.connectors import CarbonBlackConnector
 from agent_parity.connectors.base import ConnectorError
-from agent_parity.db import CorrelationRun, get_engine, init_db, session_factory
+from agent_parity.scheduling import tasks
+from agent_parity.scheduling.db import CorrelationRun, get_engine, init_db, session_factory
 
 
 def _raise_connector_error(self):
@@ -78,7 +78,7 @@ def test_chord_completes_cleanly_when_all_vendors_succeed(celery_eager, sqlite_d
 def test_run_failed_when_ad_export_is_missing(celery_eager, sqlite_db):
     """No AD export means nothing to reconcile against: FAILED, not partial."""
     config = load_config()
-    from agent_parity.persistence import sync_client_from_config
+    from agent_parity.scheduling.persistence import sync_client_from_config
 
     with _sessionmaker(sqlite_db)() as session:
         client = sync_client_from_config(session, config.client("acme"))
@@ -107,8 +107,8 @@ def test_callback_is_idempotent_on_duplicate_delivery(celery_eager, sqlite_db):
     """A retried/double-fired callback must not double-count snapshots —
     the pre-created CorrelationRun id is the idempotency key."""
     config = load_config()
-    from agent_parity.persistence import sync_client_from_config
     from agent_parity.pipeline import collect_ad_csv, collect_vendor_inventory
+    from agent_parity.scheduling.persistence import sync_client_from_config
 
     with _sessionmaker(sqlite_db)() as session:
         client = sync_client_from_config(session, config.client("globex"))

@@ -18,8 +18,8 @@ import argparse
 import sys
 import time
 
-from agent_parity.db import CorrelationRun, get_engine, init_db, session_factory
-from agent_parity.tasks import dispatch_all_clients
+from agent_parity.scheduling.db import CorrelationRun, get_engine, init_db, session_factory
+from agent_parity.scheduling.tasks import dispatch_all_clients
 
 TERMINAL_STATUSES = ("complete", "partial")
 

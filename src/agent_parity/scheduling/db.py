@@ -8,7 +8,7 @@ won't be developed further, so this package now owns that layer permanently
 instead of provisionally — SQLAlchemy + SQLite rather than the Django ORM +
 Postgres, but the same job: track one ``CorrelationRun`` per pipeline
 execution and enough device/snapshot history to make a Celery chord callback
-idempotent (see ``agent_parity.persistence``) and, later, to compute deltas
+idempotent (see ``agent_parity.scheduling.persistence``) and, later, to compute deltas
 for Splunk export.
 
 ``config.yaml`` stays the sole topology/credential source — nothing here

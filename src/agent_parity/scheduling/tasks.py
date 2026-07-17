@@ -6,7 +6,7 @@ one inventory-pull task per (vendor, site/tenant) the client has within
 that vendor (almost always just one), feeding a *chord* callback that runs
 the pandas correlation exactly once, against that client's complete result
 set. Ported from the historical Django project's ``dashboard/tasks.py`` —
-same shape, Django ORM calls replaced with ``agent_parity.persistence``'s
+same shape, Django ORM calls replaced with ``agent_parity.scheduling.persistence``'s
 SQLAlchemy-backed equivalents.
 
 Three deliberate design points, unchanged from the original:
@@ -40,12 +40,12 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 
 from agent_parity.ad_export import concat_ad_frames, parse_ad_export
-from agent_parity.celery_app import app
 from agent_parity.config import AppConfig, ClientConfig, get_connectors, load_config
-from agent_parity.db import CorrelationRun, RunStatus, get_engine, init_db, session_factory
 from agent_parity.models import AgentDevice
-from agent_parity.persistence import finalize_run, sync_client_from_config
 from agent_parity.pipeline import collect_ad_csv, site_status_key
+from agent_parity.scheduling.celery_app import app
+from agent_parity.scheduling.db import CorrelationRun, RunStatus, get_engine, init_db, session_factory
+from agent_parity.scheduling.persistence import finalize_run, sync_client_from_config
 
 logger = logging.getLogger(__name__)
 

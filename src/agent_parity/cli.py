@@ -15,8 +15,8 @@ export and any EDR's inventory mapped into agent-parity's own column schema
 a good first step before setting up ``config.yaml`` for repeatable/scheduled
 runs against a live API. ``sync`` is the persisted counterpart of ``run`` —
 same collection/correlation, but recorded as a ``CorrelationRun`` (see
-``agent_parity.persistence``) in a SQLite-backed history, the same
-entrypoint Celery's chord callback (``agent_parity.tasks``) uses when
+``agent_parity.scheduling.persistence``) in a SQLite-backed history, the same
+entrypoint Celery's chord callback (``agent_parity.scheduling.tasks``) uses when
 scheduled instead of run by hand.
 """
 
@@ -33,9 +33,9 @@ from shared_tools.tabular_io import write_structured_file
 from agent_parity.ad_export import ADParseError
 from agent_parity.agent_csv import AgentCSVParseError
 from agent_parity.config import ConfigError, load_config
-from agent_parity.db import get_engine, init_db, session_factory
-from agent_parity.persistence import run_and_persist_for_client
 from agent_parity.pipeline import correlate_from_csvs, run_correlation_for_client
+from agent_parity.scheduling.db import get_engine, init_db, session_factory
+from agent_parity.scheduling.persistence import run_and_persist_for_client
 
 OUT_DIR = Path("output")
 
@@ -108,9 +108,9 @@ def sync(client: str | None, run_all: bool) -> None:
     """Collect + correlate via config.yaml and connectors, persisted to SQLite.
 
     Same collection/correlation as ``run``, but each invocation is recorded
-    as a ``CorrelationRun`` (see ``agent_parity.persistence``) instead of
+    as a ``CorrelationRun`` (see ``agent_parity.scheduling.persistence``) instead of
     just a CSV — the synchronous, single-process counterpart of what
-    ``agent_parity.tasks``'s Celery chord does when scheduled.
+    ``agent_parity.scheduling.tasks``'s Celery chord does when scheduled.
     """
     config = load_config()
     if not config.clients:

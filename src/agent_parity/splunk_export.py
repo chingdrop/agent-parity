@@ -1,7 +1,7 @@
 """Optional Splunk HTTP Event Collector forwarder.
 
 Splunk is a *sink* here, never the system of record — the SQLite-backed run
-history (`agent_parity.db`/`persistence.py`) stays authoritative, and this
+history (`agent_parity.scheduling.db`/`persistence.py`) stays authoritative, and this
 module only ships already-classified results for orgs that centralize
 alerting in Splunk. Two deliberate choices follow from that:
 
@@ -16,7 +16,7 @@ alerting in Splunk. Two deliberate choices follow from that:
 The module is a no-op unless both an HEC URL and token are configured.
 
 This module has no SQLAlchemy imports either — callers hand us plain delta
-dicts; the diffing against run history lives in ``agent_parity.persistence``.
+dicts; the diffing against run history lives in ``agent_parity.scheduling.persistence``.
 """
 
 from __future__ import annotations

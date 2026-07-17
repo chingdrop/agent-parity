@@ -6,7 +6,7 @@ Everything runs against an in-memory SQLite engine — no file, no fixtures.
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from agent_parity.db import (
+from agent_parity.scheduling.db import (
     Client,
     CorrelationRun,
     CoverageSnapshot,

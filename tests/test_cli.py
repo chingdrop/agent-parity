@@ -101,7 +101,7 @@ def test_sync_subcommand_persists_a_run(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "run 1: complete" in result.output
 
-    from agent_parity.db import CoverageSnapshot, get_engine, session_factory
+    from agent_parity.scheduling.db import CoverageSnapshot, get_engine, session_factory
 
     Session = session_factory(get_engine())
     with Session() as session:

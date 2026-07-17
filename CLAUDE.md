@@ -131,23 +131,26 @@ up at all; `run_correlation_for_client` is the next step once collection needs t
 repeatable/scheduled against a live API instead of a one-off export file.
 
 No persistence and no history live in either function on purpose — that's kept as a
-separate layer (`src/agent_parity/persistence.py`, see "Scheduling & persistence" below),
+separate layer (`src/agent_parity/scheduling/persistence.py`, see "Scheduling & persistence" below),
 not because this package avoids owning persistence (it doesn't, see "What this is"
 above), but because collection/correlation and persistence are a clean seam regardless
 of which package owns both sides of it. `src/agent_parity/cli.py`'s `run`/`compare`
 subcommands call these two functions directly and stay pure (write `output/<name>.csv`,
-print a summary, nothing persisted); `sync` and `src/agent_parity/tasks.py` are the
+print a summary, nothing persisted); `sync` and `src/agent_parity/scheduling/tasks.py` are the
 persisted callers, both going through `persistence.py` instead.
 
-## Scheduling & persistence (`src/agent_parity/db.py`, `persistence.py`, `celery_app.py`, `tasks.py`)
+## Scheduling & persistence (`src/agent_parity/scheduling/`: `db.py`, `persistence.py`, `celery_app.py`, `tasks.py`)
 
 Historically this layer lived in a separate Django project consuming `agent_parity`
 (never in this package itself); that project — and its planned non-Django successor —
 are archived and won't be developed further (see "What this is"), so this restoration
 folds the same layer into this package permanently, SQLAlchemy + SQLite in place of the
-Django ORM + Postgres.
+Django ORM + Postgres. It's grouped into its own `scheduling/` subpackage — unlike the
+single-module folders flattened elsewhere in this file's history, these four modules are
+a genuine layered subsystem (schema → persistence → scheduled callers), not a "one class
+per X" grouping like `connectors/`.
 
-**`src/agent_parity/db.py`** is the schema: `Client` (an identity anchor only — topology
+**`src/agent_parity/scheduling/db.py`** is the schema: `Client` (an identity anchor only — topology
 stays in `config.yaml`, this table isn't a config cache), `Device` (keyed by join key
 per client), `CorrelationRun` (one row per pipeline execution; `RunStatus` is
 `pending`/`complete`/`partial`/`failed`), `CoverageSnapshot` (one row per
@@ -158,7 +161,7 @@ already uses. `init_db()` is a plain `Base.metadata.create_all()` — no Alembic
 a lightweight run-history store sized for the demo/single-node case, not a
 migration-managed production schema.
 
-**`src/agent_parity/persistence.py`** is the layer between `pipeline.py` (pure) and a
+**`src/agent_parity/scheduling/persistence.py`** is the layer between `pipeline.py` (pure) and a
 persisted caller: `persist_correlation` loads a classified frame into `CoverageSnapshot`
 rows, `finalize_run` correlates then persists (or marks the run `FAILED` outright when
 `ad_df is None`), `run_and_persist_for_client` is the synchronous entrypoint the `sync`
@@ -176,7 +179,7 @@ before storing or comparing; a comparison that skips it will crash the *second* 
 device's `last_seen` needs updating (this broke once during Stage 4a verification,
 fixed there, not a hypothetical).
 
-**`src/agent_parity/celery_app.py`**/**`tasks.py`** are the scaled path, ported from the
+**`src/agent_parity/scheduling/celery_app.py`**/**`tasks.py`** are the scaled path, ported from the
 historical Django project's `tasks.py` — the shape is unchanged: one *group* of
 fan-out tasks per client (one AD export task per domain controller, one inventory-pull
 task per vendor/site-tenant), feeding a *chord* callback (`correlate_client`) that runs
@@ -329,7 +332,7 @@ package. Bumping the pin means updating the `rev` in `[tool.uv.sources]`, not
 `git submodule update`.
 
 **Currently pinned to `v1.2.0`.** Two more shared, dependency-light modules
-were adopted from that bump (both stdlib-only, no new dependency): `src/agent_parity/db.py`'s
+were adopted from that bump (both stdlib-only, no new dependency): `src/agent_parity/scheduling/db.py`'s
 `get_engine()` calls `shared_tools.atomic_io.ensure_dir()` on a file-based
 `AGENT_PARITY_DB_URL`'s parent directory before `create_engine()` (a fresh
 Docker-volume path with no directory yet would otherwise fail); `cli.py`'s

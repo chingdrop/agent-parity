@@ -1,7 +1,7 @@
 """Persistence-layer tests: idempotency, the FAILED-on-no-AD-data case, and
 Splunk coverage-delta export.
 
-These exercise agent_parity/persistence.py directly (no Celery involved —
+These exercise agent_parity/scheduling/persistence.py directly (no Celery involved —
 that's tests/test_tasks.py's job); same known scenarios
 tests/test_pipeline_sync.py already pins for the pure (unpersisted) path.
 """
@@ -9,8 +9,8 @@ tests/test_pipeline_sync.py already pins for the pure (unpersisted) path.
 from datetime import UTC, datetime, timedelta
 
 from agent_parity.config import SplunkConfig, load_config
-from agent_parity.db import CorrelationRun, CoverageSnapshot, RunStatus, get_engine, init_db, session_factory
-from agent_parity.persistence import (
+from agent_parity.scheduling.db import CorrelationRun, CoverageSnapshot, RunStatus, get_engine, init_db, session_factory
+from agent_parity.scheduling.persistence import (
     SplunkExportError,
     export_deltas_to_splunk,
     finalize_run,
@@ -124,10 +124,12 @@ def _make_run(session, client, started_at, snapshots):
 
 
 def test_export_deltas_emits_every_snapshot_as_new_when_no_previous_run(monkeypatch):
-    from agent_parity.db import Client, Device
+    from agent_parity.scheduling.db import Client, Device
 
     captured: dict = {}
-    monkeypatch.setattr("agent_parity.persistence.splunk_export.send_deltas", _capturing_send_deltas(captured))
+    monkeypatch.setattr(
+        "agent_parity.scheduling.persistence.splunk_export.send_deltas", _capturing_send_deltas(captured)
+    )
 
     with _session() as session:
         client = Client(slug="acme", name="Acme Corp")
@@ -152,10 +154,12 @@ def test_export_deltas_emits_every_snapshot_as_new_when_no_previous_run(monkeypa
 
 
 def test_export_deltas_only_emits_changed_statuses(monkeypatch):
-    from agent_parity.db import Client, Device
+    from agent_parity.scheduling.db import Client, Device
 
     captured: dict = {}
-    monkeypatch.setattr("agent_parity.persistence.splunk_export.send_deltas", _capturing_send_deltas(captured))
+    monkeypatch.setattr(
+        "agent_parity.scheduling.persistence.splunk_export.send_deltas", _capturing_send_deltas(captured)
+    )
 
     with _session() as session:
         client = Client(slug="acme", name="Acme Corp")
@@ -192,10 +196,12 @@ def test_export_deltas_only_emits_changed_statuses(monkeypatch):
 
 
 def test_export_deltas_returns_zero_when_nothing_changed(monkeypatch):
-    from agent_parity.db import Client, Device
+    from agent_parity.scheduling.db import Client, Device
 
     captured: dict = {}
-    monkeypatch.setattr("agent_parity.persistence.splunk_export.send_deltas", _capturing_send_deltas(captured))
+    monkeypatch.setattr(
+        "agent_parity.scheduling.persistence.splunk_export.send_deltas", _capturing_send_deltas(captured)
+    )
 
     with _session() as session:
         client = Client(slug="acme", name="Acme Corp")
@@ -217,7 +223,7 @@ def test_export_deltas_returns_zero_when_nothing_changed(monkeypatch):
 
 
 def test_export_deltas_is_a_noop_when_splunk_is_not_configured():
-    from agent_parity.db import Client, Device
+    from agent_parity.scheduling.db import Client, Device
 
     with _session() as session:
         client = Client(slug="acme", name="Acme Corp")
@@ -239,7 +245,7 @@ def test_finalize_run_does_not_fail_when_splunk_export_raises(monkeypatch):
     def _raise(*args, **kwargs):
         raise SplunkExportError("HEC unreachable")
 
-    monkeypatch.setattr("agent_parity.persistence.export_deltas_to_splunk", _raise)
+    monkeypatch.setattr("agent_parity.scheduling.persistence.export_deltas_to_splunk", _raise)
 
     config = load_config()
     with _session() as session:

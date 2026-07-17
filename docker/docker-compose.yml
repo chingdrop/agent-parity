@@ -10,8 +10,8 @@
 #   this package runs directly via `uv run agent-parity` — no other services
 #   needed for that path.
 # * `redis` / `worker` / `beat` — the scheduled path: `worker` runs Celery
-#   tasks (agent_parity/tasks.py), `beat` fires `dispatch_all_clients` on
-#   the schedule in agent_parity/celery_app.py, `redis` is both the broker
+#   tasks (agent_parity/scheduling/tasks.py), `beat` fires `dispatch_all_clients` on
+#   the schedule in agent_parity/scheduling/celery_app.py, `redis` is both the broker
 #   and result backend. All three, plus the `agent-parity` service's own
 #   `sync` runs, share one SQLite file via the `dbdata` volume — SQLite is a
 #   file, not a service, so (unlike Postgres in the historical Django-era
@@ -67,7 +67,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    entrypoint: ["uv", "run", "--no-sync", "celery", "-A", "agent_parity.celery_app", "worker", "--loglevel=info"]
+    entrypoint: ["uv", "run", "--no-sync", "celery", "-A", "agent_parity.scheduling.celery_app", "worker", "--loglevel=info"]
     environment:
       <<: *celery-env
     volumes:
@@ -81,7 +81,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    entrypoint: ["uv", "run", "--no-sync", "celery", "-A", "agent_parity.celery_app", "beat", "--loglevel=info"]
+    entrypoint: ["uv", "run", "--no-sync", "celery", "-A", "agent_parity.scheduling.celery_app", "beat", "--loglevel=info"]
     environment:
       <<: *celery-env
     volumes:

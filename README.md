@@ -279,7 +279,7 @@ non-Django successor — are archived and won't be developed further, so this
 package now owns scheduling and persistence permanently: SQLAlchemy +
 SQLite in place of the Django ORM + Postgres, Celery unchanged.
 
-`src/agent_parity/db.py` is the schema — `Client` (an identity anchor only;
+`src/agent_parity/scheduling/db.py` is the schema — `Client` (an identity anchor only;
 topology stays in `config.yaml`), `Device`, `CorrelationRun` (one row per
 pipeline execution; status `pending`/`complete`/`partial`/`failed`),
 `CoverageSnapshot` (one row per classified-frame row). `get_engine()`
@@ -289,7 +289,7 @@ fixture-mode fallback. No Alembic: this is a lightweight run-history store
 sized for the demo/single-node case, not a migration-managed production
 schema.
 
-`src/agent_parity/persistence.py` sits between `pipeline.py` (pure, no
+`src/agent_parity/scheduling/persistence.py` sits between `pipeline.py` (pure, no
 persistence) and a persisted caller: `finalize_run` correlates and writes
 `CoverageSnapshot` rows (or marks the run `FAILED` outright when every AD
 domain failed), `run_and_persist_for_client` is the synchronous entrypoint
@@ -300,7 +300,7 @@ SQLite has no equivalent row lock, so this instead relies on SQLite's own
 writer serialization, adequate at this single-node/demo scale but a real,
 disclosed difference from a Postgres-backed production database.
 
-`src/agent_parity/celery_app.py`/`tasks.py` are the scaled path: one *group* of
+`src/agent_parity/scheduling/celery_app.py`/`tasks.py` are the scaled path: one *group* of
 fan-out tasks per client (one AD-export task per domain controller, one
 inventory-pull task per vendor/site-tenant) feeding a *chord* callback that
 runs the correlation exactly once against the client's complete result set.
