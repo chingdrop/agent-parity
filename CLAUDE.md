@@ -361,7 +361,7 @@ for text/html, `bytes` otherwise), not a `Response` object, so connector call
 sites use `self._request_json(...)` when they know the endpoint returns a
 JSON object, or `self._as_text(...)` on the raw `_request(...)` result when
 they need guaranteed text (e.g. SentinelOne's fetch-files script output). No
-test exercises real network I/O; `tests/test_connectors.py` proves the
+test exercises real network I/O; `tests/connectors/test_connectors.py` proves the
 RestAdapter wiring (retry config, JSON/text parsing) by monkeypatching the
 underlying `requests.Session.request`, not by hitting a live API.
 `RestAdapter`'s own unit tests (content-type parsing, header merging, retry
@@ -609,6 +609,12 @@ bug `pick_ad_export_vendor` already exists to avoid elsewhere in this file.
 
 ## Testing conventions
 
+- Test files mirror `src/agent_parity/`'s subpackage layout, same convention
+  vega-tools uses: `tests/connectors/` and `tests/scheduling/` pair with
+  `connectors/` and `scheduling/` (each with its own `__init__.py`), since
+  those are genuine multi-module subpackages. Everything else stays flat in
+  `tests/` because its source module is flat too — don't nest a test file
+  one level deeper than its module actually lives.
 - `tests/test_pipeline_sync.py` pins the specific gap scenarios authored into
   `sample_data/` by join key (e.g. `acme-sql02` is `missing_agent`). If you
   regenerate or edit the fixtures, these tests are the regression check — a
@@ -631,8 +637,8 @@ bug `pick_ad_export_vendor` already exists to avoid elsewhere in this file.
   the exception to "lives in this repo, tested in this repo's `tests/`" — they and
   their tests (`test_rest_adapter.py`, `test_storage.py`, `test_remote_exec.py`)
   live in the `py-shared-tools` repo instead, since that code is shared
-  across other projects, not agent-parity-specific. `test_connectors.py` still
-  covers `AgentConnector`'s own inventory-fetching and fixture-deploy-and-run
+  across other projects, not agent-parity-specific. `tests/connectors/test_connectors.py`
+  still covers `AgentConnector`'s own inventory-fetching and fixture-deploy-and-run
   behavior in this repo — only the generic dispatch/polling/registry mechanics
   moved. When adding a
   new module with real logic in it, add its

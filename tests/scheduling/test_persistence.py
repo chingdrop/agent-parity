@@ -2,7 +2,7 @@
 Splunk coverage-delta export.
 
 These exercise agent_parity/scheduling/persistence.py directly (no Celery involved —
-that's tests/test_tasks.py's job); same known scenarios
+that's tests/scheduling/test_tasks.py's job); same known scenarios
 tests/test_pipeline_sync.py already pins for the pure (unpersisted) path.
 """
 

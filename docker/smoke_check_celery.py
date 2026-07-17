@@ -1,7 +1,7 @@
 """Dispatch a real Celery chord and wait for it to complete.
 
 This proves the worker/broker/result-backend actually work end to end —
-``tests/test_tasks.py`` runs the same tasks with ``task_always_eager``, which
+``tests/scheduling/test_tasks.py`` runs the same tasks with ``task_always_eager``, which
 never touches a real broker, never involves a second process picking work
 up, and can't catch a misconfigured ``CELERY_BROKER_URL`` or a worker that
 isn't actually running. Only meaningful inside the Docker Compose stack,

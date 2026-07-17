@@ -639,7 +639,11 @@ manually, e.g. before cutting a release.
 
 ## Tests
 
-`uv run pytest` — all offline, no live credentials or external services:
+`uv run pytest` — all offline, no live credentials or external services.
+Test files mirror `src/agent_parity/`'s subpackage layout — `tests/connectors/`
+and `tests/scheduling/` pair with `connectors/` and `scheduling/`, matching
+vega-tools' convention — while everything else stays flat since its source
+module does too:
 
 - **Correlation**: one test per `CoverageStatus` outcome, the
   merged-row-count-equals-union-of-join-keys invariant, FQDN/case
