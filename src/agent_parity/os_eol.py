@@ -20,14 +20,24 @@ Both are hand-curated from endoflife.date's (https://endoflife.date/) public
 lifecycle data, not fetched live — there's no running pipeline here that
 would benefit from a live API call against a dataset that changes on the
 order of years, not days. endoflife.date does expose a real, free public
-JSON API; wiring this up as a live-with-fixture-fallback source (the same
-shape as every vendor connector in this project) would be a natural,
-self-contained extension if ever needed, but isn't built here since a
-static reference file already answers the question this project actually
-asks. The build-number dates in particular were hand-typed from public
-lifecycle documentation rather than verified against a live source at
-write time — worth double-checking against endoflife.date directly before
-leaning on day-level precision for a real decision.
+JSON API (no credentials needed); wiring this up as a live-with-fixture-
+fallback source (the same shape as every vendor connector in this project)
+would be a natural, self-contained extension if ever needed, but isn't
+built here since a static reference file already answers the question this
+project actually asks. `scripts/check_eol_drift.py` covers the "is this
+still accurate" question instead — a maintainer-run, dev-only script that
+diffs the two committed JSON files against the live API on demand (not
+part of the test suite or CI, since the data doesn't change often enough
+to justify checking on every run).
+
+endoflife.date splits most Windows 10/11 builds across several editions
+(Workstation, Enterprise, LTSC, IoT) with different EOL dates for the same
+build number — e.g. build 22621 (Windows 11 22H2) is 2024-10-08 for the
+Workstation edition but 2025-10-14 for Enterprise. Both JSON files always
+use the earliest EOL date across a build/version's editions, matching this
+project's own risk-flagging bias (see "High-value assets" in the README) —
+`scripts/check_eol_drift.py` reproduces this same "min EOL across editions"
+rule rather than matching one hardcoded edition name.
 
 The Windows 11 gap in the free-text table is deliberate, not an oversight:
 its real end-of-life date depends on which feature update is installed, and
