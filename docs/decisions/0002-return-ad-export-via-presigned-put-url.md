@@ -4,11 +4,16 @@ Status: Accepted (2026-07-03)
 
 ## Context
 
-Vendor remote-execution output channels (SentinelOne RSO's fetch-files, Carbon Black Live Response's command output) don't reliably preserve exact formatting (encoding, line endings) and have output-size limits a large environment's export can exceed. The remote endpoint should also never hold a standing storage credential.
+Vendor remote-execution output channels (SentinelOne RSO's fetch-files, Carbon Black Live Response's command output)
+don't reliably preserve exact formatting (encoding, line endings) and have output-size limits a large environment's
+export can exceed. The remote endpoint should also never hold a standing storage credential.
 
 ## Decision
 
-agent-parity generates a single-object presigned PUT URL (default `expires_in=900`, 15 minutes) and passes it to the script as `UploadUrl`. The script uploads its CSV directly. agent-parity downloads it with its own credentials and deletes it, best-effort. The vendor call's return value is discarded. Object storage is required for any live export; fixture mode bypasses it.
+agent-parity generates a single-object presigned PUT URL (default `expires_in=900`, 15 minutes) and passes it to the
+script as `UploadUrl`. The script uploads its CSV directly. agent-parity downloads it with its own credentials and
+deletes it, best-effort. The vendor call's return value is discarded. Object storage is required for any live export;
+fixture mode bypasses it.
 
 ## Alternatives considered
 
@@ -24,5 +29,11 @@ agent-parity generates a single-object presigned PUT URL (default `expires_in=90
 
 ## Evidence
 
-- Code: [`src/agent_parity/shared/script_export.py`](../../src/agent_parity/shared/script_export.py), `presigned_put_url` in [`src/agent_parity/shared/storage.py`](../../src/agent_parity/shared/storage.py)
-- Tests: [`tests/shared/test_script_export.py`](../../tests/shared/test_script_export.py) `test_live_connector_without_storage_raises_clear_error`, `test_fixture_mode_never_touches_storage_even_if_configured`, `test_live_mode_with_storage_uploads_then_downloads`; [`tests/shared/test_storage.py`](../../tests/shared/test_storage.py) `test_presigned_put_url_round_trips_content`, `test_presigned_url_expires_quickly_by_default` (passes `expires_in=900` explicitly; the default itself is set only in the function signature)
+- Code: [`src/agent_parity/shared/script_export.py`](../../src/agent_parity/shared/script_export.py),
+  `presigned_put_url` in [`src/agent_parity/shared/storage.py`](../../src/agent_parity/shared/storage.py)
+- Tests: [`tests/shared/test_script_export.py`](../../tests/shared/test_script_export.py)
+  `test_live_connector_without_storage_raises_clear_error`,
+  `test_fixture_mode_never_touches_storage_even_if_configured`, `test_live_mode_with_storage_uploads_then_downloads`; [
+  `tests/shared/test_storage.py`](../../tests/shared/test_storage.py) `test_presigned_put_url_round_trips_content`,
+  `test_presigned_url_expires_quickly_by_default` (passes `expires_in=900` explicitly; the default itself is set only in
+  the function signature)

@@ -8,8 +8,8 @@ cd agent-parity
 uv sync
 ```
 
-This installs `agent-parity` in editable mode along with its dev dependencies
-(`pytest`, `ruff`, `mypy`, `pre-commit`, plus type stubs for `pandas`/`boto3`/
+This installs `agent-parity` in editable mode along with its dev dependencies (`pytest`, `ruff`, `mypy`, `pre-commit`,
+plus type stubs for `pandas`/`boto3`/
 `PyYAML`).
 
 Then install the git hook so linting/formatting/type-checking run

@@ -13,8 +13,8 @@ before making structural changes, since several design decisions there are delib
 and were agreed on with the project owner rather than obvious from the code.
 
 This package has no web framework and no Django — those were never real (a Django
-dashboard was a rebuild-only addition that has been permanently removed) — but it is
-**not** a thin, dependency-free library. It owns real scheduling (Celery) and
+dashboard was a rebuild-only addition that has been permanently removed) — but it is **not** a thin, dependency-free
+library. It owns real scheduling (Celery) and
 persistence (SQLAlchemy/SQLite) directly, as core dependencies, the same tier as
 `pandas`/`requests`. Earlier in this project's history the plan was for a separate
 "hub" project to own that layer instead, consumed as a pinned git dependency
@@ -24,7 +24,7 @@ not provisionally. Don't try to strip Celery/SQLAlchemy back out "to keep it a t
 library" — that plan is dead, not deferred.
 
 Models a real MSSP-style topology: multiple client organizations in one `config.yaml`,
-each with its own AD domain(s) and enabled vendor(s) — `clients:`/`vendors:` nesting,
+each with its own AD domain (s) and enabled vendor (s) — `clients:`/`vendors:` nesting,
 `ClientConfig`/`VendorConfig`, and per-vendor `scope` (`global` vs `per_client`) are all
 deliberate, not incidental. This matches what was actually run in production; Django
 and the web dashboard never were (that was a rebuild-only addition, and it stays gone).
@@ -55,8 +55,8 @@ docker compose -f docker/docker-compose.yml up -d minio redis worker beat   # lo
 docker/smoke_test.sh                                 # round-trips a real object + a real Celery chord
 ```
 
-Ruff, mypy and the coverage gate are configured in `pyproject.toml` and run in CI
-(`.github/workflows/ci.yml`: `lint`, `typecheck`, `test`, `build`, and a `security` job with
+Ruff, mypy and the coverage gate are configured in `pyproject.toml` and run in CI (`.github/workflows/ci.yml`: `lint`,
+`typecheck`, `test`, `build`, and a `security` job with
 pip-audit and gitleaks; CodeQL runs separately). `pre-commit` runs ruff and mypy locally.
 Tests are exempt from ruff's `S101`/`S106` by a per-file ignore, not by disabling the rules.
 
@@ -162,8 +162,8 @@ stays in `config.yaml`, this table isn't a config cache), `Device` (keyed by joi
 per client), `CorrelationRun` (one row per pipeline execution; `RunStatus` is
 `pending`/`complete`/`partial`/`failed`), `CoverageSnapshot` (one row per
 `CorrelationResult.frame` row, FK'd to both `CorrelationRun` and `Device`). `get_engine()`
-resolves `AGENT_PARITY_DB_URL` or defaults to a local `agent_parity.db` SQLite file
-(gitignored) — same `${VAR}`-or-default shape `config.py`'s `AGENT_PARITY_CONFIG`
+resolves `AGENT_PARITY_DB_URL` or defaults to a local `agent_parity.db` SQLite file (gitignored) — same `${VAR}`
+-or-default shape `config.py`'s `AGENT_PARITY_CONFIG`
 already uses. `init_db()` is a plain `Base.metadata.create_all()` — no Alembic; this is
 a lightweight run-history store sized for the demo/single-node case, not a
 migration-managed production schema.
@@ -186,7 +186,7 @@ before storing or comparing; a comparison that skips it will crash the *second* 
 device's `last_seen` needs updating (this broke once during Stage 4a verification,
 fixed there, not a hypothetical).
 
-**`src/agent_parity/scheduling/celery_app.py`**/**`tasks.py`** are the scaled path, ported from the
+**`src/agent_parity/scheduling/celery_app.py`**/ **`tasks.py`** are the scaled path, ported from the
 historical Django project's `tasks.py` — the shape is unchanged: one *group* of
 fan-out tasks per client (one AD export task per domain controller, one inventory-pull
 task per vendor/site-tenant), feeding a *chord* callback (`correlate_client`) that runs
@@ -225,8 +225,8 @@ finds the client's most recent non-`PENDING` `CorrelationRun` before `run`, diff
 `CoverageSnapshot` rows keyed by `(device_id, vendor)`, and only forwards rows whose
 status is new or changed. Re-indexing every device every run would just bloat a
 Splunk license for data the run history already has. `splunk_export.send_deltas`
-does the actual HEC POST — newline-delimited JSON envelopes
-(`index`/`sourcetype`/`source`/`event`), batched at 100 events per request, raising
+does the actual HEC POST — newline-delimited JSON envelopes (`index`/`sourcetype`/`source`/`event`), batched at 100
+events per request, raising
 `SplunkExportError` on any `requests.RequestException`. This module has zero SQLAlchemy
 imports; it only ever sees plain delta dicts, the same "collection knows nothing about
 persistence, persistence knows nothing about the sink" boundary the rest of this file
@@ -256,18 +256,19 @@ line in `connectors/__init__.py` to trigger registration — nothing else.
 half — a credentialed `RestAdapter` session, `is_live`, live/fixture dispatch for
 `deploy_and_run()`, `_poll_until`, `_request`/`_request_json`/`_as_text`,
 `_fixture_path`, `ConnectorError`, and the `ConnectorRegistry` class itself — lives in
-`agent_parity.shared.remote_exec.VendorConnector`. `AgentConnector` subclasses it and adds only what's specific to *this*
+`agent_parity.shared.remote_exec.VendorConnector`. `AgentConnector` subclasses it and adds only what's specific to
+*this*
 project: `fetch_inventory()`/`_fixture_fetch_inventory()`/the abstract
 `_live_fetch_inventory()`/`_parse_inventory()` pair, and this project's own
 `_fixture_deploy_and_run()` override (the AD-export-CSV-by-target_id behavior below).
-`CONNECTOR_REGISTRY` here is agent-parity's own `ConnectorRegistry()` instance.
-**When touching connector internals, check whether the change belongs in
+`CONNECTOR_REGISTRY` here is agent-parity's own `ConnectorRegistry()` instance. **When touching connector internals,
+check whether the change belongs in
 `src/agent_parity/connectors/base.py` (this project's inventory/AD-export
 specifics) or `src/agent_parity/shared/remote_exec.py` (generic vendor-API
 mechanics) — don't add project-specific logic to the shared base, and don't
 duplicate generic mechanics back into this file.**
 
-**`connectors/sentinelone.py` goes one step further: even the vendor-*specific* RSO
+**`connectors/sentinelone.py` goes one step further: even the vendor- *specific* RSO
 mechanics are shared.** `SentinelOneConnector(SentinelOneRSOMixin, AgentConnector)` —
 `_headers` and `_live_deploy_and_run` (the upload -> execute -> poll `remote-scripts
 /status` -> fetch-files sequence) live in `agent_parity.shared.sentinelone.SentinelOneRSOMixin`,
@@ -328,8 +329,8 @@ name instead of Python's unconfigured bare-message default — `run`/`sync`
 also write their CSV/output through `agent_parity.shared.atomic_io.ensure_dir()`/
 `atomic_write()` instead of `Path.mkdir()`/`DataFrame.to_csv(path)` directly,
 so a crash mid-write can never leave a truncated CSV or DB file behind.
-The library's `config_loader.ConfigLoader` and `retry.call_with_retry` were
-**not** inlined — nothing here uses them: `config.py`'s own `load_config()`
+The library's `config_loader.ConfigLoader` and `retry.call_with_retry` were **not** inlined — nothing here uses them:
+`config.py`'s own `load_config()`
 already does far more domain-specific work than a generic loader, and
 `RestAdapter`'s transport-level retry already covers 429/5xx (no connector has
 hit the "200 OK but unusable body" failure `call_with_retry` exists for).
@@ -349,11 +350,11 @@ config, the `files=` passthrough) live in `tests/shared/test_rest_adapter.py`.
 (most of the historical client base was on S1, so its vocabulary is canonical).
 `_parse_inventory` in each connector sets them: SentinelOne passes its own
 `osType`/`machineType` straight through; Carbon Black lowercases its uppercase
-`os` enum for `platform` and infers `machine_type` from OS text
-(`infer_machine_type`, defined in `src/agent_parity/models.py`, re-exported from
+`os` enum for `platform` and infers `machine_type` from OS text (`infer_machine_type`, defined in
+`src/agent_parity/models.py`, re-exported from
 `connectors/base.py` for existing call sites) since it has no equivalent field;
-BitDefender maps its numeric `machineType` enum to S1's string wording
-(`_MACHINE_TYPES` in `connectors/bitdefender.py`) and infers `platform` from OS
+BitDefender maps its numeric `machineType` enum to S1's string wording (`_MACHINE_TYPES` in `connectors/bitdefender.py`)
+and infers `platform` from OS
 text (`infer_platform`) since it has no equivalent field. `infer_platform`/
 `infer_machine_type` live in `models.py`, not `connectors/base.py`, specifically
 so `correlation.py` can use them too (for AD-only rows — see
@@ -361,9 +362,8 @@ so `correlation.py` can use them too (for AD-only rows — see
 `requests`/`RestAdapter` dependency chain
 just for two pure string functions.
 If a 4th vendor is
-added, decide per-field whether it reports something directly-mappable
-(prefer a direct map, like BitDefender's `machineType`) or needs inference
-(like Carbon Black's `machine_type`) — don't guess when the vendor's raw API
+added, decide per-field whether it reports something directly-mappable (prefer a direct map, like BitDefender's
+`machineType`) or needs inference (like Carbon Black's `machine_type`) — don't guess when the vendor's raw API
 actually has the field. **`agent_version` is deliberately never touched this
 way** — each vendor's version numbering is real and vendor-specific; making
 one look like another's would be fabricating a value, not normalizing one.
@@ -391,8 +391,8 @@ output-size limits a full AD export can exceed:
    15-minute default expiry) and passes it to `deploy_and_run(..., script_args={"UploadUrl": ...})`.
 3. The script uploads its own CSV there — the vendor call's return value is
    discarded entirely, since the real output never goes through it.
-4. `run_script_export` downloads with `get_object` and deletes the object
-   (best-effort; failures there only log, they never fail an export that
+4. `run_script_export` downloads with `get_object` and deletes the object (best-effort; failures there only log, they
+   never fail an export that
    already succeeded).
 
 **Fixture mode is the one exception** — `run_script_export` checks
@@ -403,12 +403,12 @@ configured. This is also why the uv demo path can leave `STORAGE_*` unset in
 `.env`: safe only because the vendor has no live credentials there either, so
 no script ever actually runs.
 
-Built against the S3 API via `boto3`, not a specific product — MinIO
-(self-hosted, via `docker/docker-compose.yml`) for local/dev, real AWS S3 in
+Built against the S3 API via `boto3`, not a specific product — MinIO (self-hosted, via `docker/docker-compose.yml`) for
+local/dev, real AWS S3 in
 production, same `ObjectStorage` class either way; only `endpoint_url`
 changes. This is *not* Azure Blob Storage capable — different API, would need
-a second implementation with a different SDK, not just different config.
-**`StorageConfig`/`get_storage` live in `agent_parity.shared.config`** —
+a second implementation with a different SDK, not just different config. **`StorageConfig`/`get_storage` live in
+`agent_parity.shared.config`** —
 `config.get_storage(config)` here is a one-line delegate to
 `agent_parity.shared.config.get_storage(config.storage)`.
 `get_storage(config)` returns
@@ -416,8 +416,8 @@ a second implementation with a different SDK, not just different config.
 `config.storage.backend` only supports `"s3"` today, and `get_storage` raises
 `ConfigError` for anything else.
 
-Only SentinelOne and Carbon Black connectors accept `script_args` meaningfully
-(BitDefender doesn't implement `_live_deploy_and_run` at all). SentinelOne passes
+Only SentinelOne and Carbon Black connectors accept `script_args` meaningfully (BitDefender doesn't implement
+`_live_deploy_and_run` at all). SentinelOne passes
 them as RSO's `inputParams`; Carbon Black appends them to the raw PowerShell
 command line (`CarbonBlackConnector._powershell_args`) since Live Response's
 `create process` takes a command string, not structured parameters — different
@@ -436,8 +436,8 @@ is a thin *wiring* smoke test — proving
 path through correctly — not a re-test of `run_script_export`'s own branching.
 `moto` proves the code path, not the network — `docker/smoke_check_storage.py`
 (run via `docker/smoke_test.sh`, Docker-only) round-trips a real object through
-the actual `minio` service, including auto-creating the smoke-test bucket
-(`ObjectStorage` itself has no bucket-admin methods on purpose; production
+the actual `minio` service, including auto-creating the smoke-test bucket (`ObjectStorage` itself has no bucket-admin
+methods on purpose; production
 bucket provisioning is out-of-band, so that stays smoke-test-only code).
 
 `docker/Dockerfile` is a separate, bare-bones concern from the MinIO
@@ -463,8 +463,8 @@ needs to stay in sync with a project that isn't being developed further.
 reference; an unset variable resolves to `None` rather than raising, which is exactly
 what puts a connector into fixture mode. This is the *only* config entrypoint — there
 is no database, so there's nothing else for a consuming project to call.
-`sites_for(client_slug, vendor_name)` returns one merged dict per site/tenant a
-(client, vendor) pair has — almost always a one-element tuple, more for a client
+`sites_for(client_slug, vendor_name)` returns one merged dict per site/tenant a (client, vendor) pair has — almost
+always a one-element tuple, more for a client
 with multiple sites/tenants (see "Multi-site/tenant" below) — it's the one place
 that knows `global` vs `per_client` scope (`VendorConfig.scope`) — SentinelOne/
 BitDefender are global (same credentials for every client), Carbon Black is
@@ -499,30 +499,30 @@ by design.
 
 Tolerant of partial failure the same way per-vendor collection already is: one
 domain's status is recorded independently (`f"ad:{target_device}"` in `vendor_status`,
-e.g. `ad:GLOBEX-DC01`), and `collect_ad_frame` returns `None` for the frame only when
-*every* domain failed — `run_correlation_for_client` is where that "nothing to
+e.g. `ad:GLOBEX-DC01`), and `collect_ad_frame` returns `None` for the frame only when *every* domain failed —
+`run_correlation_for_client` is where that "nothing to
 correlate against" case is handled (returns `None` up to its own caller rather than
 attempting to correlate against nothing); don't duplicate that check elsewhere.
 
 Fixture mode picks the CSV by target device — `sample_data/<client>/ad_export_<target_device>.csv`
 (`connectors/base.py`'s `deploy_and_run`) — one file per domain, not one shared
-`ad_export.csv`. The demo's `globex` client is intentionally multi-domain
-(`GLOBEX-DC01` + a branch office `GLOBEX-BR-DC01`, both in `config.yaml` and
+`ad_export.csv`. The demo's `globex` client is intentionally multi-domain (`GLOBEX-DC01` + a branch office
+`GLOBEX-BR-DC01`, both in `config.yaml` and
 `sample_data/globex/`) so this path has real test/demo coverage; `acme` stays
 single-domain.
 
 ## Multi-site/tenant (`ClientConfig.vendors`, `AppConfig.sites_for`)
 
 A client can have more than one site/tenant *within* a single vendor's console —
-`ClientConfig.vendors` maps a vendor name to a tuple of dicts, one per site/tenant
-(almost always a one-element tuple), mirroring the AD multi-domain shape above.
+`ClientConfig.vendors` maps a vendor name to a tuple of dicts, one per site/tenant (almost always a one-element tuple),
+mirroring the AD multi-domain shape above.
 What each dict holds depends on the vendor's `scope`:
 
 - **`per_client` (Carbon Black)**: each entry is a complete, independent credential
   block — a second entry means a second, genuinely separate CB org (e.g. a branch
   office on its own tenant). `sites_for` returns these as-is; there's nothing to
   merge them with, and the connector itself needed zero code changes to support
-  this — it was always just "build one connector per site_for() entry."
+  this — it was always just "build one connector per site_for () entry."
 - **`global` (SentinelOne, BitDefender)**: one shared credential set (per named
   account — see "Multiple named accounts" below) covers the whole account, but
   a client's endpoints can be scoped to a slice of it via an optional filter

@@ -2,7 +2,8 @@
 
 # Architecture
 
-This is the full design write-up for agent-parity, moved out of the README so the first screen stays short. The [README](../README.md) has the quick start, the CSV schema, sample data, Docker and the test suite.
+This is the full design write-up for agent-parity, moved out of the README so the first screen stays short.
+The [README](../README.md) has the quick start, the CSV schema, sample data, Docker and the test suite.
 
 ```
       `agent-parity compare`               `agent-parity run` (config.yaml + connectors)
@@ -56,8 +57,8 @@ An earlier version of this connector modeled a `createCustomScriptTask` RPC
 method to paper over that, but that method doesn't actually exist in
 GravityZone's public API, so it's been removed rather than left implying an
 accuracy it didn't have. `BitDefenderConnector.supports_remote_execution =
-False`; it's fetch_inventory-only, and `deploy_and_run()` refuses outright
-(in both live and fixture mode) rather than silently succeeding — an
+False`; it's fetch_inventory-only, and `deploy_and_run()` refuses outright (in both live and fixture mode) rather than
+silently succeeding — an
 organization on BitDefender alone can't have its AD export collected at all.
 
 `src/agent_parity/script_runner.py` is the uniform entry point; each connector's
@@ -131,8 +132,8 @@ credential model:
   concept, matched against `companyId`) — **this filter is not verified
   against real GravityZone API docs or a live tenant**, only plausible given
   GravityZone's own MSP company hierarchy; the same caution this project
-  already applied to one other invented-then-removed GravityZone capability
-  (`createCustomScriptTask`). An unset filter (the common case) means the
+  already applied to one other invented-then-removed GravityZone capability (`createCustomScriptTask`). An unset filter
+  (the common case) means the
   whole account.
 
 An entry can carry an optional `label` (e.g. `branch`), which does two
@@ -168,12 +169,12 @@ sentinelone:
     dfir: { api_url: ..., api_token: ... }
 ```
 
-A client's site dict gets an `"account"` key picking which one it's in
-(`config.yaml`'s `acme`/`globex` both pick `mssp`). Omitted, it resolves to
+A client's site dict gets an `"account"` key picking which one it's in (`config.yaml`'s `acme`/`globex` both pick
+`mssp`). Omitted, it resolves to
 the vendor's sole account when there's exactly one — still today's implicit
 default for a single-account vendor — or raises a clear `ConfigError` if
-there's more than one and no client made a choice
-(`AppConfig._resolve_account`); ambiguous is a config error, not a silent
+there's more than one and no client made a choice (`AppConfig._resolve_account`); ambiguous is a config error, not a
+silent
 pick.
 
 ## Scheduling & persistence
@@ -273,11 +274,10 @@ doesn't go through them at all:
    expires.
 2. That URL is passed to the script as an argument (SentinelOne via RSO's
    `inputParams`, Carbon Black by appending it to the raw PowerShell command
-   line — see each connector's `_live_deploy_and_run`). The script
-   (`Export-ADDevices.ps1 -UploadUrl ...`) uploads its CSV directly there
+   line — see each connector's `_live_deploy_and_run`). The script (`Export-ADDevices.ps1 -UploadUrl ...`) uploads its
+   CSV directly there
    instead of printing it to stdout.
-3. The vendor's remote-execution call only needs to report that the script
-   *ran*; its stdout is ignored entirely.
+3. The vendor's remote-execution call only needs to report that the script *ran*; its stdout is ignored entirely.
 4. agent-parity downloads the object with a plain authenticated GET (its own
    credentials, not the presigned URL) and deletes it — best-effort cleanup
    that never fails an export that already succeeded.
@@ -296,8 +296,8 @@ error rather than falling back to the vendor channel if a live connector
 reaches it with no storage configured. The one exception is fixture mode: a
 non-live connector has no real endpoint to upload anything from, so it always
 returns the canned `sample_data/` CSV directly, regardless of whether storage
-happens to be configured. Storage is unconfigured by default in the demo path
-(`STORAGE_BUCKET`/`STORAGE_ACCESS_KEY`/`STORAGE_SECRET_KEY` all resolve to
+happens to be configured. Storage is unconfigured by default in the demo path (`STORAGE_BUCKET`/`STORAGE_ACCESS_KEY`/
+`STORAGE_SECRET_KEY` all resolve to
 `null` with no `.env`) — that's only safe because the demo path has no live
 vendor credentials either, so no script ever actually runs.
 
@@ -314,8 +314,7 @@ wording:
 
 - **Carbon Black** reports `os: "WINDOWS"` (uppercase) directly — lowercased
   to match S1's casing, no inference needed. It has no equivalent to `machineType`
-  at all, so that's inferred from the OS name text instead
-  (`src/agent_parity/models.py`'s `infer_machine_type`).
+  at all, so that's inferred from the OS name text instead (`src/agent_parity/models.py`'s `infer_machine_type`).
 - **BitDefender** reports `machineType` as a numeric enum (its own API
   convention) — mapped to S1's string wording (`_MACHINE_TYPES` in
   `connectors/bitdefender.py`). It has no equivalent to `osType`, so `platform`
@@ -443,7 +442,7 @@ vendors:
 clients:
   - name: Acme Corp
     slug: acme
-    ad_target_devices: [ACME-DC01]
+    ad_target_devices: [ ACME-DC01 ]
     vendors:
       sentinelone:
         - account: mssp
@@ -460,8 +459,8 @@ clients:
 ```
 
 Each vendor's value is a *list* of site/tenant entries, not a single block —
-see "Multi-site/tenant" above for what a client with more than one looks like
-(Acme's two Carbon Black tenants above), and "Multiple named accounts" above
+see "Multi-site/tenant" above for what a client with more than one looks like (Acme's two Carbon Black tenants above),
+and "Multiple named accounts" above
 for what a global vendor's `account:` key picks between.
 
 Any vendor registered in `agent_parity.connectors.CONNECTOR_CLASSES` works
