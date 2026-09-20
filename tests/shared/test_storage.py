@@ -22,7 +22,7 @@ def test_presigned_put_url_round_trips_content(storage):
     """A presigned PUT followed by a plain GET on the owning side."""
     url = storage.presigned_put_url("acme/ad_export.csv")
 
-    response = requests.put(url, data=b"Name,Enabled\nACME-WS-001,True\n")
+    response = requests.put(url, data=b"Name,Enabled\nACME-WS-001,True\n", timeout=10)
     response.raise_for_status()
 
     assert storage.get_object("acme/ad_export.csv") == b"Name,Enabled\nACME-WS-001,True\n"
