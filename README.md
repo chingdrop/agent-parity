@@ -130,6 +130,10 @@ The full write-up is in [docs/architecture.md](docs/architecture.md). Good place
 
 The key choices behind the design, each with its context, the alternatives, the tradeoffs and the code and tests that pin it, are recorded as short ADRs. See the [index](docs/decisions/README.md).
 
+## Security
+
+Report vulnerabilities through the private channel in [SECURITY.md](SECURITY.md). The [threat model](docs/threat-model.md) covers which credentials and data the tool handles, where the trust boundaries are, and the residual risks. CI runs ruff, mypy, tests with a coverage gate, pip-audit and gitleaks, and CodeQL runs weekly.
+
 ## Sample data
 
 Two synthetic clients with deliberate, reviewable gap scenarios:
