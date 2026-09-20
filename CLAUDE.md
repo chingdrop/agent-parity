@@ -44,14 +44,21 @@ uv run agent-parity sync --all                 # same as run, but persisted as a
 
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
+uv run pytest --cov --cov-fail-under=88     # the coverage gate CI enforces (line + branch)
+
+uv run ruff check src tests                 # lint (E, F, I, UP, B, SIM, S)
+uv run ruff format src tests                # format
+uv run mypy                                 # type-check; config in pyproject.toml, not strict
 
 docker build -f docker/Dockerfile -t agent-parity .   # bare-bones standalone image
 docker compose -f docker/docker-compose.yml up -d minio redis worker beat   # local storage + scheduling stack
 docker/smoke_test.sh                                 # round-trips a real object + a real Celery chord
 ```
 
-There is no linter/formatter config in this repo (`pyproject.toml` has no `[tool.ruff]`
-or `[tool.black]`) — formatting has so far been done via the IDE's reformatter, not a CLI tool.
+Ruff, mypy and the coverage gate are configured in `pyproject.toml` and run in CI
+(`.github/workflows/ci.yml`: `lint`, `typecheck`, `test`, `build`, and a `security` job with
+pip-audit and gitleaks; CodeQL runs separately). `pre-commit` runs ruff and mypy locally.
+Tests are exempt from ruff's `S101`/`S106` by a per-file ignore, not by disabling the rules.
 
 ## Architecture
 
@@ -217,7 +224,7 @@ optional integration in this project (object storage, live vendor credentials).
 finds the client's most recent non-`PENDING` `CorrelationRun` before `run`, diffs
 `CoverageSnapshot` rows keyed by `(device_id, vendor)`, and only forwards rows whose
 status is new or changed. Re-indexing every device every run would just bloat a
-Splunk license for data the run history already has. `reporting/splunk_export.send_deltas`
+Splunk license for data the run history already has. `splunk_export.send_deltas`
 does the actual HEC POST — newline-delimited JSON envelopes
 (`index`/`sourcetype`/`source`/`event`), batched at 100 events per request, raising
 `SplunkExportError` on any `requests.RequestException`. This module has zero SQLAlchemy

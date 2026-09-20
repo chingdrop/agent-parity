@@ -60,7 +60,7 @@ False`; it's fetch_inventory-only, and `deploy_and_run()` refuses outright
 (in both live and fixture mode) rather than silently succeeding — an
 organization on BitDefender alone can't have its AD export collected at all.
 
-`deployment/script_runner.py` is the uniform entry point; each connector's
+`src/agent_parity/script_runner.py` is the uniform entry point; each connector's
 `deploy_and_run()` implements the vendor mechanics. AD collection and agent
 inventory both flow through the same authenticated channel per vendor — for
 whichever vendor is actually carrying the AD export. Every client needs at
@@ -241,7 +241,7 @@ storage or a vendor's own credentials.
 `CoverageSnapshot` rows against the client's previous run (keyed by
 `(device, vendor)`) and only forwards rows whose status is new or changed —
 re-indexing every device every run would just bloat a Splunk license for
-data the run history already has. `reporting/splunk_export.send_deltas` does
+data the run history already has. `splunk_export.send_deltas` does
 the actual HTTP Event Collector POST: newline-delimited JSON envelopes,
 batched at 100 events per request.
 
