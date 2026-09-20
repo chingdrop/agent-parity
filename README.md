@@ -46,7 +46,7 @@ uv sync
 uv run agent-parity compare ad_export.csv agent_export.csv   # your own two CSVs, zero config
 uv run agent-parity run --all                                 # config.yaml + connectors, every client
 uv run agent-parity run --client acme                         # just one client
-uv run pytest                                                  # 190+ tests, all offline
+uv run pytest                                                  # 290+ tests, all offline
 ```
 
 `compare` needs no vendor connector, no `config.yaml`, and no credentials at
@@ -119,8 +119,7 @@ below) is the next step up.
 ```
 
 Everything above the `pipeline.py` line is pure, dependency-light Python:
-pandas/numpy for the correlation engine, `requests`/`boto3` (via
-`py-shared-tools` — see below) for the connectors and object
+pandas/numpy for the correlation engine, `requests`/`boto3` for the connectors and object
 storage, `pyyaml` for config. No web framework, no ORM, no task queue — a
 consumer decides what to do with a `CorrelationResult`.
 
@@ -161,7 +160,7 @@ Black, one on BitDefender) and raising a clear `ConfigError` if a client has
 neither.
 
 All three connectors share one HTTP transport —
-`shared_tools.rest_adapter` (`RestAdapter`, from `py-shared-tools`) —
+`agent_parity.shared.rest_adapter` (`RestAdapter`) —
 instead of a bare `requests.Session`: automatic retries with backoff on
 429/5xx, content-type-aware parsing (JSON responses come back as `dict`,
 text/HTML as `str`, everything else as raw `bytes`), and a single place to
@@ -169,15 +168,9 @@ add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
 `_request_json()`/`_as_text()` helpers narrow that `dict | str | bytes` result
 for call sites that know which one they expect.
 
-`RestAdapter` and `ObjectStorage` (below) live in
-[py-shared-tools](https://github.com/chingdrop/py-shared-tools), a separate
-git repo pulled in as a plain pinned `uv` git dependency
-(`py-shared-tools[storage]` in `pyproject.toml`'s `[tool.uv.sources]`, pinned
-to a tag) rather than copy-pasted into this package — the same two classes
-are reused as-is by other projects. Import as
-`from shared_tools.rest_adapter import RestAdapter` /
-`from shared_tools.storage import ObjectStorage`. `uv sync` fetches it
-directly from GitHub; no submodule init step is needed.
+`RestAdapter` and `ObjectStorage` (below) were factored out of a shared
+library and inlined here (`src/agent_parity/shared/`, with their tests in
+`tests/shared/`) so the repo is self-contained.
 
 ### Multi-domain clients: one export per domain, concatenated into a master list
 
@@ -378,7 +371,7 @@ doesn't go through them at all:
    that never fails an export that already succeeded.
 
 This is built against the **S3 API** (`boto3`), not a specific product:
-`py-shared-tools`'s own `shared_tools/storage.py` `ObjectStorage` talks to a
+`agent_parity.shared.storage.ObjectStorage` talks to a
 self-hosted **MinIO** instance (`docker/docker-compose.yml` runs one) for
 local/dev use, or real **AWS S3** in production, with `endpoint_url` as the
 only thing that changes.
@@ -617,8 +610,7 @@ docker compose -f docker/docker-compose.yml up -d redis worker beat
 ```
 
 Runs fully offline by default (config.yaml's fixture-mode connector + AD
-export) — no `.env` required. `py-shared-tools` is a plain git dependency, so
-the build needs network access to fetch it (no submodule init required).
+export) — no `.env` required.
 
 The two live-infrastructure paths this package has — the AD-export
 object-storage handoff (see
@@ -640,8 +632,9 @@ manually, e.g. before cutting a release.
 ## Tests
 
 `uv run pytest` — all offline, no live credentials or external services.
-Test files mirror `src/agent_parity/`'s subpackage layout — `tests/connectors/`
-and `tests/scheduling/` pair with `connectors/` and `scheduling/`, matching
+Test files mirror `src/agent_parity/`'s subpackage layout — `tests/connectors/`,
+`tests/scheduling/` and `tests/shared/` pair with `connectors/`, `scheduling/`
+and `shared/`, matching
 vega-tools' convention — while everything else stays flat since its source
 module does too:
 
@@ -691,12 +684,13 @@ module does too:
   first run with no history emits every snapshot as new, a second run only
   emits genuinely changed statuses, an unchanged run emits nothing, and a
   simulated Splunk outage never fails the underlying `finalize_run`.
-- **HTTP transport and object storage in isolation**: `RestAdapter`'s
+- **Inlined helpers in isolation** (`tests/shared/`): `RestAdapter`'s
   content-type-based parsing, retry configuration, header merging, `files=`
-  passthrough; `ObjectStorage`'s presigned-URL round trip. These live in
-  `py-shared-tools`'s own `tests/`, not this package's own `tests/` — they're
-  a separate repo's test suite, run there via `uv run pytest`, not part of
-  `uv run pytest` at the agent-parity root.
+  passthrough; `ObjectStorage`'s presigned-URL round trip (against `moto`);
+  the storage-backed script-export handoff, the vendor-connector base, the
+  SentinelOne RSO mixin, config env-ref resolution, atomic file writes,
+  logging setup and tabular file I/O. All run under the normal
+  `uv run pytest`.
 
 Also deliberately **not** covered here: whether a real MinIO/AWS S3 endpoint
 actually works — `moto` proves the *logic* is right but never touches a real

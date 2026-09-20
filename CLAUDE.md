@@ -249,38 +249,26 @@ line in `connectors/__init__.py` to trigger registration — nothing else.
 half — a credentialed `RestAdapter` session, `is_live`, live/fixture dispatch for
 `deploy_and_run()`, `_poll_until`, `_request`/`_request_json`/`_as_text`,
 `_fixture_path`, `ConnectorError`, and the `ConnectorRegistry` class itself — lives in
-`shared_tools.remote_exec.VendorConnector`, shared via `py-shared-tools` with other
-projects (`credential-audit`) that talk to the same kind of vendor remote-execution
-APIs. `AgentConnector` subclasses it and adds only what's specific to *this*
+`agent_parity.shared.remote_exec.VendorConnector`. `AgentConnector` subclasses it and adds only what's specific to *this*
 project: `fetch_inventory()`/`_fixture_fetch_inventory()`/the abstract
 `_live_fetch_inventory()`/`_parse_inventory()` pair, and this project's own
 `_fixture_deploy_and_run()` override (the AD-export-CSV-by-target_id behavior below).
-`CONNECTOR_REGISTRY` here is agent-parity's own `ConnectorRegistry()` instance — the
-registry mechanism is shared, but each project's instance is independent, so
-`credential-audit` registering its own vendor connectors on the same base can never
-collide with these entries. **When touching connector internals, check whether the
-change belongs in `src/agent_parity/connectors/base.py` (this project's inventory/AD-export
-specifics) or `py-shared-tools`'s own `shared_tools/remote_exec.py` (generic vendor-API
-mechanics any consumer of the shared base would want) — don't add project-specific
-logic to the shared base, and don't duplicate generic mechanics back into this file.**
+`CONNECTOR_REGISTRY` here is agent-parity's own `ConnectorRegistry()` instance.
+**When touching connector internals, check whether the change belongs in
+`src/agent_parity/connectors/base.py` (this project's inventory/AD-export
+specifics) or `src/agent_parity/shared/remote_exec.py` (generic vendor-API
+mechanics) — don't add project-specific logic to the shared base, and don't
+duplicate generic mechanics back into this file.**
 
 **`connectors/sentinelone.py` goes one step further: even the vendor-*specific* RSO
 mechanics are shared.** `SentinelOneConnector(SentinelOneRSOMixin, AgentConnector)` —
 `_headers` and `_live_deploy_and_run` (the upload -> execute -> poll `remote-scripts
-/status` -> fetch-files sequence) moved to `shared_tools.sentinelone.SentinelOneRSOMixin`
-once `credential-audit` needed a `SentinelOneConnector` of its own and the RSO code
-turned out to be byte-for-byte identical — not just the generic dispatch mechanics,
-the actual SentinelOne API calls. It's a **mixin**, not a full base class, specifically
-so each project can combine it with its own project-specific base via multiple
-inheritance (`SentinelOneRSOMixin, AgentConnector` here; `SentinelOneRSOMixin,
-CredentialAuditConnector` in `credential-audit`) rather than forcing one inheritance
-shape on every consumer. `connectors/sentinelone.py` here now only defines
+/status` -> fetch-files sequence) live in `agent_parity.shared.sentinelone.SentinelOneRSOMixin`,
+not in `connectors/sentinelone.py`. It's a **mixin**, not a full base class, so it
+combines with a project-specific base via multiple inheritance.
+`connectors/sentinelone.py` only defines
 `vendor`/`required_credentials`/`_parse_inventory`/`_live_fetch_inventory` — the
 inventory-fetching half, which is all that's actually agent-parity-specific.
-If Carbon Black's Live Response mechanics (`carbonblack.py`'s `_live_deploy_and_run`)
-ever get duplicated into a second project too, extract a `CarbonBlackLiveResponseMixin`
-the same way, at that point — same "duplicated twice, not hypothetically" bar that
-applied to `VendorConnector` and `SentinelOneRSOMixin`, not before.
 
 **Fixture fallback is not a test-only shim — it's the default runtime path.** `is_live`
 gates on whether all `required_credentials` are present; if not, `fetch_inventory()`
@@ -307,54 +295,37 @@ rather than silently skipping it. If a 4th vendor connector genuinely can't run
 scripts either, set this the same way — don't leave `_live_deploy_and_run`
 unimplemented and let it fail some other way.
 
-Live mode goes through `shared_tools.rest_adapter` (`RestAdapter`) rather than a
+Live mode goes through `agent_parity.shared.rest_adapter` (`RestAdapter`) rather than a
 bare `requests.Session` — retries/backoff on 429/5xx are configured there once,
 shared by all three vendors (wired up inside `VendorConnector.__init__`, not
-per-connector). `RestAdapter`, `ObjectStorage` (see "AD-export object storage"
-below), and `VendorConnector`/`remote_exec` all live in
-[py-shared-tools](https://github.com/chingdrop/py-shared-tools),
-a separate git repo consumed as a plain pinned `uv` git dependency
-(`py-shared-tools[storage]`, `[tool.uv.sources]` in `pyproject.toml` pins it to
-a tag) — reused as-is across other projects rather than copy-pasted, which is
-what `RestAdapter`/`ObjectStorage`'s own comments used to say before their
-extraction (and what `AgentConnector`'s own `deploy_and_run`/polling/registry
-logic said before `VendorConnector`'s). Editing any of them means editing the
-files in a separate clone of `py-shared-tools`, not anywhere in
-`src/agent_parity/`; there's no local copy left to accidentally diverge from.
-**This used to be a vendored git submodule at `vendor/py-shared-tools`** with a
-local editable path override — dropped in favor of a plain git dependency
-because `uv` can't reconcile two sibling projects (`agent-parity` and
-`credential-audit`) each vendoring their own copy of the same package under
-different subdirectory paths; a consumer needing both (like `cyberhub`) would
-hit an unresolvable "conflicting URLs for package py-shared-tools" error. A
-plain git dependency pinned to the same tag in both projects resolves as one
-package. Bumping the pin means updating the `rev` in `[tool.uv.sources]`, not
-`git submodule update`.
+per-connector).
 
-**Currently pinned to `v1.2.0`.** Two more shared, dependency-light modules
-were adopted from that bump (both stdlib-only, no new dependency): `src/agent_parity/scheduling/db.py`'s
-`get_engine()` calls `shared_tools.atomic_io.ensure_dir()` on a file-based
+**`src/agent_parity/shared/` is inlined from a former shared library.** The HTTP
+adapter (`rest_adapter.py`) and object storage helper (`storage.py`), plus the
+modules built on them (`remote_exec`, `sentinelone`, `script_export`, `config`,
+`atomic_io`, `logging_setup`, `tabular_io`), were factored out of a shared
+library (`py-shared-tools`, v1.3.1) and inlined here so the repo is
+self-contained — no git dependency, no submodule, and `uv sync && uv run pytest`
+works from a plain clone. The standalone library is not a dependency and is not
+kept in sync; edit the files here. Their tests live in `tests/shared/`.
+
+Two of the shared, stdlib-only helpers are used outside the connector stack:
+`src/agent_parity/scheduling/db.py`'s
+`get_engine()` calls `agent_parity.shared.atomic_io.ensure_dir()` on a file-based
 `AGENT_PARITY_DB_URL`'s parent directory before `create_engine()` (a fresh
 Docker-volume path with no directory yet would otherwise fail); `cli.py`'s
-group callback calls `shared_tools.logging_setup.setup_logging(level=WARNING)`
+group callback calls `agent_parity.shared.logging_setup.setup_logging(level=WARNING)`
 so the `logger.warning`/`.exception` calls already scattered across
 `pipeline.py`/`persistence.py`/`tasks.py` print with a timestamp and logger
 name instead of Python's unconfigured bare-message default — `run`/`sync`
-also switched their CSV/output writes to `shared_tools.atomic_io.ensure_dir()`/
+also write their CSV/output through `agent_parity.shared.atomic_io.ensure_dir()`/
 `atomic_write()` instead of `Path.mkdir()`/`DataFrame.to_csv(path)` directly,
 so a crash mid-write can never leave a truncated CSV or DB file behind.
-`shared_tools.config_loader.ConfigLoader` (also new since `v1.0.0`) is
-**not** adopted here — it's a generic flat/nested JSON-or-YAML
-`MutableMapping`, and `config.py`'s own `load_config()` already does far more
-domain-specific work (`${VAR}` resolution, `VendorConfig`/`ClientConfig`
-construction, multi-site/account resolution) than that module is for;
-using it would be a regression, not a simplification. `shared_tools.retry
-.call_with_retry` (new in `v1.1.0`) also isn't used — it exists for a
-"200 OK but unusable body" failure mode (a flaky public API returning an
-error page or wrong-shaped JSON) that no connector here has actually hit;
-`RestAdapter`'s own transport-level retry already covers 429/5xx, and this
-project's history is to wire in cross-project tooling when a real need
-shows up, not preemptively.
+The library's `config_loader.ConfigLoader` and `retry.call_with_retry` were
+**not** inlined — nothing here uses them: `config.py`'s own `load_config()`
+already does far more domain-specific work than a generic loader, and
+`RestAdapter`'s transport-level retry already covers 429/5xx (no connector has
+hit the "200 OK but unusable body" failure `call_with_retry` exists for).
 
 `RestAdapter.request()` returns already-parsed content (`dict` for JSON, `str`
 for text/html, `bytes` otherwise), not a `Response` object, so connector call
@@ -365,9 +336,7 @@ test exercises real network I/O; `tests/connectors/test_connectors.py` proves th
 RestAdapter wiring (retry config, JSON/text parsing) by monkeypatching the
 underlying `requests.Session.request`, not by hitting a live API.
 `RestAdapter`'s own unit tests (content-type parsing, header merging, retry
-config, the `files=` passthrough) live in `py-shared-tools`'s own `tests/`,
-not in this repo's `tests/` — they're that repo's own test suite, run there
-via `uv run pytest`, not part of `uv run pytest` at the agent-parity root.
+config, the `files=` passthrough) live in `tests/shared/test_rest_adapter.py`.
 
 **`AgentDevice.platform`/`machine_type` are normalized to SentinelOne's wording**
 (most of the historical client base was on S1, so its vocabulary is canonical).
@@ -382,7 +351,7 @@ text (`infer_platform`) since it has no equivalent field. `infer_platform`/
 `infer_machine_type` live in `models.py`, not `connectors/base.py`, specifically
 so `correlation.py` can use them too (for AD-only rows — see
 `backfill_machine_type`) without pulling in the connector stack's
-`requests`/`RestAdapter` dependency chain (now `py-shared-tools`)
+`requests`/`RestAdapter` dependency chain
 just for two pure string functions.
 If a 4th vendor is
 added, decide per-field whether it reports something directly-mappable
@@ -392,19 +361,14 @@ actually has the field. **`agent_version` is deliberately never touched this
 way** — each vendor's version numbering is real and vendor-specific; making
 one look like another's would be fabricating a value, not normalizing one.
 
-## AD-export object storage (`shared_tools.script_export`, in the `py-shared-tools` repo)
+## AD-export object storage (`agent_parity.shared.script_export`)
 
-**The storage-backed handoff itself moved to `shared_tools.script_export`** —
-`run_ad_export` in `deployment/script_runner.py` is now a thin wrapper
+**The storage-backed handoff itself lives in `agent_parity.shared.script_export`** —
+`run_ad_export` in `script_runner.py` is a thin wrapper
 supplying this project's own script path (`AD_EXPORT_SCRIPT`), object-key
 prefix (`"ad-exports"`), expected CSV header (`"Name"`), and error wording to
-`shared_tools.script_export.run_script_export`. This extraction happened
-once `credential-audit` needed the *exact same* orchestration for its own
-AD-metadata export — not just the generic `VendorConnector` dispatch, the
-whole "storage mandatory for live, fixture bypasses it entirely,
-presigned-URL round trip, validate the result" function was byte-for-byte
-identical under two names before it moved. `ScriptExecutionError` is
-re-exported from `deployment/script_runner.py` for existing import sites, not
+`agent_parity.shared.script_export.run_script_export`. `ScriptExecutionError` is
+re-exported from `script_runner.py` for existing import sites, not
 redefined there. **Mandatory for any live connector** — not an optional
 upgrade — because vendor remote-execution output channels (SentinelOne RSO's
 fetch-files, Carbon Black Live Response's command output) don't reliably
@@ -437,17 +401,13 @@ Built against the S3 API via `boto3`, not a specific product — MinIO
 production, same `ObjectStorage` class either way; only `endpoint_url`
 changes. This is *not* Azure Blob Storage capable — different API, would need
 a second implementation with a different SDK, not just different config.
-**`StorageConfig`/`get_storage` also moved, into `shared_tools.config`** —
+**`StorageConfig`/`get_storage` live in `agent_parity.shared.config`** —
 `config.get_storage(config)` here is a one-line delegate to
-`shared_tools.config.get_storage(config.storage)`, same byte-for-byte logic
-`credential-audit`'s own `get_storage` needs. `get_storage(config)` returns
+`agent_parity.shared.config.get_storage(config.storage)`.
+`get_storage(config)` returns
 `None` when unconfigured (`config.storage.enabled` is False);
 `config.storage.backend` only supports `"s3"` today, and `get_storage` raises
-`ConfigError` for anything else. **If you need to change the storage-handoff
-mechanics or the `StorageConfig` shape itself, edit `py-shared-tools`'s own
-`shared_tools/script_export.py` or `shared_tools/config.py`, not this
-project's own files** — they're shared with `credential-audit`, and a local
-copy here would silently diverge.
+`ConfigError` for anything else.
 
 Only SentinelOne and Carbon Black connectors accept `script_args` meaningfully
 (BitDefender doesn't implement `_live_deploy_and_run` at all). SentinelOne passes
@@ -459,14 +419,12 @@ mechanisms, same `script_args: dict[str, str]` contract from `deploy_and_run`.
 Tests use `moto` (`@mock_aws` / the `mock_aws()` context manager) — no real
 MinIO or AWS S3 touches the test suite, and a real presigned-URL PUT/GET round
 trip still gets exercised. `ObjectStorage`'s own unit tests live in
-`py-shared-tools`'s own `tests/test_storage.py`; the *orchestration logic*
+`tests/shared/test_storage.py`; the *orchestration logic*
 (mandatory-storage rule, fixture bypass, upload/download/cleanup, empty/
-wrong-shaped output) is now exhaustively tested in
-`py-shared-tools`'s own `tests/test_script_export.py` too, using a generic
-fake connector — that suite is actually a superset of what this repo used to
-cover on its own (it gained the wrong-shaped-output tests `credential-audit`
-had added that this project's copy was missing). This repo's own
-`tests/test_script_runner.py` is now a thin *wiring* smoke test — proving
+wrong-shaped output) is exhaustively tested in
+`tests/shared/test_script_export.py`, using a generic
+fake connector. `tests/test_script_runner.py`
+is a thin *wiring* smoke test — proving
 `run_ad_export` threads its own `object_key_prefix`/`header_marker`/script
 path through correctly — not a re-test of `run_script_export`'s own branching.
 `moto` proves the code path, not the network — `docker/smoke_check_storage.py`
@@ -610,8 +568,8 @@ bug `pick_ad_export_vendor` already exists to avoid elsewhere in this file.
 ## Testing conventions
 
 - Test files mirror `src/agent_parity/`'s subpackage layout, same convention
-  vega-tools uses: `tests/connectors/` and `tests/scheduling/` pair with
-  `connectors/` and `scheduling/` (each with its own `__init__.py`), since
+  vega-tools uses: `tests/connectors/`, `tests/scheduling/` and `tests/shared/`
+  pair with `connectors/`, `scheduling/` and `shared/` (each with its own `__init__.py`), since
   those are genuine multi-module subpackages. Everything else stays flat in
   `tests/` because its source module is flat too — don't nest a test file
   one level deeper than its module actually lives.
@@ -632,15 +590,14 @@ bug `pick_ad_export_vendor` already exists to avoid elsewhere in this file.
   `correlate_from_csvs`, deliberately exercised with hand-rolled CSVs rather than
   `sample_data/`, to prove that path has zero dependency on the demo fixtures),
   `test_agent_csv.py` ↔ `src/agent_parity/agent_csv.py`, `test_cli.py` ↔
-  `src/agent_parity/cli.py`, `test_config.py` ↔ `src/agent_parity/config.py`. `RestAdapter`,
-  `ObjectStorage`, and `VendorConnector`/`ConnectorRegistry` (`remote_exec.py`) are
-  the exception to "lives in this repo, tested in this repo's `tests/`" — they and
-  their tests (`test_rest_adapter.py`, `test_storage.py`, `test_remote_exec.py`)
-  live in the `py-shared-tools` repo instead, since that code is shared
-  across other projects, not agent-parity-specific. `tests/connectors/test_connectors.py`
-  still covers `AgentConnector`'s own inventory-fetching and fixture-deploy-and-run
-  behavior in this repo — only the generic dispatch/polling/registry mechanics
-  moved. When adding a
+  `src/agent_parity/cli.py`, `test_config.py` ↔ `src/agent_parity/config.py`. The
+  inlined `src/agent_parity/shared/` modules (`RestAdapter`, `ObjectStorage`,
+  `VendorConnector`/`ConnectorRegistry`, ...) have one test file each in
+  `tests/shared/`, all part of the normal `uv run pytest`.
+  `tests/connectors/test_connectors.py` covers `AgentConnector`'s own
+  inventory-fetching and fixture-deploy-and-run behavior — the generic
+  dispatch/polling/registry mechanics are tested in
+  `tests/shared/test_remote_exec.py`. When adding a
   new module with real logic in it, add its
   test file alongside — don't rely on it being incidentally exercised by a
   higher-level pipeline test.
