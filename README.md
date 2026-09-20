@@ -39,6 +39,8 @@ Of the devices AD knows about, 36 are covered (81.8%); 5 have no agent, 3 have g
 
 - [Sample report](docs/sample-report.md): the coverage, high-value-asset and OS end-of-life views, generated from a real run against the fixtures.
 
+<!-- TODO(craig): after `vhs docs/demo.tape` renders docs/demo.gif, embed it here: ![agent-parity demo](docs/demo.gif) -->
+
 ## Original deployment
 
 This is a from-scratch rebuild of a tool I originally built professionally, using entirely synthetic data. No proprietary code, client data, or credentials are involved; vendor API interactions are shaped from public API documentation, and **everything runs against local fixtures by default** — no live credentials required.

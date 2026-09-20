@@ -57,6 +57,17 @@ uv run python scripts/gen_sample_report.py
 It refuses to run if any connector has live credentials configured, so the published doc only ever contains
 synthetic data.
 
+## Rendering the demo GIF
+
+`docs/demo.tape` is a [vhs](https://github.com/charmbracelet/vhs) script that types `uv run agent-parity run` and
+holds on the summary line. It records the real command, not scripted text. To render `docs/demo.gif`:
+
+```bash
+brew install vhs   # also installs ttyd and ffmpeg
+uv sync
+vhs docs/demo.tape
+```
+
 ## Linting, formatting, and type-checking
 
 ```bash
