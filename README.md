@@ -267,11 +267,6 @@ actually works — `moto` proves the *logic* is right but never touches a real
 network. That's what `docker/smoke_test.sh` is for; see
 [Optional: Docker](#optional-docker) above.
 
-## Out of scope for v1
+## Limitations and roadmap
 
-- A web dashboard — there is no plan to build one; this package's own
-  reporting surface is `CorrelationResult`/`CoverageSnapshot` history plus
-  Splunk delta export (see [Splunk delta export](docs/architecture.md#splunk-delta-export)), not a UI.
-- Fuzzy hostname matching beyond normalization (a natural next step for the
-  renamed-machine orphans).
-- Real-time ingestion — this is a batch tool on a schedule, not a streaming one.
+Known limitations, possible next steps, and what is deliberately out of scope (a web dashboard, real-time ingestion) are in [docs/limitations-and-roadmap.md](docs/limitations-and-roadmap.md). What shipped in each release is in [CHANGELOG.md](CHANGELOG.md).
