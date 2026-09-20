@@ -126,6 +126,10 @@ Four layers, collect → correlate → report: vendor connectors (plus an AD exp
 
 The full write-up is in [docs/architecture.md](docs/architecture.md). Good places to start: [the deployment model](docs/architecture.md#the-deployment-model-remote-script-execution-not-direct-ad-access), [the correlation](docs/architecture.md#the-correlation-a-pandas-merge-kept-honest), [high-value assets](docs/architecture.md#high-value-assets-servers-as-the-prioritization-signal), [OS end-of-life](docs/architecture.md#os-end-of-life-a-third-prioritization-axis), [scheduling & persistence](docs/architecture.md#scheduling--persistence) and [credentials](docs/architecture.md#credentials-configyaml--env).
 
+## Design decisions
+
+The key choices behind the design, each with its context, the alternatives, the tradeoffs and the code and tests that pin it, are recorded as short ADRs. See the [index](docs/decisions/README.md).
+
 ## Sample data
 
 Two synthetic clients with deliberate, reviewable gap scenarios:
