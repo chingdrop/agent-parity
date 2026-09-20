@@ -55,7 +55,7 @@ def test_live_mode_wiring_round_trips_through_storage(moto_storage):
     upload/download/cleanup mechanics are tests/shared/'s own to test."""
 
     def fake_deploy_and_run(script_path, target_id, script_args=None):
-        requests.put(script_args["UploadUrl"], data=SAMPLE_CSV.encode()).raise_for_status()
+        requests.put(script_args["UploadUrl"], data=SAMPLE_CSV.encode(), timeout=10).raise_for_status()
         return "ok"
 
     connector = _fake_connector(is_live=True, deploy_and_run=Mock(side_effect=fake_deploy_and_run))
@@ -73,7 +73,7 @@ def test_wrong_header_is_rejected_using_this_projects_marker(moto_storage):
     wired through, not left at run_script_export's generic default."""
 
     def fake_deploy_and_run(script_path, target_id, script_args=None):
-        requests.put(script_args["UploadUrl"], data=b"NotTheRightHeader,Enabled\nx,y\n").raise_for_status()
+        requests.put(script_args["UploadUrl"], data=b"NotTheRightHeader,Enabled\nx,y\n", timeout=10).raise_for_status()
         return "ok"
 
     connector = _fake_connector(is_live=True, deploy_and_run=Mock(side_effect=fake_deploy_and_run))

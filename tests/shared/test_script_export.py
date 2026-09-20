@@ -69,7 +69,7 @@ def test_live_mode_with_storage_uploads_then_downloads(moto_storage):
     actually does with the presigned URL it's handed."""
 
     def fake_deploy_and_run(script_path, target_id, script_args=None):
-        response = requests.put(script_args["UploadUrl"], data=SAMPLE_CSV.encode())
+        response = requests.put(script_args["UploadUrl"], data=SAMPLE_CSV.encode(), timeout=10)
         response.raise_for_status()
         return "Uploaded to object storage."
 
@@ -84,7 +84,7 @@ def test_live_mode_with_storage_uploads_then_downloads(moto_storage):
 
 def test_live_mode_with_storage_deletes_object_after_download(moto_storage):
     def fake_deploy_and_run(script_path, target_id, script_args=None):
-        requests.put(script_args["UploadUrl"], data=SAMPLE_CSV.encode()).raise_for_status()
+        requests.put(script_args["UploadUrl"], data=SAMPLE_CSV.encode(), timeout=10).raise_for_status()
         return "ok"
 
     connector = _fake_connector(is_live=True, deploy_and_run=Mock(side_effect=fake_deploy_and_run))
@@ -101,7 +101,7 @@ def test_empty_upload_is_rejected(moto_storage):
     failure, same as the direct-channel path returning nothing."""
 
     def fake_deploy_and_run(script_path, target_id, script_args=None):
-        requests.put(script_args["UploadUrl"], data=b"").raise_for_status()
+        requests.put(script_args["UploadUrl"], data=b"", timeout=10).raise_for_status()
         return "ok"
 
     connector = _fake_connector(is_live=True, deploy_and_run=Mock(side_effect=fake_deploy_and_run))
@@ -131,7 +131,7 @@ def test_wrong_shaped_output_is_rejected(moto_storage):
     rather than silently returned to the caller."""
 
     def fake_deploy_and_run(script_path, target_id, script_args=None):
-        requests.put(script_args["UploadUrl"], data=b"not,the,right,csv\n").raise_for_status()
+        requests.put(script_args["UploadUrl"], data=b"not,the,right,csv\n", timeout=10).raise_for_status()
         return "ok"
 
     connector = _fake_connector(is_live=True, deploy_and_run=Mock(side_effect=fake_deploy_and_run))
@@ -170,7 +170,7 @@ def test_header_marker_customizes_validation(moto_storage):
 
     def fake_deploy_and_run(script_path, target_id, script_args=None):
         requests.put(
-            script_args["UploadUrl"], data=b"sAMAccountName,PasswordLastSet\njdoe,2020-01-01\n"
+            script_args["UploadUrl"], data=b"sAMAccountName,PasswordLastSet\njdoe,2020-01-01\n", timeout=10
         ).raise_for_status()
         return "ok"
 
