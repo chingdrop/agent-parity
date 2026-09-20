@@ -35,7 +35,7 @@ endoflife.date splits most Windows 10/11 builds across several editions
 build number — e.g. build 22621 (Windows 11 22H2) is 2024-10-08 for the
 Workstation edition but 2025-10-14 for Enterprise. Both JSON files always
 use the earliest EOL date across a build/version's editions, matching this
-project's own risk-flagging bias (see "High-value assets" in the README) —
+project's own risk-flagging bias (see "High-value assets" in docs/architecture.md) —
 `scripts/check_eol_drift.py` reproduces this same "min EOL across editions"
 rule rather than matching one hardcoded edition name.
 

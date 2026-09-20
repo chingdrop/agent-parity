@@ -8,7 +8,7 @@ A portfolio rebuild (synthetic data only, no proprietary code) of a device cover
 reconciliation tool: it correlates an Active Directory computer inventory against an
 EDR/security agent inventory (SentinelOne, Carbon Black, or BitDefender) to find devices
 missing agent coverage, orphaned agents with no matching AD object, and stale agent
-check-ins. See [README.md](README.md) for the full architecture writeup — read it
+check-ins. See [docs/architecture.md](docs/architecture.md) for the full architecture writeup — read it
 before making structural changes, since several design decisions there are deliberate
 and were agreed on with the project owner rather than obvious from the code.
 
@@ -87,7 +87,7 @@ there's no fuzzy matching, by design (noted as future work).
 `AgentDevice`'s docstring) only ever comes from the agent side of the merge, so a
 `missing_agent` row — no agent record at all — would otherwise carry no criticality
 signal whatsoever. That's backwards for a coverage tool whose whole point (see
-README's "High-value assets" section — this project's original purpose was a
+docs/architecture.md's "High-value assets" section — this project's original purpose was a
 quarterly client report prioritizing exactly this) is flagging a missing Domain
 Controller *harder* than a missing workstation. It backfills from AD's own OS text
 via `infer_machine_type()` (`src/agent_parity/models.py`) — the same heuristic
