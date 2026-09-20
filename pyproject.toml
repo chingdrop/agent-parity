@@ -16,7 +16,7 @@ dependencies = [
     "urllib3>=2.0",
     "pyyaml>=6.0",
     "click>=8.1",
-    "py-shared-tools[storage]",
+    "boto3>=1.34",
     "sqlalchemy>=2.0",
     "celery[redis]>=5.4",
 ]
@@ -28,6 +28,7 @@ Repository = "https://github.com/chingdrop/agent-parity"
 dev = [
     "pytest>=8.3",
     "moto[s3]>=5.0",
+    "openpyxl>=3.1",
     "pandas-stubs~=3.0.3",
     "boto3-stubs~=1.43.40",
     "ruff>=0.8",
@@ -35,9 +36,6 @@ dev = [
     "types-pyyaml",
     "pre-commit>=4.0",
 ]
-
-[tool.uv.sources]
-py-shared-tools = { git = "https://github.com/chingdrop/py-shared-tools", rev = "v1.3.1" }
 
 [project.scripts]
 agent-parity = "agent_parity.cli:cli"
@@ -65,6 +63,5 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 
 [[tool.mypy.overrides]]
-# py-shared-tools ships py.typed as of v1.2.2 -- no longer needs an override.
 module = ["celery.*"]
 ignore_missing_imports = true

@@ -7,18 +7,17 @@ e.g. SentinelOne) or ``per_client`` (a distinct credential set per client,
 e.g. Carbon Black), and which vendors each client uses. Secret values in the
 file are never literal — they are ``${VAR}`` references resolved from the
 environment at load time. The ``${VAR}`` resolution rule itself lives in
-``shared_tools.config`` (``py-shared-tools``), shared with other projects
-that follow the same convention; this module only owns the ``AppConfig``
+``agent_parity.shared.config``; this module only owns the ``AppConfig``
 shape and its own section parsing.
 
 The same file also declares a ``storage:`` section (object storage for the
-AD-export handoff — see ``shared_tools.script_export``), resolved the same
+AD-export handoff — see ``agent_parity.shared.script_export``), resolved the same
 way: unset ``${VAR}``s mean unconfigured, and ``get_storage()`` returns
 ``None`` rather than raising. ``None`` is only a valid state for clients
 with no live vendor credentials at all (pure fixture/demo mode) —
 ``script_runner.run_ad_export`` treats a live connector with no
 storage as a configuration error, not a fallback. ``StorageConfig``/
-``get_storage`` themselves live in ``shared_tools.config`` too, so they
+``get_storage`` themselves live in ``agent_parity.shared.config`` too, so they
 aren't redefined here.
 """
 
@@ -29,8 +28,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
-from shared_tools.config import ConfigError, StorageConfig, parse_storage_config, resolve_env_refs
-from shared_tools.config import get_storage as _shared_get_storage
+
+from agent_parity.shared.config import ConfigError, StorageConfig, parse_storage_config, resolve_env_refs
+from agent_parity.shared.config import get_storage as _shared_get_storage
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.yaml"
@@ -286,6 +286,6 @@ def get_storage(config: AppConfig):
     runs); ``script_runner.run_ad_export`` raises a clear error
     if a live connector reaches it with no storage configured, rather than
     falling back to the vendor's own (unreliable) output channel. Delegates
-    to ``shared_tools.config.get_storage`` so the logic isn't redefined here.
+    to ``agent_parity.shared.config.get_storage`` so the logic isn't redefined here.
     """
     return _shared_get_storage(config.storage)

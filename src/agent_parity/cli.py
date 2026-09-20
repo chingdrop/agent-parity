@@ -26,9 +26,6 @@ import logging
 from pathlib import Path
 
 import click
-from shared_tools.atomic_io import ensure_dir
-from shared_tools.logging_setup import setup_logging
-from shared_tools.tabular_io import write_structured_file
 
 from agent_parity.ad_export import ADParseError
 from agent_parity.agent_csv import AgentCSVParseError
@@ -36,6 +33,9 @@ from agent_parity.config import ConfigError, load_config
 from agent_parity.pipeline import correlate_from_csvs, run_correlation_for_client
 from agent_parity.scheduling.db import get_engine, init_db, session_factory
 from agent_parity.scheduling.persistence import run_and_persist_for_client
+from agent_parity.shared.atomic_io import ensure_dir
+from agent_parity.shared.logging_setup import setup_logging
+from agent_parity.shared.tabular_io import write_structured_file
 
 OUT_DIR = Path("output")
 

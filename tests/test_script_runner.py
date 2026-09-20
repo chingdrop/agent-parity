@@ -2,8 +2,8 @@
 
 ``run_ad_export``'s actual orchestration (live/fixture dispatch, the
 presigned-URL round trip, validation) is
-``shared_tools.script_export.run_script_export`` now, exhaustively tested in
-``py-shared-tools``' own ``tests/test_script_export.py`` (mandatory-storage
+``agent_parity.shared.script_export.run_script_export`` now, exhaustively tested in
+``tests/shared/test_script_export.py`` (mandatory-storage
 rule, fixture mode never touching storage, upload/download/cleanup, empty
 and wrong-shaped output). What's tested here is that this project's thin
 wrapper supplies the right project-specific parameters — the AD-export
@@ -17,9 +17,9 @@ import boto3
 import pytest
 import requests
 from moto import mock_aws
-from shared_tools.storage import ObjectStorage
 
 from agent_parity.script_runner import AD_EXPORT_SCRIPT, ScriptExecutionError, run_ad_export
+from agent_parity.shared.storage import ObjectStorage
 
 SAMPLE_CSV = "Name,Enabled\nACME-WS-001,True\n"
 
@@ -52,7 +52,7 @@ def test_fixture_mode_wiring():
 def test_live_mode_wiring_round_trips_through_storage(moto_storage):
     """Proves run_ad_export threads object_key_prefix="ad-exports" and
     header_marker="Name" through to run_script_export correctly — the actual
-    upload/download/cleanup mechanics are shared_tools' own to test."""
+    upload/download/cleanup mechanics are tests/shared/'s own to test."""
 
     def fake_deploy_and_run(script_path, target_id, script_args=None):
         requests.put(script_args["UploadUrl"], data=SAMPLE_CSV.encode()).raise_for_status()

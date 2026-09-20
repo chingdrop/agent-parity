@@ -2,7 +2,7 @@
 # MinIO + Celery integration smoke test.
 #
 # Proves two things the fast, offline `uv run pytest` suite structurally
-# can't: shared_tools.storage.ObjectStorage round-trips a real object
+# can't: agent_parity.shared.storage.ObjectStorage round-trips a real object
 # (including a real presigned-URL PUT over the actual network) through a
 # real S3-compatible server, not moto's simulation; and a real Celery chord
 # fans out/in through a real Redis broker and real worker/beat containers,

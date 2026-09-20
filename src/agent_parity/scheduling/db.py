@@ -28,11 +28,12 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
-from shared_tools.atomic_io import ensure_dir
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship, sessionmaker
 from sqlalchemy.types import JSON
+
+from agent_parity.shared.atomic_io import ensure_dir
 
 DEFAULT_DB_URL = "sqlite:///agent_parity.db"
 

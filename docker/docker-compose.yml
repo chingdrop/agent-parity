@@ -6,7 +6,7 @@
 #   default (no .env required) — pass `--env-file ../.env` on the command
 #   line for live credentials.
 # * `minio` — S3-compatible object storage for locally exercising the real
-#   AD-export handoff path (see shared_tools.storage). Everything else in
+#   AD-export handoff path (see agent_parity.shared.storage). Everything else in
 #   this package runs directly via `uv run agent-parity` — no other services
 #   needed for that path.
 # * `redis` / `worker` / `beat` — the scheduled path: `worker` runs Celery

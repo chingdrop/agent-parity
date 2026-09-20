@@ -7,11 +7,8 @@ Live mode is shaped after the Management Console API v2.1 (public docs):
   script library, execute it against a target agent, poll
   ``/web/api/v2.1/remote-scripts/status``, then fetch the result artifact.
   **These RSO mechanics (``_headers``/``_live_deploy_and_run``) live in
-  ``shared_tools.sentinelone.SentinelOneRSOMixin``**, shared verbatim with
-  ``credential-audit``'s own ``SentinelOneConnector`` rather than duplicated —
-  both projects push a script and poll the exact same endpoints, the only
-  difference is what each does with the result. This module adds only the
-  inventory-fetching half, which is agent-parity-specific.
+  ``agent_parity.shared.sentinelone.SentinelOneRSOMixin``**. This module adds
+  only the inventory-fetching half, which is agent-parity-specific.
 
 SentinelOne credentials are *global* scope: one API token covers every site
 in the organization, so every client resolves to the same credential set —
@@ -38,11 +35,10 @@ equivalent field, so their connectors don't set ``os_build`` at all.
 
 from __future__ import annotations
 
-from shared_tools.sentinelone import SentinelOneRSOMixin
-
 from agent_parity.connectors.base import AgentConnector, parse_timestamp, register_connector
 from agent_parity.models import AgentDevice, Vendor
 from agent_parity.os_eol import extract_build_number
+from agent_parity.shared.sentinelone import SentinelOneRSOMixin
 
 
 @register_connector

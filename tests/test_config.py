@@ -4,7 +4,6 @@ the vendor that carries a client's AD export."""
 from dataclasses import replace
 
 import pytest
-from shared_tools.storage import ObjectStorage
 
 from agent_parity.config import (
     AppConfig,
@@ -17,6 +16,7 @@ from agent_parity.config import (
     pick_ad_export_vendor,
 )
 from agent_parity.connectors import CarbonBlackConnector, SentinelOneConnector
+from agent_parity.shared.storage import ObjectStorage
 
 
 def _client(vendors: tuple[str, ...]) -> ClientConfig:

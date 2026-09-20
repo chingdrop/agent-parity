@@ -3,7 +3,7 @@
 Every vendor connector supports ``fetch_inventory()`` — pull the vendor's
 current endpoint list, normalized to ``AgentDevice`` records. That's this
 project's own domain logic; it stays here rather than in
-``shared_tools.remote_exec``, which knows nothing about inventories or
+``agent_parity.shared.remote_exec``, which knows nothing about inventories or
 ``AgentDevice``.
 
 Most connectors also support ``deploy_and_run(script_path, target_id)`` — push
@@ -13,9 +13,8 @@ script runs on an already domain-joined, already-managed endpoint, so
 agent-parity never needs its own domain credentials or LDAP bind. **The
 generic mechanics of this — credentialed HTTP via ``RestAdapter``, live/fixture
 dispatch, polling, and the vendor registry — live in
-``shared_tools.remote_exec.VendorConnector``**, shared with other projects
-(``credential-audit``) that talk to the same kind of vendor remote-execution
-APIs; ``AgentConnector`` here adds only what's specific to *this* project:
+``agent_parity.shared.remote_exec.VendorConnector``**;
+``AgentConnector`` here adds only what's specific to *this* project:
 inventory fetching, and this project's own AD-export fixture behavior
 (``_fixture_deploy_and_run``, keyed by domain controller CSV + timestamp
 rebasing). Not every EDR vendor's real API exposes an equivalent to "run an
@@ -39,9 +38,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
-from shared_tools.remote_exec import ConnectorError, ConnectorRegistry, VendorConnector
-
 from agent_parity.models import AgentDevice, infer_machine_type, infer_platform
+from agent_parity.shared.remote_exec import ConnectorError, ConnectorRegistry, VendorConnector
 
 # infer_platform/infer_machine_type are re-exported here (not just imported
 # for internal use) for existing call sites (carbonblack.py, bitdefender.py,
@@ -117,7 +115,7 @@ def rebase_csv_timestamps(csv_text: str, column: str = "LastLogonTimestamp") -> 
 #: vendor is "write a connector class decorated with @register_connector,
 #: plus one import in connectors/__init__.py" — nothing else needs editing.
 #: The registry mechanism itself (``ConnectorRegistry``) is shared via
-#: ``shared_tools.remote_exec``; this instance is agent-parity's own, so an
+#: ``agent_parity.shared.remote_exec``; this instance is agent-parity's own, so an
 #: unrelated project's vendor connectors never collide with these entries.
 CONNECTOR_REGISTRY: ConnectorRegistry = ConnectorRegistry()
 register_connector = CONNECTOR_REGISTRY.register
@@ -129,7 +127,7 @@ class AgentConnector(VendorConnector):
     Subclasses set ``vendor`` and ``required_credentials`` and implement the
     ``_live_*`` methods shaped after the vendor's real API. Credentialed HTTP,
     live/fixture dispatch for ``deploy_and_run``, and polling all come from
-    ``shared_tools.remote_exec.VendorConnector`` (see ``session``, ``is_live``,
+    ``agent_parity.shared.remote_exec.VendorConnector`` (see ``session``, ``is_live``,
     ``_request``/``_request_json``/``_as_text``, ``_fixture_path``,
     ``_poll_until``); this class adds inventory fetching and this project's
     own AD-export fixture behavior.

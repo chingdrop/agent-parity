@@ -8,14 +8,10 @@ place for the agent itself. Each connector implements the vendor mechanics
 (stage / execute / poll / retrieve); this module is the uniform entry point
 the pipeline calls.
 
-**The storage-backed handoff itself lives in ``shared_tools.script_export``**
-(``py-shared-tools``) now — ``run_ad_export`` is a thin wrapper supplying this
+**The storage-backed handoff itself lives in ``agent_parity.shared.script_export``**
+— ``run_ad_export`` is a thin wrapper supplying this
 project's own script path, object-key prefix (``ad-exports``), expected CSV
-header (``Name``), and error wording. It used to be a full implementation
-here; ``credential-audit``'s own AD-metadata export handoff needed the exact
-same orchestration (object storage mandatory for a live export, fixture mode
-never touches it, same presigned-URL round trip), so the logic moved to
-``py-shared-tools`` rather than staying duplicated under two names. See that
+header (``Name``), and error wording. See that
 module's own docstring for the mechanics (why object storage instead of the
 vendor's own output channel, what fixture mode does instead).
 """
@@ -24,10 +20,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from shared_tools.script_export import ScriptExecutionError, run_script_export
-from shared_tools.storage import ObjectStorage
-
 from agent_parity.connectors.base import AgentConnector
+from agent_parity.shared.script_export import ScriptExecutionError, run_script_export
+from agent_parity.shared.storage import ObjectStorage
 
 AD_EXPORT_SCRIPT = Path(__file__).resolve().parent / "scripts" / "Export-ADDevices.ps1"
 
