@@ -71,7 +71,7 @@ def concat_ad_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
 
     A client spanning multiple AD domains/forests has the export script run
     separately on a domain controller in each one (see
-    ``dashboard.services.collect_ad_frame``) — this is where those per-domain
+    ``agent_parity.pipeline.collect_ad_frame``) — this is where those per-domain
     results become the single frame the correlation engine sees. Domains are
     assumed to be disjoint namespaces (no computer object should appear in
     more than one domain's export); a duplicate join_key across domains isn't

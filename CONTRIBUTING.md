@@ -23,17 +23,22 @@ uv run pre-commit install
 
 ```
 src/agent_parity/
-    cli.py            # entry point: run/compare/sync subcommands
-    config.py          # config.yaml + .env resolution
-    connectors/          # one class per vendor (SentinelOne, Carbon Black, BitDefender)
-    correlation/          # the pandas merge/classification engine
-    pipeline.py             # pure collect+correlate orchestration, no persistence
-    persistence.py            # SQLAlchemy-backed run history, layered on pipeline.py
-    db.py                       # the SQLAlchemy schema itself
-    celery_app.py / tasks.py     # the scheduled fan-out/fan-in path
-    reporting/                    # Splunk delta export
+    cli.py             # entry point: run / compare / sync subcommands
+    config.py          # config.yaml + ${VAR} resolution
+    models.py          # ADDevice / AgentDevice and the status enums
+    ad_export.py       # parse the AD export CSV
+    agent_csv.py       # parse a generic agent-inventory CSV
+    connectors/        # one class per vendor (SentinelOne, Carbon Black, BitDefender)
+    correlation.py     # the pandas merge/classification engine
+    os_eol.py          # OS end-of-life reference data and matching
+    pipeline.py        # pure collect + correlate orchestration, no persistence
+    script_runner.py   # runs the AD export script through a vendor connector
+    splunk_export.py   # Splunk delta export
+    scheduling/        # SQLAlchemy schema, persistence, and the Celery scheduled path
+    shared/            # inlined HTTP adapter, object storage and helpers
+    scripts/           # Export-ADDevices.ps1
 tests/
-    (one test file per module above, see CLAUDE.md's "Testing conventions")
+    mirrors the layout above (tests/connectors/, tests/scheduling/, tests/shared/); see CLAUDE.md's "Testing conventions"
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture writeup — why each
