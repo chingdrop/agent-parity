@@ -45,6 +45,18 @@ piece is shaped the way it is, not just what's where.
 uv run pytest
 ```
 
+## Regenerating the sample report
+
+`docs/sample-report.md` is generated from a real run against `sample_data/`, not written by hand. After changing
+the correlation engine or the fixtures, regenerate it:
+
+```bash
+uv run python scripts/gen_sample_report.py
+```
+
+It refuses to run if any connector has live credentials configured, so the published doc only ever contains
+synthetic data.
+
 ## Linting, formatting, and type-checking
 
 ```bash
