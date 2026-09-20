@@ -35,6 +35,7 @@ dev = [
     "mypy>=1.13",
     "types-pyyaml",
     "pre-commit>=4.0",
+    "pytest-cov>=7.1.0",
 ]
 
 [project.scripts]
@@ -46,21 +47,42 @@ packages = ["src/agent_parity"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
+[tool.coverage.run]
+source = ["agent_parity"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["E501"]  # long CSV/fixture literals in triple-quoted strings
+"tests/*" = [
+    "E501",  # long CSV/fixture literals in triple-quoted strings
+    "S101",  # pytest assertions are plain `assert`
+    "S106",  # dummy credentials ("test", "k", ...) passed to constructors in fixtures
+]
 
 [tool.mypy]
 python_version = "3.12"
+files = ["src/agent_parity"]
 warn_unused_configs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
+# Stricter than mypy's defaults, and clean today.
+check_untyped_defs = true
+strict_equality = true
+warn_unreachable = true
+# Deliberately not `strict = true`: that currently reports 80 errors in 19 files
+# (41 bare generics [type-arg], 15 missing annotations [no-untyped-def],
+# 10 [no-untyped-call], 7 untyped Celery decorators [untyped-decorator],
+# 6 [no-any-return], 1 [attr-defined]). Tighten one flag at a time from here.
 
 [[tool.mypy.overrides]]
 module = ["celery.*"]
