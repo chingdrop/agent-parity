@@ -17,7 +17,9 @@ the one-element case of the same loop, not a separate path. One domain failing d
 
 ## Alternatives considered
 
-- <!-- TODO(craig): alternatives weighed for handling several domains. The repo records only that single-domain is not a separate code path. -->
+- **Finding the target by tag in the vendor console** (the original deployment): each domain's domain controller was
+  tagged "runbox" in SentinelOne, and RSO deployed the script to that tag. This rebuild names the targets explicitly in
+  `ad_target_devices` instead.
 
 ## Consequences
 

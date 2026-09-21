@@ -18,7 +18,9 @@ LDAP. `pick_ad_export_vendor()` chooses the capable vendor for each client.
 
 - **Direct LDAP bind from agent-parity**: the option this design avoids, since agent-parity would have to hold domain
   credentials.
-- <!-- TODO(craig): any other collection methods you weighed (for example WinRM, a scheduled task, a collector agent) and why they lost. The repo records only the LDAP contrast. -->
+- **WinRM / PowerShell Remoting**: rejected. It would mean configuring and maintaining remote access to a domain
+  controller, and making that access reachable from outside, just to generate a computer inventory. SentinelOne was
+  already installed, and the export could be uploaded over HTTPS, which was already allowed and secured.
 
 ## Consequences
 

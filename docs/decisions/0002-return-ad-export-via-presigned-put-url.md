@@ -18,7 +18,9 @@ fixture mode bypasses it.
 ## Alternatives considered
 
 - **The vendor's stdout / output channel**: rejected for the formatting and size reasons above.
-- <!-- TODO(craig): any other handoff options you considered (for example a network share or an inbound endpoint) and why they lost. -->
+- **A file-transfer drop (CerberusFTP, or sometimes an S3 bucket)**: how the original deployment did it. The drop
+  location had to be reachable by agent-parity, which runs outside the client's network. CerberusFTP was self-hosted on
+  premises and sometimes went down; see [0003](0003-s3-api-with-minio-for-local-dev.md).
 
 ## Consequences
 

@@ -6,7 +6,12 @@ Status: Accepted (2026-07-03)
 
 The presigned-URL handoff in [0002](0002-return-ad-export-via-presigned-put-url.md) needs an object store that can issue
 and honor presigned URLs, and that can also be run locally for development.
-<!-- TODO(craig): why the S3 API was chosen over other options. The repo says only that the code targets "the S3 API, not a specific product". -->
+
+The original deployment dropped the export on a self-hosted CerberusFTP server, and sometimes in an S3 bucket. The drop
+location has to be reachable by agent-parity, which runs outside the client's network. The CerberusFTP server was on
+premises and would sometimes go down as people changed and moved things, so the plan was to move to S3, which is more
+independent. That move never happened. For this rebuild, MinIO speaks the same S3 API, is free, and runs in Docker
+Compose, so the whole setup stays in one place.
 
 ## Decision
 
@@ -17,7 +22,8 @@ dev, via `docker/docker-compose.yml`) and real AWS S3. `StorageConfig.backend` s
 
 - **Azure Blob Storage**: explicitly not supported. It doesn't speak the S3 API, so it would need a second
   implementation with a different SDK (`azure-storage-blob`), not just different credentials.
-- <!-- TODO(craig): other storage backends you considered. -->
+- **Self-hosted CerberusFTP**: the original deployment's drop location. It was on premises and sometimes went down when
+  people changed or moved things.
 
 ## Consequences
 

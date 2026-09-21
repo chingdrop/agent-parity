@@ -18,7 +18,8 @@ each vendor's real version string is kept.
 ## Alternatives considered
 
 - **Making `agent_version` look like SentinelOne's**: rejected; it would fabricate a number rather than normalize one.
-- <!-- TODO(craig): any other canonical vocabularies considered (a vendor-neutral one, for example). -->
+- **Another vendor's vocabulary** (Carbon Black's or BitDefender's): SentinelOne's was used because its console housed
+  the most clients.
 
 ## Consequences
 
