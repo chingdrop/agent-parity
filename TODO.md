@@ -4,8 +4,8 @@ Open items for this repo.
 
 ## Docs
 
-- [ ] Fill in the "Original deployment" result in `README.md` (the `TODO(craig)` comment). Say whether the figure is
-  percentage points or relative, and the baseline.
+- [x] Fill in the "Original deployment" result in `README.md`: coverage rose from 47% to 80% (33 percentage points)
+  across ~6,000 endpoints over ~6 months, and the quarterly report was automated through Splunk.
 - [x] Render the demo GIF and embed it in the README's "See it" section. `docs/demo.tape` is untested because `vhs`
   wasn't available when it was written:
   ```bash

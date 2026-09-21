@@ -45,7 +45,9 @@ Of the devices AD knows about, 36 are covered (81.8%); 5 have no agent, 3 have g
 
 This is a from-scratch rebuild of a tool I originally built professionally, using entirely synthetic data. No proprietary code, client data, or credentials are involved; vendor API interactions are shaped from public API documentation, and **everything runs against local fixtures by default** — no live credentials required.
 
-<!-- TODO(craig): original result, e.g. coverage up 33% across ~6,000 endpoints; specify percentage points vs relative and baseline -->
+In the original deployment, agent coverage (SentinelOne agents divided by computers in AD) rose from 47% to 80%, a gain of 33 percentage points, across roughly 6,000 endpoints over about six months.
+
+I also automated the quarterly report, which had been assembled by hand: gathering the data, running the calculations and building the graphs. Splunk dashboards and reports replaced that. This repo includes the opt-in [Splunk delta export](docs/architecture.md#splunk-delta-export) that feeds Splunk, but not the dashboards themselves.
 
 ## About this project
 
