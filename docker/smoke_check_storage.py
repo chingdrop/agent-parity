@@ -19,7 +19,7 @@ import uuid
 import requests
 from botocore.exceptions import ClientError
 
-from agent_parity.shared.storage import ObjectStorage, StorageError
+from agent_parity.storage import ObjectStorage, StorageError
 
 
 def _ensure_bucket(storage: ObjectStorage) -> None:

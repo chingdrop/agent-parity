@@ -6,19 +6,19 @@ credentials are ``global`` (one credential set for the whole organization,
 e.g. SentinelOne) or ``per_client`` (a distinct credential set per client,
 e.g. Carbon Black), and which vendors each client uses. Secret values in the
 file are never literal — they are ``${VAR}`` references resolved from the
-environment at load time. The ``${VAR}`` resolution rule itself lives in
-``agent_parity.shared.config``; this module only owns the ``AppConfig``
-shape and its own section parsing.
+environment at load time. The ``${VAR}`` resolution rule itself
+(``resolve_env_refs``) lives in ``agent_parity.shared.config``; this module
+owns the ``AppConfig`` shape and its own section parsing.
 
 The same file also declares a ``storage:`` section (object storage for the
-AD-export handoff — see ``agent_parity.shared.script_export``), resolved the same
+AD-export handoff — see ``agent_parity.script_runner``), resolved the same
 way: unset ``${VAR}``s mean unconfigured, and ``get_storage()`` returns
 ``None`` rather than raising. ``None`` is only a valid state for clients
 with no live vendor credentials at all (pure fixture/demo mode) —
 ``script_runner.run_ad_export`` treats a live connector with no
-storage as a configuration error, not a fallback. ``StorageConfig``/
-``get_storage`` themselves live in ``agent_parity.shared.config`` too, so they
-aren't redefined here.
+storage as a configuration error, not a fallback. ``StorageConfig`` and
+``parse_storage_config`` are defined below; ``build_storage`` builds the
+``ObjectStorage`` client from one.
 """
 
 from __future__ import annotations
@@ -29,12 +29,51 @@ from pathlib import Path
 
 import yaml
 
-from agent_parity.shared.config import ConfigError, StorageConfig, parse_storage_config, resolve_env_refs
-from agent_parity.shared.config import get_storage as _shared_get_storage
+from agent_parity.shared.config import ConfigError, resolve_env_refs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.yaml"
 SAMPLE_DATA_DIR = REPO_ROOT / "sample_data"
+
+
+@dataclass(frozen=True)
+class StorageConfig:
+    """S3-compatible object storage for a presigned-upload-URL script-export
+    handoff (see ``agent_parity.script_runner``).
+
+    A live remote-execution connector's own output channel (SentinelOne
+    RSO's fetch-files, Carbon Black Live Response's command output) doesn't
+    reliably preserve a CSV's exact formatting, so a live export hands the
+    script a presigned PUT URL instead and fetches the real output from
+    object storage. Unconfigured by default (every field ``None``,
+    ``enabled`` False) is only valid when the connector has no live
+    credentials either (fixture mode), where no script ever actually
+    executes.
+    """
+
+    backend: str = "s3"
+    endpoint_url: str | None = None  # unset -> real AWS S3; set for MinIO/other S3-compatible services
+    bucket: str | None = None
+    access_key: str | None = None
+    secret_key: str | None = None
+    region: str = "us-east-1"
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.bucket and self.access_key and self.secret_key)
+
+
+def parse_storage_config(raw: dict) -> StorageConfig:
+    """Parse a config.yaml ``storage:`` section into a :class:`StorageConfig`."""
+    section = raw.get("storage") or {}
+    return StorageConfig(
+        backend=section.get("backend") or "s3",
+        endpoint_url=section.get("endpoint_url") or None,
+        bucket=section.get("bucket") or None,
+        access_key=section.get("access_key") or None,
+        secret_key=section.get("secret_key") or None,
+        region=section.get("region") or "us-east-1",
+    )
 
 
 @dataclass(frozen=True)
@@ -286,6 +325,38 @@ def get_storage(config: AppConfig):
     runs); ``script_runner.run_ad_export`` raises a clear error
     if a live connector reaches it with no storage configured, rather than
     falling back to the vendor's own (unreliable) output channel. Delegates
-    to ``agent_parity.shared.config.get_storage`` so the logic isn't redefined here.
+    to :func:`build_storage`.
     """
-    return _shared_get_storage(config.storage)
+    return build_storage(config.storage)
+
+
+def build_storage(storage_config: StorageConfig):
+    """Build the object-storage client for a script-export handoff, or ``None``.
+
+    ``None`` means "not configured." That's only a valid state when the
+    connector has no live credentials either (fixture mode, where no script
+    ever actually runs) — ``agent_parity.script_runner.run_script_export``
+    raises a clear error if a live connector reaches it with no storage
+    configured, rather than falling back to the vendor's own (unreliable)
+    output channel.
+    """
+    if not storage_config.enabled:
+        return None
+    # `enabled` already confirmed these are set; asserting narrows them from
+    # `str | None` to `str` for the type checker (a property check alone
+    # doesn't narrow the attributes it read).
+    assert storage_config.bucket and storage_config.access_key and storage_config.secret_key  # noqa: S101 - type narrowing
+
+    # Imported here, not at module level, so callers that don't need the
+    # storage extra (boto3) aren't forced to have it installed.
+    from agent_parity.storage import ObjectStorage
+
+    if storage_config.backend != "s3":
+        raise ConfigError(f"Unsupported storage backend {storage_config.backend!r}; only 's3' is implemented")
+    return ObjectStorage(
+        bucket=storage_config.bucket,
+        endpoint_url=storage_config.endpoint_url,
+        access_key=storage_config.access_key,
+        secret_key=storage_config.secret_key,
+        region=storage_config.region,
+    )

@@ -5,8 +5,8 @@ layer, no real network access.
 
 import pytest
 
-from agent_parity.shared.remote_exec import ConnectorError, VendorConnector
-from agent_parity.shared.sentinelone import SentinelOneRSOMixin
+from agent_parity.connectors.base import ConnectorError, VendorConnector
+from agent_parity.connectors.sentinelone import SentinelOneRSOMixin
 
 
 class _FakeResponse:

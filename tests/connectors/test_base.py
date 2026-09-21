@@ -4,7 +4,7 @@ using a monkeypatched RestAdapter/requests layer, no real network access.
 
 import pytest
 
-from agent_parity.shared.remote_exec import ConnectorError, ConnectorRegistry, VendorConnector
+from agent_parity.connectors.base import ConnectorError, ConnectorRegistry, VendorConnector
 
 
 class _FakeVendor(VendorConnector):
