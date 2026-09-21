@@ -9,14 +9,17 @@ from agent_parity.config import (
     AppConfig,
     ClientConfig,
     ConfigError,
+    StorageConfig,
     VendorConfig,
+    build_storage,
     get_connectors,
     get_storage,
     load_config,
+    parse_storage_config,
     pick_ad_export_vendor,
 )
 from agent_parity.connectors import CarbonBlackConnector, SentinelOneConnector
-from agent_parity.shared.storage import ObjectStorage
+from agent_parity.storage import ObjectStorage
 
 
 def _client(vendors: tuple[str, ...]) -> ClientConfig:
@@ -210,3 +213,60 @@ def test_storage_rejects_unsupported_backend(monkeypatch):
     bad_config = replace(config, storage=replace(config.storage, backend="azure_blob"))
     with pytest.raises(ConfigError, match="Unsupported storage backend"):
         get_storage(bad_config)
+
+
+def test_parse_storage_config_defaults_for_empty_section():
+    config = parse_storage_config({})
+    assert config.backend == "s3"
+    assert config.region == "us-east-1"
+    assert config.bucket is None
+    assert config.enabled is False
+
+
+def test_parse_storage_config_reads_all_fields():
+    config = parse_storage_config(
+        {
+            "storage": {
+                "backend": "s3",
+                "endpoint_url": "http://minio:9000",
+                "bucket": "my-bucket",
+                "access_key": "ak",
+                "secret_key": "sk",
+                "region": "us-west-2",
+            }
+        }
+    )
+    assert config == StorageConfig(
+        backend="s3",
+        endpoint_url="http://minio:9000",
+        bucket="my-bucket",
+        access_key="ak",
+        secret_key="sk",
+        region="us-west-2",
+    )
+
+
+def test_storage_config_enabled_requires_bucket_and_credentials():
+    assert not StorageConfig().enabled
+    assert not StorageConfig(bucket="b").enabled
+    assert not StorageConfig(bucket="b", access_key="a").enabled
+    assert StorageConfig(bucket="b", access_key="a", secret_key="s").enabled
+
+
+def test_build_storage_returns_none_when_unconfigured():
+    assert build_storage(StorageConfig()) is None
+
+
+def test_build_storage_builds_object_storage_when_enabled():
+    from agent_parity.storage import ObjectStorage
+
+    config = StorageConfig(bucket="my-bucket", access_key="ak", secret_key="sk")
+    storage = build_storage(config)
+    assert isinstance(storage, ObjectStorage)
+    assert storage.bucket == "my-bucket"
+
+
+def test_build_storage_rejects_unsupported_backend():
+    config = StorageConfig(backend="azure_blob", bucket="b", access_key="a", secret_key="s")
+    with pytest.raises(ConfigError, match="Unsupported storage backend"):
+        build_storage(config)

@@ -7,7 +7,7 @@ import pytest
 import requests
 from moto import mock_aws
 
-from agent_parity.shared.storage import ObjectStorage, StorageError
+from agent_parity.storage import ObjectStorage, StorageError
 
 
 @pytest.fixture

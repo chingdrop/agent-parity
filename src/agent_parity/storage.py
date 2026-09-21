@@ -2,8 +2,7 @@
 boto3 built around one specific pattern: hand an untrusted or low-trust
 caller a short-lived, single-object presigned PUT URL instead of a standing
 storage credential, then fetch/clean up the result with your own real
-credentials. Requires the ``storage`` extra (``boto3``) — everything else in
-this package works without it.
+credentials. Requires ``boto3``.
 
 Built against the S3 API, not a specific product: point ``endpoint_url`` at a
 self-hosted MinIO instance for local/dev use, or leave it unset to talk to

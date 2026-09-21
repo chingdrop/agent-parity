@@ -2,9 +2,8 @@
 
 Every vendor connector supports ``fetch_inventory()`` — pull the vendor's
 current endpoint list, normalized to ``AgentDevice`` records. That's this
-project's own domain logic; it stays here rather than in
-``agent_parity.shared.remote_exec``, which knows nothing about inventories or
-``AgentDevice``.
+project's own domain logic; it lives on ``AgentConnector``, while
+``VendorConnector`` (below) knows nothing about inventories or ``AgentDevice``.
 
 Most connectors also support ``deploy_and_run(script_path, target_id)`` — push
 a script to a managed endpoint through the vendor's remote-execution
@@ -12,9 +11,8 @@ capability and return its stdout. This is how the AD export is collected: the
 script runs on an already domain-joined, already-managed endpoint, so
 agent-parity never needs its own domain credentials or LDAP bind. **The
 generic mechanics of this — credentialed HTTP via ``RestAdapter``, live/fixture
-dispatch, polling, and the vendor registry — live in
-``agent_parity.shared.remote_exec.VendorConnector``**;
-``AgentConnector`` here adds only what's specific to *this* project:
+dispatch, polling, and the vendor registry — live in ``VendorConnector``**;
+``AgentConnector`` adds only what's specific to *this* project:
 inventory fetching, and this project's own AD-export fixture behavior
 (``_fixture_deploy_and_run``, keyed by domain controller CSV + timestamp
 rebasing). Not every EDR vendor's real API exposes an equivalent to "run an
@@ -32,14 +30,19 @@ from __future__ import annotations
 import csv
 import io
 import json
-from abc import abstractmethod
+import logging
+import time
+from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import ClassVar
 
+import requests
+
 from agent_parity.models import AgentDevice, infer_machine_type, infer_platform
-from agent_parity.shared.remote_exec import ConnectorError, ConnectorRegistry, VendorConnector
+from agent_parity.shared.rest_adapter import RestAdapter, RestAdapterConfig
 
 # infer_platform/infer_machine_type are re-exported here (not just imported
 # for internal use) for existing call sites (carbonblack.py, bitdefender.py,
@@ -50,6 +53,8 @@ from agent_parity.shared.remote_exec import ConnectorError, ConnectorRegistry, V
 __all__ = [
     "AgentConnector",
     "ConnectorError",
+    "ConnectorRegistry",
+    "VendorConnector",
     "infer_machine_type",
     "infer_platform",
     "CONNECTOR_REGISTRY",
@@ -110,13 +115,173 @@ def rebase_csv_timestamps(csv_text: str, column: str = "LastLogonTimestamp") -> 
     return out.getvalue()
 
 
+class ConnectorError(Exception):
+    """A vendor API call, remote execution, or fixture lookup failed."""
+
+
+class ConnectorRegistry(dict):
+    """vendor-name -> connector class, keyed by each registered class's own
+    ``vendor`` attribute.
+
+    agent-parity owns one instance, ``CONNECTOR_REGISTRY`` below.
+    """
+
+    def register(self, cls: type[VendorConnector]) -> type[VendorConnector]:
+        """Class decorator: adds ``cls`` to this registry under its own
+        ``vendor`` attribute. Bind a project-local name to the bound method
+        (``register_connector = CONNECTOR_REGISTRY.register``) to use it as
+        ``@register_connector`` at each connector class definition.
+        """
+        self[cls.vendor] = cls
+        return cls
+
+
+class VendorConnector(ABC):
+    """Base class for a vendor's security-console API.
+
+    Subclasses set ``vendor``/``required_credentials`` and implement whatever
+    ``_live_*``/fixture hook methods their own domain needs (``AgentConnector``
+    adds ``fetch_inventory``); this class only provides what every vendor
+    connector needs regardless of what it fetches: the ``RestAdapter``
+    session, credential-gated live/fixture dispatch, and — for vendors that
+    support it — remote script execution.
+
+    Live/fixture mode is a first-class fork here, not a test-only shim: when
+    a connector has no usable credentials (``is_live`` is false), every
+    public method is expected to fall back to canned fixture data instead of
+    raising — that's what lets a fresh checkout run a full pipeline with
+    zero live API access. What "canned data" looks like (file naming, any
+    post-processing) is delegated to hook methods a subclass implements.
+    """
+
+    vendor: ClassVar[str]
+    required_credentials: ClassVar[tuple[str, ...]]
+
+    #: Whether this vendor's real API exposes anything equivalent to "push
+    #: and run an arbitrary script" (SentinelOne's Remote Script
+    #: Orchestration, Carbon Black's Live Response). Not every vendor does —
+    #: set this ``False`` for one that doesn't. ``deploy_and_run`` refuses
+    #: before the live/fixture fork when this is ``False``, so a pipeline
+    #: can't accidentally "succeed" at something the vendor doesn't really
+    #: support, even in fixture mode.
+    supports_remote_execution: ClassVar[bool] = True
+
+    #: Seconds between remote-execution status polls, and the overall cap.
+    poll_interval: ClassVar[float] = 5.0
+    poll_timeout: ClassVar[float] = 300.0
+
+    def __init__(self, credentials: dict | None = None, fixture_dir: str | Path | None = None):
+        self.credentials = credentials or {}
+        self.fixture_dir = Path(fixture_dir) if fixture_dir else None
+        # Call sites always pass fully-qualified URLs, so base_url is never
+        # actually joined against — it only matters that RestAdapterConfig
+        # requires one.
+        self.session = RestAdapter(
+            RestAdapterConfig(base_url=self.credentials.get("api_url") or ""),
+            logger=logging.getLogger(f"{type(self).__module__}.{self.vendor}"),
+        )
+
+    @property
+    def is_live(self) -> bool:
+        return all(self.credentials.get(key) for key in self.required_credentials)
+
+    # -- remote script execution -------------------------------------------
+
+    def deploy_and_run(
+        self,
+        script_path: str | Path,
+        target_id: str,
+        script_args: dict[str, str] | None = None,
+    ) -> str:
+        """Push a script to ``target_id``, execute it, and return its stdout.
+
+        Checked before the live/fixture fork so a vendor without genuine
+        remote-execution capability can't produce a misleadingly successful
+        result in demo mode either.
+        """
+        if not self.supports_remote_execution:
+            raise ConnectorError(
+                f"{self.vendor}: does not support remote script execution (fetch_inventory-only vendor)"
+            )
+        if self.is_live:
+            return self._live_deploy_and_run(Path(script_path), target_id, script_args or {})
+        return self._fixture_deploy_and_run(Path(script_path), target_id, script_args or {})
+
+    def _live_deploy_and_run(self, script_path: Path, target_id: str, script_args: dict[str, str]) -> str:
+        """Default for a vendor that hasn't implemented live remote execution.
+
+        The public ``deploy_and_run`` already refuses before reaching here
+        for a vendor with ``supports_remote_execution = False``; this is a
+        defensive fallback for a vendor that supports it but genuinely hasn't
+        overridden this yet.
+        """
+        raise ConnectorError(f"{self.vendor}: remote script execution not implemented")
+
+    def _fixture_deploy_and_run(self, script_path: Path, target_id: str, script_args: dict[str, str]) -> str:
+        """Canned stand-in for a live remote-execution run.
+
+        What "canned" means (file naming, any post-processing) is
+        project-specific — any subclass with ``supports_remote_execution =
+        True`` must override this.
+        """
+        raise ConnectorError(
+            f"{self.vendor}: no fixture behavior defined for deploy_and_run (override _fixture_deploy_and_run)"
+        )
+
+    # -- helpers -------------------------------------------------------------
+
+    def _fixture_path(self, filename: str) -> Path:
+        if not self.fixture_dir:
+            raise ConnectorError(f"{self.vendor}: no credentials configured and no fixture_dir provided")
+        path = self.fixture_dir / filename
+        if not path.exists():
+            raise ConnectorError(f"{self.vendor}: fixture not found: {path}")
+        return path
+
+    def _poll_until(self, check: Callable[[], str | None], what: str) -> str:
+        """Poll ``check`` until it returns output or the timeout elapses."""
+        deadline = time.monotonic() + self.poll_timeout
+        while time.monotonic() < deadline:
+            result = check()
+            if result is not None:
+                return result
+            time.sleep(self.poll_interval)
+        raise ConnectorError(f"{self.vendor}: timed out waiting for {what}")
+
+    def _request(self, method: str, url: str, **kwargs) -> dict | str | bytes:
+        """Issue a request through the shared RestAdapter (retries included).
+
+        Returns already-parsed content — a dict for JSON responses, str for
+        text/html, raw bytes otherwise — not a ``requests.Response``.
+        """
+        try:
+            return self.session.request(method, url, timeout=30, **kwargs)
+        except requests.RequestException as exc:
+            raise ConnectorError(f"{self.vendor}: API request failed: {exc}") from exc
+
+    @staticmethod
+    def _as_text(payload: dict | str | bytes) -> str:
+        """Coerce a ``_request`` result into text, for script-output call sites."""
+        if isinstance(payload, bytes):
+            return payload.decode("utf-8", errors="replace")
+        if isinstance(payload, str):
+            return payload
+        raise ConnectorError(f"expected text output, got parsed JSON: {payload!r}")
+
+    def _request_json(self, method: str, url: str, **kwargs) -> dict:
+        """Like ``_request``, but for endpoints that always return a JSON object."""
+        payload = self._request(method, url, **kwargs)
+        if not isinstance(payload, dict):
+            raise ConnectorError(f"{self.vendor}: expected a JSON object, got {payload!r}")
+        return payload
+
+
 #: Vendor name (as used in config.yaml) -> connector class, populated by
 #: @register_connector as each connector module is imported. Adding a new
 #: vendor is "write a connector class decorated with @register_connector,
 #: plus one import in connectors/__init__.py" — nothing else needs editing.
-#: The registry mechanism itself (``ConnectorRegistry``) is shared via
-#: ``agent_parity.shared.remote_exec``; this instance is agent-parity's own, so an
-#: unrelated project's vendor connectors never collide with these entries.
+#: ``ConnectorRegistry`` is defined above; this is the instance connectors
+#: register into.
 CONNECTOR_REGISTRY: ConnectorRegistry = ConnectorRegistry()
 register_connector = CONNECTOR_REGISTRY.register
 
@@ -127,7 +292,7 @@ class AgentConnector(VendorConnector):
     Subclasses set ``vendor`` and ``required_credentials`` and implement the
     ``_live_*`` methods shaped after the vendor's real API. Credentialed HTTP,
     live/fixture dispatch for ``deploy_and_run``, and polling all come from
-    ``agent_parity.shared.remote_exec.VendorConnector`` (see ``session``, ``is_live``,
+    ``VendorConnector`` (see ``session``, ``is_live``,
     ``_request``/``_request_json``/``_as_text``, ``_fixture_path``,
     ``_poll_until``); this class adds inventory fetching and this project's
     own AD-export fixture behavior.
@@ -139,7 +304,7 @@ class AgentConnector(VendorConnector):
     #: Cloud, where each environment has its own API ID/secret/org key). A
     #: real, fixed fact about how each vendor's API is provisioned — not
     #: something a config file should be able to override. Agent-parity's
-    #: own concept, not part of the shared ``VendorConnector`` base (that
+    #: own concept, not part of the ``VendorConnector`` base (that
     #: class has no notion of multiple clients at all).
     scope: ClassVar[str] = "global"
 
