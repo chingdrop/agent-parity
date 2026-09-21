@@ -6,7 +6,7 @@ Open items for this repo.
 
 - [ ] Fill in the "Original deployment" result in `README.md` (the `TODO(craig)` comment). Say whether the figure is
   percentage points or relative, and the baseline.
-- [ ] Render the demo GIF and embed it in the README's "See it" section. `docs/demo.tape` is untested because `vhs`
+- [x] Render the demo GIF and embed it in the README's "See it" section. `docs/demo.tape` is untested because `vhs`
   wasn't available when it was written:
   ```bash
   brew install vhs && uv sync && vhs docs/demo.tape
