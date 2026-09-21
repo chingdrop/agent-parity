@@ -20,7 +20,9 @@ fixture mode bypasses it.
 - **The vendor's stdout / output channel**: rejected for the formatting and size reasons above.
 - **A file-transfer drop (CerberusFTP, or sometimes an S3 bucket)**: how the original deployment did it. The drop
   location had to be reachable by agent-parity, which runs outside the client's network. CerberusFTP was self-hosted on
-  premises and sometimes went down; see [0003](0003-s3-api-with-minio-for-local-dev.md).
+  premises and sometimes went down; see [0003](0003-s3-api-with-minio-for-local-dev.md). To limit the damage if a
+  storage credential leaked, the endpoints used a service account with write-only permission (no read, move or delete).
+  A presigned URL goes further: the endpoint holds no standing credential, only a URL good for one key and 15 minutes.
 
 ## Consequences
 

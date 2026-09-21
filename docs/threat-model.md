@@ -7,8 +7,9 @@ security assessment. To report a problem, see [SECURITY.md](../SECURITY.md).
 
 - **Vendor API credentials** (SentinelOne token, Carbon Black API ID / key / org key, BitDefender key), **object-storage
   keys** and the optional **Splunk HEC token**. They are read from environment variables that `config.yaml` references
-  as `${VAR}`. The code does not read `.env` itself; Docker Compose takes it via
-  `--env-file`. <!-- TODO(craig): how you load .env for local runs -->
+  as `${VAR}`. The code does not read `.env` itself (there is no dotenv dependency). Docker Compose takes it via
+  `--env-file`, and local runs work the same way: `uv run --env-file .env agent-parity ...`. A variable that isn't in
+  the process environment resolves to nothing, and its connector silently falls back to fixture mode.
 - **AD inventory metadata** exported by `Export-ADDevices.ps1`: name, DNS hostname, OS and version, last logon, enabled
   flag, distinguished name. No password or hash fields are requested.
 - **No domain credentials.** agent-parity never binds to LDAP; the script runs on an already domain-joined,
@@ -35,7 +36,9 @@ if enabled, Splunk. The endpoint receives a URL, never a storage credential.
 - **Not restricted:** only bucket, key and expiry are signed; content and size are not limited, and `Content-Type` is
   deliberately not bound.
 - **Travels** through the vendor's channel as `UploadUrl` (SentinelOne `inputParams`; appended to the PowerShell command
-  line for Carbon Black). <!-- TODO(craig): what SentinelOne and Carbon Black retain of script arguments -->
+  line for Carbon Black). Whether either vendor keeps those arguments in its console history has not been verified. A
+  search of the Windows PowerShell event logs on the machines the original tool ran the script on found no record of the
+  parameters, which says nothing about the vendor side.
 - **Cleanup:** the object is deleted after download, best-effort; a failed delete is only logged.
 
 ## What is stored or logged
@@ -45,8 +48,11 @@ if enabled, Splunk. The endpoint receives a URL, never a storage credential.
 - **`sync` and the Celery tasks:** persist a local SQLite file (`agent_parity.db` by default, `*.db` gitignored) with
   hostnames, OS, coverage status and per-vendor status text, which includes error messages from failed calls.
 - **Logs:** the CLI logs at WARNING; failures include exception text. Debug logging (not enabled by the CLI) records
-  request URL, params and body, but not
-  headers. <!-- TODO(craig): confirm vendor or HTTP error text never embeds credentials -->
+  request URL, params and body, but not headers. For script runs the body includes the presigned `UploadUrl`, so a debug
+  log holds a live write capability until it expires.
+- **Credentials in error text:** vendor API credentials and the Splunk token are sent only in request headers, never in
+  the URL, params or body. HTTP error text includes the URL but not headers, so it does not contain them. Vendor error
+  bodies are echoed as received (for example BitDefender's RPC error) and have not been checked for embedded secrets.
 - **Splunk (opt-in):** forwards coverage deltas to the configured HEC URL.
 - **Keeping secrets out of the repo:** `.env` and `.env.*` are gitignored (`.env.example` has empty values),
   `config.yaml` holds only `${VAR}` references, and with nothing set every connector runs against synthetic fixtures. CI
@@ -61,8 +67,9 @@ if enabled, Splunk. The endpoint receives a URL, never a storage credential.
 - `api_url` and `STORAGE_ENDPOINT_URL` are used as given: TLS verification is on by default, but nothing requires
   `https://`.
 - Error text is logged and stored as described above, and is not scrubbed.
-- The script runs with whatever privileges the vendor's remote-execution context gives
-  it. <!-- TODO(craig): which account and privileges the script runs as on the endpoint -->
+- The script runs as the SYSTEM account on the endpoint, the highest local privilege, although all it does is read
+  computer objects and upload one file. Anything that could alter the script before it is pushed would run with the
+  same privileges.
 - The Docker Compose stack is a dev/demo setup: MinIO uses default root credentials when `.env` is unset, the override
   file publishes ports 9000 and 9001, and the MinIO and `uv` images use `latest` tags.
 

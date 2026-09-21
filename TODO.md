@@ -43,7 +43,7 @@ Set up by the security-hygiene branch; none of the new workflows has run on GitH
   redirects that URL to the login page, which counts as a pass.
 - [ ] Confirm the response windows in `SECURITY.md` (7 days to acknowledge, 30 to assess; these were proposed, not
   decided) and fill in the backup contact (the `TODO(craig)` comment there).
-- [ ] Answer the four `TODO(craig)` questions in `docs/threat-model.md`: how you load `.env` locally, what SentinelOne
+- [x] Answer the four `TODO(craig)` questions in `docs/threat-model.md`: how you load `.env` locally, what SentinelOne
   and Carbon Black retain of script arguments, whether vendor or HTTP error text can ever include credentials, and which
   account and privileges the export script runs as. Find them with `grep -rn "TODO(craig)" docs/threat-model.md`.
 - [ ] After the first CI run, check the `security` job. gitleaks couldn't be run locally, so the first run is its first
