@@ -35,5 +35,5 @@ live/fixture fork, so it refuses in both modes. The invented `createCustomScript
 - Tests: [`tests/connectors/test_connectors.py`](../../tests/connectors/test_connectors.py)
   `test_bitdefender_does_not_support_remote_execution`; [`tests/test_config.py`](../../tests/test_config.py)
   `test_ad_export_raises_when_only_bitdefender_is_enabled`; [
-  `tests/shared/test_remote_exec.py`](../../tests/shared/test_remote_exec.py)
+  `tests/connectors/test_base.py`](../../tests/connectors/test_base.py)
   `test_deploy_and_run_refuses_when_remote_execution_unsupported`

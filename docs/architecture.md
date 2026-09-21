@@ -81,9 +81,13 @@ add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
 `_request_json()`/`_as_text()` helpers narrow that `dict | str | bytes` result
 for call sites that know which one they expect.
 
-`RestAdapter` and `ObjectStorage` (below) were factored out of a shared
+`RestAdapter` and a few small helpers were factored out of a shared
 library and inlined here (`src/agent_parity/shared/`, with their tests in
-`tests/shared/`) so the repo is self-contained.
+`tests/shared/`) so the repo is self-contained. The code only this project used
+has since moved into the modules that own it: the vendor-connector base in
+`connectors/base.py`, the SentinelOne RSO mixin in `connectors/sentinelone.py`, the
+storage-backed export in `script_runner.py`, `ObjectStorage` in `storage.py`, and the
+storage config in `config.py`.
 
 ## Multi-domain clients: one export per domain, concatenated into a master list
 
@@ -283,7 +287,7 @@ doesn't go through them at all:
    that never fails an export that already succeeded.
 
 This is built against the **S3 API** (`boto3`), not a specific product:
-`agent_parity.shared.storage.ObjectStorage` talks to a
+`agent_parity.storage.ObjectStorage` talks to a
 self-hosted **MinIO** instance (`docker/docker-compose.yml` runs one) for
 local/dev use, or real **AWS S3** in production, with `endpoint_url` as the
 only thing that changes.
