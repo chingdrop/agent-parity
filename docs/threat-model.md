@@ -73,8 +73,8 @@ if enabled, Splunk. The endpoint receives a URL, never a storage credential.
   ([ADR 0009](decisions/0009-standalone-package-owning-scheduling-and-persistence.md)).
 - No claim about any live deployment: this repository runs on synthetic data.
 
-Sources: [`storage.py`](../src/agent_parity/shared/storage.py), [
-`script_export.py`](../src/agent_parity/shared/script_export.py), [
+Sources: [`storage.py`](../src/agent_parity/storage.py), [
+`script_runner.py`](../src/agent_parity/script_runner.py), [
 `rest_adapter.py`](../src/agent_parity/shared/rest_adapter.py), [
 `Export-ADDevices.ps1`](../src/agent_parity/scripts/Export-ADDevices.ps1), [
 `db.py`](../src/agent_parity/scheduling/db.py), [`docker-compose.yml`](../docker/docker-compose.yml).

@@ -29,11 +29,11 @@ fixture mode bypasses it.
 
 ## Evidence
 
-- Code: [`src/agent_parity/shared/script_export.py`](../../src/agent_parity/shared/script_export.py),
-  `presigned_put_url` in [`src/agent_parity/shared/storage.py`](../../src/agent_parity/shared/storage.py)
-- Tests: [`tests/shared/test_script_export.py`](../../tests/shared/test_script_export.py)
+- Code: [`src/agent_parity/script_runner.py`](../../src/agent_parity/script_runner.py),
+  `presigned_put_url` in [`src/agent_parity/storage.py`](../../src/agent_parity/storage.py)
+- Tests: [`tests/test_script_runner.py`](../../tests/test_script_runner.py)
   `test_live_connector_without_storage_raises_clear_error`,
   `test_fixture_mode_never_touches_storage_even_if_configured`, `test_live_mode_with_storage_uploads_then_downloads`; [
-  `tests/shared/test_storage.py`](../../tests/shared/test_storage.py) `test_presigned_put_url_round_trips_content`,
+  `tests/test_storage.py`](../../tests/test_storage.py) `test_presigned_put_url_round_trips_content`,
   `test_presigned_url_expires_quickly_by_default` (passes `expires_in=900` explicitly; the default itself is set only in
   the function signature)

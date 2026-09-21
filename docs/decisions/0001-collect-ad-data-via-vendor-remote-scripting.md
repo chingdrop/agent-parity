@@ -37,5 +37,5 @@ LDAP. `pick_ad_export_vendor()` chooses the capable vendor for each client.
   `pick_ad_export_vendor` in [`src/agent_parity/config.py`](../../src/agent_parity/config.py)
 - Tests: [`tests/test_config.py`](../../tests/test_config.py) `test_ad_export_prefers_sentinelone_over_carbonblack`,
   `test_ad_export_raises_when_only_bitdefender_is_enabled`; [
-  `tests/shared/test_sentinelone.py`](../../tests/shared/test_sentinelone.py)
+  `tests/connectors/test_sentinelone.py`](../../tests/connectors/test_sentinelone.py)
   `test_live_deploy_and_run_round_trips_full_rso_sequence`

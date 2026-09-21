@@ -21,7 +21,7 @@ dev, via `docker/docker-compose.yml`) and real AWS S3. `StorageConfig.backend` s
 
 ## Consequences
 
-- `get_storage` raises `ConfigError` for any backend other than `"s3"`.
+- `build_storage` raises `ConfigError` for any backend other than `"s3"`.
 - Path-style addressing and SigV4 are pinned for S3-compatible services.
 - `ObjectStorage` has no bucket-admin methods on purpose; bucket provisioning is out-of-band, and only the smoke test
   creates a bucket.
@@ -30,10 +30,9 @@ dev, via `docker/docker-compose.yml`) and real AWS S3. `StorageConfig.backend` s
 
 ## Evidence
 
-- Code: [`src/agent_parity/shared/storage.py`](../../src/agent_parity/shared/storage.py), `get_storage` in [
-  `src/agent_parity/shared/config.py`](../../src/agent_parity/shared/config.py), [
+- Code: [`src/agent_parity/storage.py`](../../src/agent_parity/storage.py), `build_storage` in [
+  `src/agent_parity/config.py`](../../src/agent_parity/config.py), [
   `docker/docker-compose.yml`](../../docker/docker-compose.yml), [
   `docker/smoke_check_storage.py`](../../docker/smoke_check_storage.py)
-- Tests: [`tests/shared/test_config.py`](../../tests/shared/test_config.py)
-  `test_get_storage_rejects_unsupported_backend`; [`tests/test_config.py`](../../tests/test_config.py)
-  `test_storage_rejects_unsupported_backend`
+- Tests: [`tests/test_config.py`](../../tests/test_config.py)
+  `test_build_storage_rejects_unsupported_backend`, `test_storage_rejects_unsupported_backend`
