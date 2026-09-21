@@ -1,0 +1,31 @@
+name: Links
+
+on:
+  push:
+    branches: [main]
+    paths: ["**.md", ".lychee.toml", ".github/workflows/links.yml"]
+  pull_request:
+    paths: ["**.md", ".lychee.toml", ".github/workflows/links.yml"]
+  schedule:
+    - cron: "29 6 * * 1" # weekly
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Pushes and PRs check only relative links and #anchors (`--offline`), so a
+      # third-party site having a bad day can't block a merge. The weekly run
+      # checks external URLs too, which is where link rot shows up.
+      - name: Check links
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+        with:
+          args: --no-progress ${{ github.event_name != 'schedule' && '--offline' || '' }} './**/*.md'

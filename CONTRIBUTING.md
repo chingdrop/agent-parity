@@ -83,3 +83,16 @@ uv run mypy src/agent_parity                 # type-check
 
 `pre-commit install` (above) runs all three automatically on each commit;
 these commands are for running them manually or investigating a failure.
+
+## Checking doc links
+
+[lychee](https://github.com/lycheeverse/lychee) checks every link and `#anchor` in the Markdown files
+(`brew install lychee`; config in `.lychee.toml`):
+
+```bash
+lychee './**/*.md'             # everything, including external URLs
+lychee --offline './**/*.md'   # relative links and anchors only
+```
+
+CI (`.github/workflows/links.yml`) runs the offline check on pushes and PRs that touch Markdown, and the full check
+weekly, so an external site going down can't block a merge.

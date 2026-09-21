@@ -39,7 +39,8 @@ them all with `grep -rn "TODO(craig)" docs/decisions`.
 Set up by the security-hygiene branch; none of the new workflows has run on GitHub yet.
 
 - [ ] Enable private vulnerability reporting (Settings → Code security). `SECURITY.md` links to it, and the link only
-  works once it's on.
+  works once it's on. The link checker can't confirm it: GitHub
+  redirects that URL to the login page, which counts as a pass.
 - [ ] Confirm the response windows in `SECURITY.md` (7 days to acknowledge, 30 to assess; these were proposed, not
   decided) and fill in the backup contact (the `TODO(craig)` comment there).
 - [ ] Answer the four `TODO(craig)` questions in `docs/threat-model.md`: how you load `.env` locally, what SentinelOne
@@ -61,7 +62,7 @@ Set up by the security-hygiene branch; none of the new workflows has run on GitH
 
 - [x] Add a general `*.csv` rule to `.gitignore` (with `!sample_data/**/*.csv`). Only `output/` is ignored today, so a
   stray CSV elsewhere would not be.
-- [ ] Optionally commit a doc link checker under `scripts/` and run it in CI. `lychee` is the off-the-shelf option.
+- [x] Optionally commit a doc link checker under `scripts/` and run it in CI. `lychee` is the off-the-shelf option.
 - [x] `charset-normalizer` 3.4.8 is a yanked release (`uv lock` warns), pulled in at runtime through `requests`. A
   non-yanked 3.5.1 resolves: `uv lock --upgrade-package charset-normalizer`. It changes a runtime dependency, so it was
   left for you.

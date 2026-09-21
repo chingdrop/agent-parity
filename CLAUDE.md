@@ -49,6 +49,7 @@ uv run pytest --cov --cov-fail-under=88     # the coverage gate CI enforces (lin
 uv run ruff check src tests scripts docker  # lint (E, F, I, UP, B, SIM, S)
 uv run ruff format src tests scripts docker # format
 uv run mypy                                 # type-check; config in pyproject.toml, not strict
+lychee './**/*.md'                          # doc links + #anchors (config in .lychee.toml)
 
 docker build -f docker/Dockerfile -t agent-parity .   # bare-bones standalone image
 docker compose -f docker/docker-compose.yml up -d minio redis worker beat   # local storage + scheduling stack
@@ -57,7 +58,7 @@ docker/smoke_test.sh                                 # round-trips a real object
 
 Ruff, mypy and the coverage gate are configured in `pyproject.toml` and run in CI (`.github/workflows/ci.yml`: `lint`,
 `typecheck`, `test`, `build`, and a `security` job with
-pip-audit and gitleaks; CodeQL runs separately). `pre-commit` runs ruff and mypy locally.
+pip-audit and gitleaks; CodeQL and the `links.yml` lychee check run separately). `pre-commit` runs ruff and mypy locally.
 Tests are exempt from ruff's `S101`/`S106` by a per-file ignore, not by disabling the rules.
 
 ## Architecture

@@ -1,0 +1,10 @@
+# Link checker config, used by `lychee` locally and by .github/workflows/links.yml.
+# Run from the repo root: lychee './**/*.md'
+
+# Check `#anchor` fragments too; the docs cross-link headings heavily.
+include_fragments = true
+
+# A rate-limited (429) response is not a broken link.
+accept = ["200..=299", "429"]
+max_retries = 3
+timeout = 20
