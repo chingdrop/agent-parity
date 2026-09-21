@@ -38,21 +38,20 @@ them all with `grep -rn "TODO(craig)" docs/decisions`.
 
 Set up by the security-hygiene branch; none of the new workflows has run on GitHub yet.
 
-- [ ] Enable private vulnerability reporting (Settings → Code security). `SECURITY.md` links to it, and the link only
-  works once it's on. The link checker can't confirm it: GitHub
-  redirects that URL to the login page, which counts as a pass.
-- [ ] Confirm the response windows in `SECURITY.md` (7 days to acknowledge, 30 to assess; these were proposed, not
-  decided) and fill in the backup contact (the `TODO(craig)` comment there).
+- [x] Enable private vulnerability reporting (Settings → Code security). `SECURITY.md` links to it. Enabled and
+  verified through the API; the link checker can't confirm it, since GitHub redirects that URL to the login page.
+- [x] Confirm the response windows in `SECURITY.md` (7 days to acknowledge, 30 to assess) and decide on a backup
+  contact. Windows kept as proposed; no backup contact is published.
 - [x] Answer the four `TODO(craig)` questions in `docs/threat-model.md`: how you load `.env` locally, what SentinelOne
   and Carbon Black retain of script arguments, whether vendor or HTTP error text can ever include credentials, and which
   account and privileges the export script runs as. Find them with `grep -rn "TODO(craig)" docs/threat-model.md`.
 - [ ] After the first CI run, check the `security` job. gitleaks couldn't be run locally, so the first run is its first
   real scan. The action is free for a personal account; if the repo moves to an organization it needs a
   `GITLEAKS_LICENSE` secret.
-- [ ] Check that CodeQL "default setup" is not enabled (Settings → Code security). It conflicts with
+- [x] Check that CodeQL "default setup" is not enabled (Settings → Code security). It conflicts with
   `.github/workflows/codeql.yml`.
-- [ ] If branch protection requires status checks, update the required names: `lint`, `typecheck`, `test`, `build`,
-  `security` and `Analyze (python)`. `lint` no longer runs mypy; that is `typecheck`.
+- [ ] `main` has no branch protection or rulesets today. If you add protection, require these check names: `lint`,
+  `typecheck`, `test`, `build`, `security` and `Analyze (python)`. `lint` no longer runs mypy; that is `typecheck`.
 - [ ] Decide on a coverage badge. None was added on purpose; the CI gate is 88% (measured 90.83%, line and branch).
 - [ ] Optionally tighten mypy toward `strict`, one flag at a time. `--strict` currently reports 80 errors in 19 files:
   41 bare generics, 15 missing annotations, 10 untyped calls, 7 untyped Celery decorators, 6 `no-any-return`, 1

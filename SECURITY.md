@@ -16,8 +16,6 @@ Please do not open a public issue for a security problem. Use GitHub's private v
 
 Include the affected version or commit, steps to reproduce, and the impact you see.
 
-Backup contact: <!-- TODO(craig): backup security contact email, if wanted -->
-
 ## What to expect
 
 This is a single-maintainer project, so these are best-effort targets: an acknowledgement within 7 days and an
