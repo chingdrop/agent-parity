@@ -59,20 +59,20 @@ Set up by the security-hygiene branch; none of the new workflows has run on GitH
 
 ## Repo hygiene
 
-- [ ] Add a general `*.csv` rule to `.gitignore` (with `!sample_data/**/*.csv`). Only `output/` is ignored today, so a
+- [x] Add a general `*.csv` rule to `.gitignore` (with `!sample_data/**/*.csv`). Only `output/` is ignored today, so a
   stray CSV elsewhere would not be.
 - [ ] Optionally commit a doc link checker under `scripts/` and run it in CI. `lychee` is the off-the-shelf option.
-- [ ] `charset-normalizer` 3.4.8 is a yanked release (`uv lock` warns), pulled in at runtime through `requests`. A
+- [x] `charset-normalizer` 3.4.8 is a yanked release (`uv lock` warns), pulled in at runtime through `requests`. A
   non-yanked 3.5.1 resolves: `uv lock --upgrade-package charset-normalizer`. It changes a runtime dependency, so it was
   left for you.
-- [ ] Upgrade the dev-only `cryptography` 49.0.0 (PYSEC-2026-3552, fixed in 50.0.0). It arrives through `moto`, so it is
+- [x] Upgrade the dev-only `cryptography` 49.0.0 (PYSEC-2026-3552, fixed in 50.0.0). It arrives through `moto`, so it is
   not in the runtime audit that CI gates on: `uv lock --upgrade-package cryptography`.
 - [ ] Newer majors exist for the pinned actions (`checkout` v7, `setup-uv` v10, `upload-artifact` v7, `gitleaks-action`
   v3). Dependabot will propose them; review the major bumps rather than auto-merging.
 - [ ] `pyproject.toml` now says 1.2.0 to match the `v1.2.0` tag, but 21 commits have landed since that tag. Bump the
   version and tag together at the next release. The old tags never tracked the package version (`v1.0.0` and `v1.1.0`
   sit on commits that said 0.1.0).
-- [ ] Optionally extend ruff to `scripts/` and `docker/`; CI lints only `src` and `tests`.
+- [x] Optionally extend ruff to `scripts/` and `docker/`; CI lints only `src` and `tests`.
 
 ## Notes
 
