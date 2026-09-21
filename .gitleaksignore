@@ -1,0 +1,4 @@
+# A dev-only default Fernet key in the removed Django dashboard's settings (commit 4098ba0). The comment beside it says
+# so, production.py required a real key, and the app was never deployed. The file is gone from HEAD; it survives only
+# in history. Ignoring this one fingerprint keeps the history scan useful for anything new.
+4098ba0bc8c5f23cd76590ef6a9ff49026bde2ce:agent_parity_web/config/settings/base.py:generic-api-key:28
