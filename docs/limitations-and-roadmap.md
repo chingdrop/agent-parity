@@ -70,16 +70,23 @@ the README's "Optional: Docker" section.
 
 ## Possible next steps
 
-These are directions, not commitments. The code contains no TODO or FIXME markers, so this list comes from the README's
-former "Out of scope for v1" list and from follow-ups that code comments explicitly flag.
-<!-- TODO(craig): add or prune items here; this list only includes what the repo already records. -->
+These are directions, not commitments. Some come from follow-ups the code and README already flag; the rest are the
+maintainer's own picks.
 
-- **Fuzzy hostname matching**, beyond normalization. Left out on purpose: a renamed machine resolves itself once its
-  agent reports the new hostname, and a wrong fuzzy match would hide a gap. See
-  [ADR 0005](decisions/0005-correlate-on-normalized-hostname-only.md).
-- **A live endoflife.date source** with a fixture fallback, the same shape as the vendor connectors. [
-  `os_eol.py`](../src/agent_parity/os_eol.py) calls it "a natural, self-contained extension if ever needed" and does not
-  build it.
+- **A coverage-trend report.** A command that reports coverage over time from the stored `CoverageSnapshot` history. The
+  original tool existed to show the quarterly upward trend; today `sync` and the Celery tasks store the history, but no
+  command reports it. See [`db.py`](../src/agent_parity/scheduling/db.py).
+- **A Splunk dashboard and saved reports.** The opt-in delta export forwards the data, but this repository doesn't
+  include the dashboard and reports that turned it into the quarterly report.
+- **Duplicate join-key detection.** Flag two devices that normalize to the same hostname, including across AD domains
+  (see "Matching is hostname-only" above).
+- **The EOL drift check in CI.** [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) is manual today; a weekly
+  scheduled workflow would flag stale dates without anyone remembering to run it.
+- **The smoke tests in CI.** [`docker/smoke_test.sh`](../docker/smoke_test.sh) could run in a job that brings up MinIO,
+  Redis, a worker and beat, so real object storage and a real Celery chord are checked automatically.
+- **A live endoflife.date source** with a fixture fallback, the same shape as the vendor connectors. The API is free and
+  needs no credentials. [`os_eol.py`](../src/agent_parity/os_eol.py) calls it "a natural, self-contained extension if
+  ever needed" and does not build it; the drift check above covers the "is this still right" question for now.
 - **Confirming the two unverified vendor details** (SentinelOne's build-number field and BitDefender's company filter)
   against current API docs or a live tenant, as their docstrings recommend before relying on them live.
 
@@ -88,3 +95,5 @@ former "Out of scope for v1" list and from follow-ups that code comments explici
 - **A web dashboard.** There is no plan to build one; reporting is `CorrelationResult` and `CoverageSnapshot` history
   plus the opt-in Splunk delta export.
 - **Real-time ingestion.** This is a batch tool on a schedule, not a streaming one.
+- **Fuzzy hostname matching.** A renamed machine resolves itself once its agent reports the new hostname, and a wrong
+  fuzzy match would hide a gap. See [ADR 0005](decisions/0005-correlate-on-normalized-hostname-only.md).
