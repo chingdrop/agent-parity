@@ -76,9 +76,9 @@ vhs docs/demo.tape
 ## Linting, formatting, and type-checking
 
 ```bash
-uv run ruff check src tests      # lint
-uv run ruff format src tests     # format
-uv run mypy src/agent_parity     # type-check
+uv run ruff check src tests scripts docker   # lint
+uv run ruff format src tests scripts docker  # format
+uv run mypy src/agent_parity                 # type-check
 ```
 
 `pre-commit install` (above) runs all three automatically on each commit;

@@ -7,9 +7,11 @@ __pycache__/
 dist/
 build/
 
-# CLI output
+# CLI output — stray CSVs are ignored everywhere except the committed fixtures
 output/
 *.log
+*.csv
+!sample_data/**/*.csv
 
 # `sync` subcommand's default run-history store (see src/agent_parity/scheduling/db.py) —
 # AGENT_PARITY_DB_URL points elsewhere for anything that isn't local/demo.

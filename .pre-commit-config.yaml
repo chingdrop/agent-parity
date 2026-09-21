@@ -4,9 +4,9 @@ repos:
     hooks:
       - id: ruff-check
         args: [--fix]
-        files: ^(src|tests)/
+        files: ^(src|tests|scripts|docker)/
       - id: ruff-format
-        files: ^(src|tests)/
+        files: ^(src|tests|scripts|docker)/
 
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v2.3.0

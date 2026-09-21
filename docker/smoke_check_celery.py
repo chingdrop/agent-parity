@@ -56,8 +56,7 @@ def main() -> int:
         count = _terminal_run_count(Session)
         if count > baseline:
             print(
-                f"chord completed: {count - baseline} new run(s) reached a terminal "
-                f"status via the real broker/worker"
+                f"chord completed: {count - baseline} new run(s) reached a terminal status via the real broker/worker"
             )
             return 0
         time.sleep(2)

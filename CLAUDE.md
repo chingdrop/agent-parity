@@ -46,8 +46,8 @@ uv run pytest                               # full suite, offline, no live crede
 uv run pytest tests/test_correlation.py -k covered   # single test/file
 uv run pytest --cov --cov-fail-under=88     # the coverage gate CI enforces (line + branch)
 
-uv run ruff check src tests                 # lint (E, F, I, UP, B, SIM, S)
-uv run ruff format src tests                # format
+uv run ruff check src tests scripts docker  # lint (E, F, I, UP, B, SIM, S)
+uv run ruff format src tests scripts docker # format
 uv run mypy                                 # type-check; config in pyproject.toml, not strict
 
 docker build -f docker/Dockerfile -t agent-parity .   # bare-bones standalone image
