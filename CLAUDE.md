@@ -89,7 +89,8 @@ This is the analytical core and is deliberately a `.pipe()` chain, not one funct
 `CoverageStatus`) → `backfill_machine_type` → `classify_eol_status`. Each stage is
 independently testable; keep it that way rather than inlining. `join_key`
 normalization (strip DNS suffix, lowercase, trim) is the only matching logic —
-there's no fuzzy matching, by design (noted as future work).
+there's no fuzzy matching, by design (a rename resolves itself once the agent reports the new hostname; see
+[ADR 0005](docs/decisions/0005-correlate-on-normalized-hostname-only.md)).
 
 **`backfill_machine_type` exists for one reason**: `machine_type` (see
 `AgentDevice`'s docstring) only ever comes from the agent side of the merge, so a

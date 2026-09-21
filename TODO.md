@@ -27,7 +27,7 @@ them all with `grep -rn "TODO(craig)" docs/decisions`.
   that it is S3, not why.
 - [x] [0003](docs/decisions/0003-s3-api-with-minio-for-local-dev.md): other storage backends you considered besides S3
   and Azure Blob.
-- [ ] [0005](docs/decisions/0005-correlate-on-normalized-hostname-only.md): why fuzzy hostname matching is left out "by
+- [x] [0005](docs/decisions/0005-correlate-on-normalized-hostname-only.md): why fuzzy hostname matching is left out "by
   design". The repo records that it is, not the reason.
 - [x] [0007](docs/decisions/0007-normalize-vendor-wording-to-sentinelone.md): other canonical vocabularies considered,
   such as a vendor-neutral one.

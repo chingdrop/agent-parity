@@ -38,7 +38,8 @@ and [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) is a manual ch
 `test_os_eol.py`](../tests/test_os_eol.py).
 
 **Matching is hostname-only.** The join key is the hostname with the DNS suffix stripped and lowercased. A renamed
-machine can't be resolved (the fixtures include one such orphan per client), and a duplicate join key, including across
+machine shows as a missing agent plus an orphan until its agent reports the new hostname (the fixtures include one
+such orphan per client), and a duplicate join key, including across
 domains, is not detected. See [ADR 0005](decisions/0005-correlate-on-normalized-hostname-only.md) and [
 `correlation.py`](../src/agent_parity/correlation.py).
 
@@ -73,8 +74,9 @@ These are directions, not commitments. The code contains no TODO or FIXME marker
 former "Out of scope for v1" list and from follow-ups that code comments explicitly flag.
 <!-- TODO(craig): add or prune items here; this list only includes what the repo already records. -->
 
-- **Fuzzy hostname matching** for renamed machines, beyond normalization. The README called it "a natural next step for
-  the renamed-machine orphans". See [ADR 0005](decisions/0005-correlate-on-normalized-hostname-only.md).
+- **Fuzzy hostname matching**, beyond normalization. Left out on purpose: a renamed machine resolves itself once its
+  agent reports the new hostname, and a wrong fuzzy match would hide a gap. See
+  [ADR 0005](decisions/0005-correlate-on-normalized-hostname-only.md).
 - **A live endoflife.date source** with a fixture fallback, the same shape as the vendor connectors. [
   `os_eol.py`](../src/agent_parity/os_eol.py) calls it "a natural, self-contained extension if ever needed" and does not
   build it.

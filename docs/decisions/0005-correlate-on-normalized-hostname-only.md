@@ -16,14 +16,15 @@ Matched rows carry `match_method = "hostname_exact"`. There is no fuzzy matching
 
 ## Alternatives considered
 
-- **Fuzzy hostname matching**: documented as future work ("a natural next step for the renamed-machine orphans"), not
-  built.
-- <!-- TODO(craig): why fuzzy matching is left out "by design". The repo records that it is, not the reason. -->
+- **Fuzzy hostname matching**: not built, on purpose. Exact matching keeps every result traceable to an identical key. A
+  renamed machine shows as a missing agent plus an orphan until the agent reports its new hostname, then resolves
+  itself. Fuzzy matching would fix that short window at the cost of permanent, silent errors: a wrong match marks a
+  device covered when it isn't, and sequential hostnames (`acme-ws-001`, `acme-ws-002`) are one character apart.
 
 ## Consequences
 
-- FQDN and case differences resolve; a renamed machine does not. The fixtures deliberately include one such orphan per
-  client.
+- FQDN and case differences resolve; a renamed machine does not, until its agent reports the new hostname. The fixtures
+  deliberately include one such orphan per client.
 - A duplicate join key is not detected or deduplicated.
 - A matched agent with no `last_seen` counts as stale, not covered (the conservative call).
 - Rules out probabilistic matching without a new stage in the `.pipe()` chain.
