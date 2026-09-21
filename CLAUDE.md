@@ -454,7 +454,8 @@ needs to stay in sync with a project that isn't being developed further.
 
 ## Credential resolution (`src/agent_parity/config.py`)
 
-`load_config()` parses `config.yaml` (topology) + `.env` (secrets) into `AppConfig`/
+`load_config()` parses `config.yaml` (topology) + the environment (secrets; `.env` isn't read by the code, load it
+with `uv run --env-file .env ...`) into `AppConfig`/
 `ClientConfig`/`VendorConfig` dataclasses — every secret in `config.yaml` is a `${VAR}`
 reference; an unset variable resolves to `None` rather than raising, which is exactly
 what puts a connector into fixture mode. This is the *only* config entrypoint — there

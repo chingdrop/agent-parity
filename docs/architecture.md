@@ -472,9 +472,14 @@ here — adding support for a vendor beyond SentinelOne/Carbon Black/BitDefender
 is writing one connector class decorated `@register_connector`
 (`src/agent_parity/connectors/base.py`), not editing a central table.
 `src/agent_parity/config.py`'s `load_config()` is the single entrypoint that
-resolves both files into an `AppConfig` — there's no database and no second
+resolves `config.yaml` plus the environment into an `AppConfig` — there's no database and no second
 config path, so this is also exactly what a consuming project should call.
 
 A `${VAR}` pointing at an unset variable resolves to `None`, which is
 precisely what puts a connector into fixture mode — a fresh checkout with no
 `.env` runs the entire pipeline against `sample_data/`.
+
+The code doesn't read `.env` itself. Load it into the environment with `uv run --env-file .env agent-parity run`, or
+with Docker Compose's `--env-file`. The original tool used python-dotenv while it was small and switched to Docker
+Compose's env file once Celery and Docker came in; this rebuild keeps the second approach, so there is no dotenv
+dependency.

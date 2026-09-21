@@ -85,8 +85,10 @@ uv run pytest                                                  # 290+ tests, all
 
 `compare` needs no vendor connector, no `config.yaml`, and no credentials at
 all — see [Bring your own CSVs](#bring-your-own-csvs) right below. `run` is
-the config.yaml/connector-driven path; with no `.env` (or unset credentials
-in it) every connector falls back to `sample_data/` fixtures — see
+the config.yaml/connector-driven path. Put live credentials in `.env` (copy
+`.env.example`) and load them with `uv run --env-file .env agent-parity run`;
+with no `.env` (or unset credentials in it) every connector falls back to
+`sample_data/` fixtures — see
 [Sample data](#sample-data) below for what's in them.
 
 ## Bring your own CSVs
