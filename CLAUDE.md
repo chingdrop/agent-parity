@@ -150,11 +150,11 @@ persisted callers, both going through `persistence.py` instead.
 
 ## Scheduling & persistence (`src/agent_parity/scheduling/`: `db.py`, `persistence.py`, `celery_app.py`, `tasks.py`)
 
-Historically this layer lived in a separate Django project consuming `agent_parity`
-(never in this package itself); that project — and its planned non-Django successor —
-are archived and won't be developed further (see "What this is"), so this restoration
-folds the same layer into this package permanently, SQLAlchemy + SQLite in place of the
-Django ORM + Postgres. It's grouped into its own `scheduling/` subpackage — unlike the
+This package owns this layer permanently (see "What this is"). Django was never part
+of the original tool: a Django project was added during the rebuild, when the plan was to
+grow this into an ongoing tool for other people to use rather than a reproduction of the
+original, and it has since been removed. Don't describe Django as the original or
+"historical" implementation of anything. It's grouped into its own `scheduling/` subpackage — unlike the
 single-module folders flattened elsewhere in this file's history, these four modules are
 a genuine layered subsystem (schema → persistence → scheduled callers), not a "one class
 per X" grouping like `connectors/`.
@@ -176,8 +176,8 @@ rows, `finalize_run` correlates then persists (or marks the run `FAILED` outrigh
 `ad_df is None`), `run_and_persist_for_client` is the synchronous entrypoint the `sync`
 CLI subcommand calls. **Idempotency**: `persist_correlation` re-fetches the run inside
 its own transaction and no-ops if `status != PENDING` — the pre-created `CorrelationRun`
-id is the idempotency key, same principle the historical Django version enforced with
-`select_for_update`. SQLite has no equivalent row-level lock, so this instead relies on
+id is the idempotency key. SQLite has no row-level lock like Postgres's
+`SELECT ... FOR UPDATE`, so this instead relies on
 SQLite's own writer serialization (one write transaction at a time) — adequate at this
 single-node/demo scale, but a real, disclosed difference from a Postgres-backed
 production database, not something to treat as equivalent. Also watch for **naive vs.
@@ -188,16 +188,15 @@ before storing or comparing; a comparison that skips it will crash the *second* 
 device's `last_seen` needs updating (this broke once during Stage 4a verification,
 fixed there, not a hypothetical).
 
-**`src/agent_parity/scheduling/celery_app.py`**/ **`tasks.py`** are the scaled path, ported from the
-historical Django project's `tasks.py` — the shape is unchanged: one *group* of
+**`src/agent_parity/scheduling/celery_app.py`**/ **`tasks.py`** are the scaled path: one *group* of
 fan-out tasks per client (one AD export task per domain controller, one inventory-pull
 task per vendor/site-tenant), feeding a *chord* callback (`correlate_client`) that runs
 the correlation exactly once against the client's complete result set. Fan-out tasks
 never raise — they return `{"ok": False, "error": ...}` so one broken vendor API can't
 stop the chord from firing; the callback records per-vendor outcomes in `vendor_status`
 (`COMPLETE` vs `PARTIAL`), and `mark_run_failed` (`link_error`) is the backstop for the
-callback itself blowing up. There's no Django `transaction.on_commit` to hook into here
-— `dispatch_client` just does a plain `session.commit()` before dispatching the chord,
+callback itself blowing up. `dispatch_client` does a plain `session.commit()` before
+dispatching the chord,
 since a committed SQLite write is immediately visible to any connection opened
 afterward. `dispatch_all_clients` (the beat entrypoint) reads each client's own
 `ClientConfig.sync_interval_hours` to decide whether it's due; `celery_app.py`'s
@@ -214,8 +213,9 @@ round-tripping through a real Redis broker and real `worker`/`beat` containers.
 
 ## Splunk delta export (`src/agent_parity/splunk_export.py`, `persistence.py`)
 
-Confirmed real via `git show 41d3dc5` (the commit that removed it once the
-now-permanently-gone Django dashboard took over visualization) — restored now that
+Real production behavior (the original tool fed Splunk). `git show 41d3dc5` is the
+commit that removed it from this repo while a rebuild-only Django dashboard (never part
+of the original tool, since deleted) handled visualization — restored now that
 Stage 4's `CorrelationRun`/`CoverageSnapshot` schema gives delta computation
 something to diff against. Splunk is a **sink**, never the system of record — SQLite
 stays authoritative — and forwarding is entirely opt-in: `SplunkConfig.enabled` is

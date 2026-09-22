@@ -1,6 +1,6 @@
 """Pipeline-internal data shapes.
 
-These are plain dataclasses, not Django models: they are the normalization
+These are plain dataclasses, not ORM models: they are the normalization
 boundary between vendor APIs and the rest of the pipeline. Vendor-specific
 field names never leak past a connector — every connector returns
 ``AgentDevice``, and the AD parser produces rows shaped like ``ADDevice``.

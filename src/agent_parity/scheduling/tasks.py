@@ -5,19 +5,16 @@ domain controller (a client with multiple AD domains has more than one),
 one inventory-pull task per (vendor, site/tenant) the client has within
 that vendor (almost always just one), feeding a *chord* callback that runs
 the pandas correlation exactly once, against that client's complete result
-set. Ported from the historical Django project's ``dashboard/tasks.py`` —
-same shape, Django ORM calls replaced with ``agent_parity.scheduling.persistence``'s
-SQLAlchemy-backed equivalents.
+set. Persistence goes through ``agent_parity.scheduling.persistence``.
 
-Three deliberate design points, unchanged from the original:
+Three deliberate design points:
 
 * **Idempotency** — the ``CorrelationRun`` row is created (empty, PENDING)
   and committed *before* the chord is dispatched, and its id rides through
   the callback signature. A retried or double-fired callback finds the run
   already finalized and no-ops (``persistence.persist_correlation``'s own
-  status re-check). There's no Django ``transaction.on_commit`` to hook
-  into here — a plain ``session.commit()`` before dispatching the chord is
-  enough, since a committed SQLite write is immediately visible to any
+  status re-check). A plain ``session.commit()`` before dispatching the
+  chord is enough, since a committed SQLite write is immediately visible to any
   connection opened afterward (including a worker picking up the chord).
 
 * **Partial-failure tolerance** — fan-out tasks never raise; they return a

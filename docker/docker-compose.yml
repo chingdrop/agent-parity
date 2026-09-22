@@ -14,8 +14,7 @@
 #   the schedule in agent_parity/scheduling/celery_app.py, `redis` is both the broker
 #   and result backend. All three, plus the `agent-parity` service's own
 #   `sync` runs, share one SQLite file via the `dbdata` volume — SQLite is a
-#   file, not a service, so (unlike Postgres in the historical Django-era
-#   stack this restores) there's nothing else to run for persistence.
+#   file, not a service, so there's nothing else to run for persistence.
 #
 # This is a standalone dev/demo stack, not this project's production
 # deployment story — there is no separate "hub" project superseding it

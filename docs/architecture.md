@@ -183,11 +183,8 @@ pick.
 
 ## Scheduling & persistence
 
-This layer historically lived in a separate Django project consuming
-`agent_parity` (never in this package). That project — and its planned
-non-Django successor — are archived and won't be developed further, so this
-package now owns scheduling and persistence permanently: SQLAlchemy +
-SQLite in place of the Django ORM + Postgres, Celery unchanged.
+This package owns scheduling (Celery) and persistence (SQLAlchemy + SQLite)
+directly; see [ADR 0009](decisions/0009-standalone-package-owning-scheduling-and-persistence.md).
 
 `src/agent_parity/scheduling/db.py` is the schema — `Client` (an identity anchor only;
 topology stays in `config.yaml`), `Device`, `CorrelationRun` (one row per
@@ -204,11 +201,10 @@ persistence) and a persisted caller: `finalize_run` correlates and writes
 `CoverageSnapshot` rows (or marks the run `FAILED` outright when every AD
 domain failed), `run_and_persist_for_client` is the synchronous entrypoint
 `agent-parity sync` calls. It's **idempotent** — a duplicate call against an
-already-finalized run no-ops rather than double-counting — the same
-principle the historical Django version enforced with `select_for_update`;
-SQLite has no equivalent row lock, so this instead relies on SQLite's own
-writer serialization, adequate at this single-node/demo scale but a real,
-disclosed difference from a Postgres-backed production database.
+already-finalized run no-ops rather than double-counting. SQLite has no
+row lock like Postgres's `SELECT ... FOR UPDATE`, so this relies on SQLite's
+own writer serialization — adequate at this single-node/demo scale, but a
+real, disclosed difference from a Postgres-backed production database.
 
 `src/agent_parity/scheduling/celery_app.py`/`tasks.py` are the scaled path: one *group* of
 fan-out tasks per client (one AD-export task per domain controller, one
@@ -234,9 +230,9 @@ broker and real worker/beat containers.
 
 ## Splunk delta export
 
-Real, restored production behavior — confirmed via the git history commit that
-removed it once a since-permanently-removed Django dashboard took over
-visualization. Splunk is a *sink*, never the system of record (SQLite stays
+Real production behavior: the original tool fed Splunk. It was briefly removed
+from this repo while a Django dashboard (a rebuild-only addition, never part of
+the original tool, since deleted) handled visualization, then restored. Splunk is a *sink*, never the system of record (SQLite stays
 authoritative), and forwarding is entirely opt-in:
 `src/agent_parity/config.py`'s `SplunkConfig.enabled` is `False` unless both
 `hec_url` and `hec_token` are configured — the same opt-in shape as object

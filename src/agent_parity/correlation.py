@@ -16,9 +16,9 @@ classify) is independently testable and reads top to bottom:
          .pipe(merge_with_agents, agents_df)
          .pipe(classify_coverage, stale_days=14)
 
-This module must stay importable without Django or Celery: it is called
-identically from the synchronous management command and the Celery chord
-callback.
+This module must stay importable without Celery or SQLAlchemy: it is called
+identically from the pure ``run``/``compare`` CLI paths, the persisted ``sync``
+path, and the Celery chord callback.
 """
 
 from __future__ import annotations

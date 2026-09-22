@@ -1,15 +1,10 @@
 """SQLAlchemy schema + engine/session setup for run history and idempotency.
 
-Historically this lived in a separate Django project (``agent_parity_web``)
-that consumed ``agent_parity`` as a pinned dependency and owned scheduling/
-persistence itself. That project (and its planned successor, a "hub" that
-would have provided the same infrastructure without Django) is archived and
-won't be developed further, so this package now owns that layer permanently
-instead of provisionally — SQLAlchemy + SQLite rather than the Django ORM +
-Postgres, but the same job: track one ``CorrelationRun`` per pipeline
-execution and enough device/snapshot history to make a Celery chord callback
-idempotent (see ``agent_parity.scheduling.persistence``) and, later, to compute deltas
-for Splunk export.
+This package owns scheduling and persistence directly (see ADR 0009). The
+job here: track one ``CorrelationRun`` per pipeline execution and enough
+device/snapshot history to make a Celery chord callback idempotent (see
+``agent_parity.scheduling.persistence``) and to compute deltas for Splunk
+export.
 
 ``config.yaml`` stays the sole topology/credential source — nothing here
 duplicates client/vendor configuration. ``Client`` is just an identity

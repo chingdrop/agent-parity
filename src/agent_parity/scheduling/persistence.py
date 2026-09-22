@@ -7,11 +7,9 @@ chord callback — see ``agent_parity.scheduling.tasks``) a place to record run 
 and, critically, to make a chord callback firing twice a no-op rather than
 double-counting data.
 
-Historically this same split existed as two packages (``agent_parity`` and
-a Django project, ``agent_parity_web``, that consumed it) — folded into one
-package now, but the boundary is unchanged: collection/correlation knows
-nothing about persistence, and persistence knows nothing about how a result
-was collected.
+The boundary runs both ways: collection/correlation knows nothing about
+persistence, and persistence knows nothing about how a result was
+collected.
 """
 
 from __future__ import annotations
@@ -78,8 +76,8 @@ def persist_correlation(
 
     Idempotent: if the run has already been finalized (a Celery retry, a
     double-fired chord callback), this is a no-op — the pre-created
-    ``CorrelationRun`` id is the idempotency key. Unlike the historical
-    Postgres/Django version, SQLite has no real row-level lock to hold across
+    ``CorrelationRun`` id is the idempotency key. Unlike Postgres
+    (``SELECT ... FOR UPDATE``), SQLite has no real row-level lock to hold across
     the re-check-then-write below — this instead relies on SQLite's own
     writer serialization (one write transaction at a time on the whole
     database), which is adequate at this single-node/demo scale but is a

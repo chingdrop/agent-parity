@@ -1,11 +1,7 @@
 """Celery application: scheduled fan-out/fan-in on top of ``agent_parity.scheduling.tasks``.
 
-Historically this lived in a separate Django project bound to Django
-settings (``config_from_object("django.conf:settings", namespace="CELERY")``)
-— there's no Django here, so broker/backend come straight from the
-environment. Broker and result backend both default to a local Redis
-instance (``docker/docker-compose.yml`` runs one), same default the
-historical Docker Compose stack used.
+Broker and result backend come straight from the environment and both
+default to a local Redis instance (``docker/docker-compose.yml`` runs one).
 """
 
 from __future__ import annotations
