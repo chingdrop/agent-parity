@@ -105,7 +105,7 @@ class ClientConfig:
     # How often (in hours) agent_parity.scheduling.tasks.dispatch_all_clients' beat
     # entrypoint re-syncs this client — a real per-client fact (some clients
     # were synced more aggressively than others), not a global constant.
-    # Unused by the synchronous `run`/`sync` CLI paths, which always run on
+    # Unused by the synchronous `run` CLI path, which always runs on
     # demand regardless of cadence.
     sync_interval_hours: int
     # vendor name -> one dict per site/tenant this client has within that

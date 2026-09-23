@@ -39,9 +39,15 @@ Notes on the record:
 - CI hardened: least-privilege permissions, actions pinned to full commit SHAs, and lint and type-check split into
   separate jobs.
 - Package version set to 1.2.0, to match the latest tag.
+- **Breaking:** `agent-parity run` now records every run in the SQLite history (what `sync` used to do). Pass `--csv`
+  to also write `output/<client>.csv`, which `run` previously wrote by default.
+- `run_and_persist_for_client` returns `(CorrelationRun, CorrelationResult | None)` and reuses
+  `run_correlation_for_client` instead of duplicating collection. The persist-and-forward half of `finalize_run` is now
+  `persist_result`.
 
 ### Removed
 
+- The `sync` subcommand, merged into `run` (see above).
 - The `py-shared-tools` git dependency (its code is inlined, see above), and the Dockerfile's `git` install that existed
   only to fetch it.
 

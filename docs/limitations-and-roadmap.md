@@ -55,7 +55,7 @@ See [ADR 0007](decisions/0007-normalize-vendor-wording-to-sentinelone.md).
 than falling back to the vendor's output channel. See [ADR 0003](decisions/0003-s3-api-with-minio-for-local-dev.md)
 and [ADR 0002](decisions/0002-return-ad-export-via-presigned-put-url.md).
 
-**Runs are batch and on demand.** Collection runs when invoked (`run`, `sync`) or on a Celery schedule; there is no
+**Runs are batch and on demand.** Collection runs when invoked (`run`) or on a Celery schedule; there is no
 real-time or streaming ingestion. See [ADR 0009](decisions/0009-standalone-package-owning-scheduling-and-persistence.md)
 and [`celery_app.py`](../src/agent_parity/scheduling/celery_app.py).
 
@@ -74,7 +74,7 @@ These are directions, not commitments. Some come from follow-ups the code and RE
 maintainer's own picks.
 
 - **A coverage-trend report.** A command that reports coverage over time from the stored `CoverageSnapshot` history. The
-  original tool existed to show the quarterly upward trend; today `sync` and the Celery tasks store the history, but no
+  original tool existed to show the quarterly upward trend; today `run` and the Celery tasks store the history, but no
   command reports it. See [`db.py`](../src/agent_parity/scheduling/db.py).
 - **A Splunk dashboard and saved reports.** The opt-in delta export forwards the data, but this repository doesn't
   include the dashboard and reports that turned it into the quarterly report.

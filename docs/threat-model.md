@@ -44,8 +44,8 @@ if enabled, Splunk. The endpoint receives a URL, never a storage credential.
 ## What is stored or logged
 
 - **Credentials:** never written by the package.
-- **`run` and `compare`:** write CSVs to `output/` (gitignored) and persist nothing else.
-- **`sync` and the Celery tasks:** persist a local SQLite file (`agent_parity.db` by default, `*.db` gitignored) with
+- **`compare`:** writes a CSV to `output/` (gitignored) and persists nothing else.
+- **`run` and the Celery tasks:** `run --csv` also writes CSVs to `output/`. Both persist a local SQLite file (`agent_parity.db` by default, `*.db` gitignored) with
   hostnames, OS, coverage status and per-vendor status text, which includes error messages from failed calls.
 - **Logs:** the CLI logs at WARNING; failures include exception text. Debug logging (not enabled by the CLI) records
   request URL, params and body, but not headers. For script runs the body includes the presigned `UploadUrl`, so a debug

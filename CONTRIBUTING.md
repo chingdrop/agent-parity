@@ -23,7 +23,7 @@ uv run pre-commit install
 
 ```
 src/agent_parity/
-    cli.py             # entry point: run / compare / sync subcommands
+    cli.py             # entry point: run / compare subcommands
     config.py          # config.yaml + ${VAR} resolution
     models.py          # ADDevice / AgentDevice and the status enums
     ad_export.py       # parse the AD export CSV
@@ -64,7 +64,7 @@ synthetic data.
 
 ## Rendering the demo GIF
 
-`docs/demo.tape` is a [vhs](https://github.com/charmbracelet/vhs) script that types `uv run agent-parity run` and
+`docs/demo.tape` is a [vhs](https://github.com/charmbracelet/vhs) script that types `uv run agent-parity run --csv` and
 holds on the summary line. It records the real command, not scripted text. To render `docs/demo.gif`:
 
 ```bash

@@ -17,8 +17,8 @@ classify) is independently testable and reads top to bottom:
          .pipe(classify_coverage, stale_days=14)
 
 This module must stay importable without Celery or SQLAlchemy: it is called
-identically from the pure ``run``/``compare`` CLI paths, the persisted ``sync``
-path, and the Celery chord callback.
+identically from the pure ``compare`` CLI path, the persisted ``run`` path, and
+the Celery chord callback.
 """
 
 from __future__ import annotations

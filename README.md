@@ -24,16 +24,16 @@ Needs [uv](https://docs.astral.sh/uv/) and Python 3.12+. No credentials, no serv
 git clone https://github.com/chingdrop/agent-parity.git
 cd agent-parity
 uv sync
-uv run agent-parity run
+uv run agent-parity run --csv
 ```
 
 Real output:
 
 ```text
-[acme] 51 rows -> output/acme.csv (coverage 81.8%; covered=36, missing_agent=5, orphaned_agent=7, stale_coverage=3; ad:ACME-DC01=ok, bitdefender=ok, carbonblack:0=ok, carbonblack:branch=ok, sentinelone=ok)
+[acme] run 1: complete, 51 rows -> output/acme.csv (coverage 81.8%; covered=36, missing_agent=5, orphaned_agent=7, stale_coverage=3; ad:ACME-DC01=ok, bitdefender=ok, carbonblack:0=ok, carbonblack:branch=ok, sentinelone=ok)
 ```
 
-Of the devices AD knows about, 36 are covered (81.8%); 5 have no agent, 3 have gone quiet, and 7 agents belong to no AD device. The per-device table is in `output/acme.csv`. Add `--all` to run every client (Acme and Globex).
+Of the devices AD knows about, 36 are covered (81.8%); 5 have no agent, 3 have gone quiet, and 7 agents belong to no AD device. The per-device table is in `output/acme.csv` (that's what `--csv` adds), and the run is also recorded in a local SQLite history (`agent_parity.db`). Add `--all` to run every client (Acme and Globex).
 
 ## See it
 
@@ -71,19 +71,21 @@ models a real MSSP-style topology: multiple client organizations in one
 ## Quick start
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+. Two ways in, no
-server or database either way:
+server either way:
 
 ```console
 uv sync
 uv run agent-parity compare ad_export.csv agent_export.csv   # your own two CSVs, zero config
 uv run agent-parity run --all                                 # config.yaml + connectors, every client
-uv run agent-parity run --client acme                         # just one client
+uv run agent-parity run --client acme --csv                   # just one client, plus output/acme.csv
 uv run pytest                                                  # 290+ tests, all offline
 ```
 
 `compare` needs no vendor connector, no `config.yaml`, and no credentials at
-all — see [Bring your own CSVs](#bring-your-own-csvs) right below. `run` is
-the config.yaml/connector-driven path. Put live credentials in `.env` (copy
+all, and saves nothing but its output CSV — see [Bring your own CSVs](#bring-your-own-csvs) right below. `run` is
+the config.yaml/connector-driven path: each run is recorded in a local SQLite
+history (`agent_parity.db`, or `AGENT_PARITY_DB_URL`), and `--csv` also writes
+`output/<client>.csv`. Put live credentials in `.env` (copy
 `.env.example`) and load them with `uv run --env-file .env agent-parity run`;
 with no `.env` (or unset credentials in it) every connector falls back to
 `sample_data/` fixtures — see
@@ -172,10 +174,11 @@ against a local MinIO instead of `moto`'s simulated S3:
 
 ```bash
 docker build -f docker/Dockerfile -t agent-parity .
-docker run --rm -v "$PWD/output:/app/output" agent-parity run
+docker run --rm -v "$PWD/output:/app/output" agent-parity run --csv
 
-# or, via compose (also brings up a local MinIO the container can reach):
-docker compose -f docker/docker-compose.yml run --rm agent-parity run
+# or, via compose (also brings up a local MinIO the container can reach, and
+# keeps run history in the shared SQLite volume):
+docker compose -f docker/docker-compose.yml run --rm agent-parity run --csv
 
 # the scheduled path: Redis broker + a worker + beat, all sharing one SQLite file
 docker compose -f docker/docker-compose.yml up -d redis worker beat

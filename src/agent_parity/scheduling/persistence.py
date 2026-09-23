@@ -2,7 +2,7 @@
 
 ``pipeline.run_correlation_for_client``/``correlate_from_csvs`` stay pure —
 no persistence, no history — exactly as documented there. This module is
-the layer that gives a caller (the ``sync`` CLI subcommand, or a Celery
+the layer that gives a caller (the ``run`` CLI subcommand, or a Celery
 chord callback — see ``agent_parity.scheduling.tasks``) a place to record run history
 and, critically, to make a chord callback firing twice a no-op rather than
 double-counting data.
@@ -252,7 +252,7 @@ def run_and_persist_for_client(
 ) -> tuple[CorrelationRun, CorrelationResult | None]:
     """Collect, correlate, and persist for one client, all in-process.
 
-    This is what the ``sync`` CLI subcommand calls (demo/single-node path);
+    This is what the ``run`` CLI subcommand calls (demo/single-node path);
     ``agent_parity.scheduling.tasks.correlate_client`` is the Celery chord callback that
     calls ``finalize_run`` from fanned-out results instead. Returns the
     correlation result alongside the run (``None`` when every AD domain

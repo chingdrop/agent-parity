@@ -1,8 +1,8 @@
 # Bare-bones local dev/test setup for agent-parity:
 #
 # * `agent-parity` — builds docker/Dockerfile so the CLI can be run without a
-#   local uv install: `docker compose run agent-parity run` (or `sync` for
-#   the SQLite-persisted path). Runs fully offline against sample_data/ by
+#   local uv install: `docker compose run agent-parity run --csv` (run
+#   history lands in the shared SQLite volume below). Runs fully offline against sample_data/ by
 #   default (no .env required) — pass `--env-file ../.env` on the command
 #   line for live credentials.
 # * `minio` — S3-compatible object storage for locally exercising the real
@@ -13,7 +13,7 @@
 #   tasks (agent_parity/scheduling/tasks.py), `beat` fires `dispatch_all_clients` on
 #   the schedule in agent_parity/scheduling/celery_app.py, `redis` is both the broker
 #   and result backend. All three, plus the `agent-parity` service's own
-#   `sync` runs, share one SQLite file via the `dbdata` volume — SQLite is a
+#   `run` invocations, share one SQLite file via the `dbdata` volume — SQLite is a
 #   file, not a service, so there's nothing else to run for persistence.
 #
 # This is this package's deployment shape, run here as a local dev/demo

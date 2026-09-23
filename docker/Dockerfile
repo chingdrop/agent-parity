@@ -6,9 +6,9 @@
 # Build from the repo root:
 #
 #   docker build -f docker/Dockerfile -t agent-parity .
-#   docker run --rm -v "$PWD/output:/app/output" agent-parity run
+#   docker run --rm -v "$PWD/output:/app/output" agent-parity run --csv
 #
-# Or via docker/docker-compose.yml: `docker compose -f docker/docker-compose.yml run agent-parity run`
+# Or via docker/docker-compose.yml: `docker compose -f docker/docker-compose.yml run agent-parity run --csv`
 
 FROM python:3.12-slim
 

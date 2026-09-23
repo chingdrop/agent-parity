@@ -38,9 +38,8 @@ in this file has landed as of this revision.
 ```console
 uv sync                                     # install deps
 uv run agent-parity compare ad.csv agent.csv   # two CSVs, zero config.yaml/connectors/credentials
-uv run agent-parity run --all                  # config.yaml + connectors, every client, no persistence
-uv run agent-parity run --client acme          # config.yaml + connectors, just one client
-uv run agent-parity sync --all                 # same as run, but persisted as a CorrelationRun (SQLite)
+uv run agent-parity run --all                  # config.yaml + connectors, every client, persisted as a CorrelationRun (SQLite)
+uv run agent-parity run --client acme --csv    # just one client, and also write output/acme.csv
 
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
@@ -78,8 +77,8 @@ Four layers, collect → correlate → report:
 - **`src/agent_parity/pipeline.py`** — two orchestration entrypoints that tie the above
   together: `run_correlation_for_client()` (config.yaml + connectors, live or fixture)
   and `correlate_from_csvs()` (two CSVs, zero config). **`src/agent_parity/cli.py`** is a
-  thin `run`/`compare`/`sync` wrapper around them for standalone use; `persistence.py`/
-  `tasks.py` are the persisted callers (see "Scheduling & persistence" below).
+  thin wrapper: `compare` calls `correlate_from_csvs()` directly, while `run` goes
+  through `persistence.py` (as do the Celery `tasks.py`) — see "Scheduling & persistence" below.
 
 ## Correlation engine (`src/agent_parity/correlation.py`)
 
@@ -143,10 +142,14 @@ No persistence and no history live in either function on purpose — that's kept
 separate layer (`src/agent_parity/scheduling/persistence.py`, see "Scheduling & persistence" below),
 not because this package avoids owning persistence (it doesn't, see "What this is"
 above), but because collection/correlation and persistence are a clean seam regardless
-of which package owns both sides of it. `src/agent_parity/cli.py`'s `run`/`compare`
-subcommands call these two functions directly and stay pure (write `output/<name>.csv`,
-print a summary, nothing persisted); `sync` and `src/agent_parity/scheduling/tasks.py` are the
-persisted callers, both going through `persistence.py` instead.
+of which package owns both sides of it. `src/agent_parity/cli.py`'s `compare` subcommand
+calls `correlate_from_csvs` directly and stays pure (writes a CSV, prints a summary,
+nothing persisted); `run` and `src/agent_parity/scheduling/tasks.py` are the persisted
+callers, both going through `persistence.py`. `run --csv` also writes the classified frame
+to `output/<client>.csv` — `run_and_persist_for_client` returns the `CorrelationResult`
+alongside the `CorrelationRun` for exactly that, so the CSV never needs a second
+collection pass. There is deliberately no un-persisted config.yaml path any more (a
+separate pure `run` and persisted `sync` used to duplicate each other).
 
 ## Scheduling & persistence (`src/agent_parity/scheduling/`: `db.py`, `persistence.py`, `celery_app.py`, `tasks.py`)
 
@@ -172,9 +175,12 @@ migration-managed production schema.
 
 **`src/agent_parity/scheduling/persistence.py`** is the layer between `pipeline.py` (pure) and a
 persisted caller: `persist_correlation` loads a classified frame into `CoverageSnapshot`
-rows, `finalize_run` correlates then persists (or marks the run `FAILED` outright when
-`ad_df is None`), `run_and_persist_for_client` is the synchronous entrypoint the `sync`
-CLI subcommand calls. **Idempotency**: `persist_correlation` re-fetches the run inside
+rows, `persist_result` persists an already-correlated result (or marks the run `FAILED`
+outright when it's `None`) and forwards Splunk deltas, `finalize_run` is the Celery
+callback's correlate-then-`persist_result`, and `run_and_persist_for_client` is the
+synchronous entrypoint the `run` CLI subcommand calls — it reuses
+`pipeline.run_correlation_for_client` for collection/correlation rather than duplicating it,
+and returns `(CorrelationRun, CorrelationResult | None)`. **Idempotency**: `persist_correlation` re-fetches the run inside
 its own transaction and no-ops if `status != PENDING` — the pre-created `CorrelationRun`
 id is the idempotency key. SQLite has no row-level lock like Postgres's
 `SELECT ... FOR UPDATE`, so this instead relies on
@@ -241,7 +247,7 @@ follows.
 entrypoints thread a live `SplunkConfig` through: `run_and_persist_for_client` passes
 `config.splunk`, and `tasks.correlate_client` (the Celery chord callback, which has no
 live `AppConfig` in scope) loads one fresh via `load_config().splunk` the same way its
-own fan-out tasks already do. The pure `run`/`compare` CLI paths never touch Splunk at
+own fan-out tasks already do. The pure `compare` CLI path never touches Splunk at
 all — delta computation needs run history to diff against, which only the persisted
 paths have.
 
@@ -325,8 +331,8 @@ Docker-volume path with no directory yet would otherwise fail); `cli.py`'s
 group callback calls `agent_parity.shared.logging_setup.setup_logging(level=WARNING)`
 so the `logger.warning`/`.exception` calls already scattered across
 `pipeline.py`/`persistence.py`/`tasks.py` print with a timestamp and logger
-name instead of Python's unconfigured bare-message default — `run`/`sync`
-also write their CSV/output through `agent_parity.shared.atomic_io.ensure_dir()`/
+name instead of Python's unconfigured bare-message default — `run --csv`/`compare`
+also write their CSV output through `agent_parity.shared.atomic_io.ensure_dir()`/
 `atomic_write()` instead of `Path.mkdir()`/`DataFrame.to_csv(path)` directly,
 so a crash mid-write can never leave a truncated CSV or DB file behind.
 The library's `config_loader.ConfigLoader` and `retry.call_with_retry` were **not** inlined — nothing here uses them:

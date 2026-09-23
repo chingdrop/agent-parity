@@ -8,9 +8,9 @@ has), then hand the result to ``agent_parity.correlation.correlate``.
 ``correlate_from_csvs``: the zero-config path, two CSVs straight into
 ``correlate``, no config.yaml, connector or credentials.
 
-No persistence, no history — that's the caller's job: the ``run``/``compare``
-CLI commands write a CSV, while ``sync`` and the Celery tasks persist through
-``agent_parity.scheduling.persistence``.
+No persistence, no history — that's the caller's job: the ``compare`` CLI
+command writes a CSV, while the ``run`` CLI command and the Celery tasks persist
+through ``agent_parity.scheduling.persistence``.
 """
 
 from __future__ import annotations

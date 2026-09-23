@@ -21,7 +21,7 @@ Type "export PS1='$ ' && cd $(git rev-parse --show-toplevel) && rm -rf output &&
 Enter
 Show
 
-Type "uv run agent-parity run"
+Type "uv run agent-parity run --csv"
 Sleep 600ms
 Enter
 

@@ -13,7 +13,7 @@ output/
 *.csv
 !sample_data/**/*.csv
 
-# `sync` subcommand's default run-history store (see src/agent_parity/scheduling/db.py) —
+# `run` subcommand's default run-history store (see src/agent_parity/scheduling/db.py) —
 # AGENT_PARITY_DB_URL points elsewhere for anything that isn't local/demo.
 agent_parity.db
 *.db

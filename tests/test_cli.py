@@ -66,53 +66,67 @@ def test_compare_reports_parse_errors_without_raising(tmp_path):
     assert result.exit_code == 1
 
 
-def test_run_subcommand_dispatches_to_config_driven_pipeline(tmp_path, monkeypatch):
+def _snapshot_count() -> int:
+    from agent_parity.scheduling.db import CoverageSnapshot, get_engine, session_factory
+
+    Session = session_factory(get_engine())
+    with Session() as session:
+        return session.query(CoverageSnapshot).count()
+
+
+def test_run_persists_a_run_without_writing_a_csv_by_default(tmp_path, monkeypatch, sqlite_db):
     monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
 
     result = CliRunner().invoke(cli.cli, ["run", "--client", "acme"])
 
     assert result.exit_code == 0, result.output
-    assert (tmp_path / "output" / "acme.csv").exists()
+    assert "[acme] run 1: complete, 51 rows (coverage" in result.output
+    assert _snapshot_count() == 51
+    assert not (tmp_path / "output").exists()
 
 
-def test_run_subcommand_all_writes_one_csv_per_client(tmp_path, monkeypatch):
+def test_run_with_csv_also_writes_the_classified_frame(tmp_path, monkeypatch, sqlite_db):
     monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
 
-    result = CliRunner().invoke(cli.cli, ["run", "--all"])
+    result = CliRunner().invoke(cli.cli, ["run", "--client", "acme", "--csv"])
 
     assert result.exit_code == 0, result.output
+    out_path = tmp_path / "output" / "acme.csv"
+    assert f"-> {out_path}" in result.output
+    assert len(pd.read_csv(out_path)) == 51
+    assert _snapshot_count() == 51
+
+
+def test_run_all_persists_and_writes_one_csv_per_client(tmp_path, monkeypatch, sqlite_db):
+    monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
+
+    result = CliRunner().invoke(cli.cli, ["run", "--all", "--csv"])
+
+    assert result.exit_code == 0, result.output
+    assert "[acme] run" in result.output
+    assert "[globex] run" in result.output
     assert (tmp_path / "output" / "acme.csv").exists()
     assert (tmp_path / "output" / "globex.csv").exists()
 
 
-def test_run_subcommand_rejects_unknown_client(tmp_path, monkeypatch):
-    monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
-
+def test_run_rejects_unknown_client(sqlite_db):
     result = CliRunner().invoke(cli.cli, ["run", "--client", "nope"])
 
     assert result.exit_code != 0
 
 
-def test_sync_subcommand_persists_a_run(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_PARITY_DB_URL", f"sqlite:///{tmp_path / 'test.db'}")
+def test_run_exits_nonzero_when_every_ad_domain_fails(tmp_path, monkeypatch, sqlite_db):
+    from agent_parity.scheduling import persistence
 
-    result = CliRunner().invoke(cli.cli, ["sync", "--client", "acme"])
+    monkeypatch.setattr(cli, "OUT_DIR", tmp_path / "output")
+    monkeypatch.setattr(
+        persistence,
+        "run_correlation_for_client",
+        lambda config, client_cfg, stale_days=None: (None, {"ad:ACME-DC01": "error: offline"}),
+    )
 
-    assert result.exit_code == 0, result.output
-    assert "run 1: complete" in result.output
+    result = CliRunner().invoke(cli.cli, ["run", "--client", "acme", "--csv"])
 
-    from agent_parity.scheduling.db import CoverageSnapshot, get_engine, session_factory
-
-    Session = session_factory(get_engine())
-    with Session() as session:
-        assert session.query(CoverageSnapshot).count() == 51
-
-
-def test_sync_subcommand_all_persists_one_run_per_client(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_PARITY_DB_URL", f"sqlite:///{tmp_path / 'test.db'}")
-
-    result = CliRunner().invoke(cli.cli, ["sync", "--all"])
-
-    assert result.exit_code == 0, result.output
-    assert "[acme] run" in result.output
-    assert "[globex] run" in result.output
+    assert result.exit_code == 1
+    assert "run 1: failed" in result.output
+    assert not (tmp_path / "output" / "acme.csv").exists()

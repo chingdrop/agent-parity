@@ -23,7 +23,8 @@ SQLAlchemy/SQLite persistence directly, and models multiple clients, each with i
 
 ## Consequences
 
-- `run` and `compare` persist nothing; `sync` and the Celery tasks record run history in SQLite.
+- `compare` persists nothing; `run` and the Celery tasks record run history in SQLite. Until 2026-09-23 an
+  un-persisted `run` sat alongside a persisted `sync`; they were merged into one persisted `run` with a `--csv` flag.
 - SQLite has no row-level locking, so run idempotency relies on its writer serialization. That is adequate for
   single-node or demo scale and is a disclosed difference from Postgres.
 - The schema is `create_all()`, with no migrations.

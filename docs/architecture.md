@@ -27,8 +27,8 @@ The [README](../README.md) has the quick start, the CSV schema, sample data, Doc
                                        │
                     ┌──────────────────┴──────────────────┐
                     ▼                                     ▼
-             src/agent_parity/cli.py              persistence.py / tasks.py
-          (writes output/<name>.csv)         (SQLite history, Celery scheduling)
+          cli.py compare               cli.py run / tasks.py -> persistence.py
+         (writes a CSV)          (SQLite history, Celery; `run --csv` also writes a CSV)
 ```
 
 Everything above the `pipeline.py` line is pure, dependency-light Python:
@@ -201,7 +201,8 @@ schema.
 persistence) and a persisted caller: `finalize_run` correlates and writes
 `CoverageSnapshot` rows (or marks the run `FAILED` outright when every AD
 domain failed), `run_and_persist_for_client` is the synchronous entrypoint
-`agent-parity sync` calls. It's **idempotent** — a duplicate call against an
+`agent-parity run` calls (it also returns the `CorrelationResult`, which is
+how `run --csv` writes the full classified frame without collecting twice). It's **idempotent** — a duplicate call against an
 already-finalized run no-ops rather than double-counting. SQLite has no
 row lock like Postgres's `SELECT ... FOR UPDATE`, so this relies on SQLite's
 own writer serialization — adequate at this single-node/demo scale, but a
@@ -220,7 +221,7 @@ default to `redis://localhost:6379/0`
 (`CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` to override).
 
 ```console
-uv run agent-parity sync --all                        # synchronous, persisted
+uv run agent-parity run --all                         # synchronous, persisted
 docker compose -f docker/docker-compose.yml up -d redis worker beat   # scheduled path
 ```
 
@@ -258,8 +259,8 @@ splunk:
 **A Splunk outage never fails a run** — `persistence.finalize_run` catches
 `SplunkExportError` and logs it; the run's own `COMPLETE`/`PARTIAL` status
 depends only on collection/correlation, never on whether the delta export
-succeeded. Only the persisted paths (`sync`, Celery) touch Splunk at all —
-`run`/`compare` have no run history to diff against.
+succeeded. Only the persisted paths (`run`, Celery) touch Splunk at all —
+`compare` has no run history to diff against.
 
 ## AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
