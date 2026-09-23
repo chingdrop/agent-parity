@@ -133,7 +133,7 @@ def sync(client: str | None, run_all: bool) -> None:
     with Session() as session:
         for slug in slugs:
             try:
-                run_row = run_and_persist_for_client(session, config, config.client(slug))
+                run_row, _ = run_and_persist_for_client(session, config, config.client(slug))
             except ConfigError as exc:
                 click.echo(f"[{slug}] config error: {exc}", err=True)
                 had_failure = True

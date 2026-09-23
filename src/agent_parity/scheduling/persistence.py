@@ -25,7 +25,7 @@ from agent_parity import splunk_export
 from agent_parity.config import AppConfig, ClientConfig, SplunkConfig
 from agent_parity.correlation import CorrelationResult, agents_to_frame, correlate
 from agent_parity.models import AgentDevice
-from agent_parity.pipeline import collect_ad_frame, collect_vendor_inventory
+from agent_parity.pipeline import run_correlation_for_client
 from agent_parity.scheduling.db import Client, CorrelationRun, CoverageSnapshot, Device, RunStatus
 from agent_parity.splunk_export import SplunkExportError
 
@@ -202,28 +202,25 @@ def export_deltas_to_splunk(session: Session, run: CorrelationRun, splunk: Splun
     return splunk_export.send_deltas(deltas, splunk)
 
 
-def finalize_run(
+def persist_result(
     session: Session,
     run: CorrelationRun,
-    ad_df: pd.DataFrame | None,
-    agent_records: list[AgentDevice],
+    result: CorrelationResult | None,
     vendor_status: dict[str, str],
     splunk: SplunkConfig | None = None,
 ) -> int:
-    """Correlate + persist + (optionally) forward deltas — the shared fan-in
-    for both entrypoints below.
+    """Persist an already-correlated result + (optionally) forward deltas.
 
-    ``ad_df`` is ``None`` when every one of a client's domains failed to
+    ``result`` is ``None`` when every one of a client's domains failed to
     export (see ``pipeline.collect_ad_frame``) — there's nothing to
     correlate against, so the run fails outright rather than partially.
     """
-    if ad_df is None:
+    if result is None:
         run.status = RunStatus.FAILED.value
         run.vendor_status = vendor_status
         run.finished_at = datetime.now(UTC)
         session.flush()
         return 0
-    result = correlate(ad_df, agents_to_frame(agent_records), stale_days=run.stale_days)
     count = persist_correlation(session, run, result, vendor_status)
     if count and splunk is not None:
         try:
@@ -234,26 +231,41 @@ def finalize_run(
     return count
 
 
-def run_and_persist_for_client(session: Session, config: AppConfig, client_cfg: ClientConfig) -> CorrelationRun:
+def finalize_run(
+    session: Session,
+    run: CorrelationRun,
+    ad_df: pd.DataFrame | None,
+    agent_records: list[AgentDevice],
+    vendor_status: dict[str, str],
+    splunk: SplunkConfig | None = None,
+) -> int:
+    """Correlate + persist — the Celery chord callback's fan-in.
+
+    ``ad_df`` is ``None`` when every AD domain failed; see ``persist_result``.
+    """
+    result = correlate(ad_df, agents_to_frame(agent_records), stale_days=run.stale_days) if ad_df is not None else None
+    return persist_result(session, run, result, vendor_status, splunk=splunk)
+
+
+def run_and_persist_for_client(
+    session: Session, config: AppConfig, client_cfg: ClientConfig
+) -> tuple[CorrelationRun, CorrelationResult | None]:
     """Collect, correlate, and persist for one client, all in-process.
 
     This is what the ``sync`` CLI subcommand calls (demo/single-node path);
     ``agent_parity.scheduling.tasks.correlate_client`` is the Celery chord callback that
-    calls ``finalize_run`` the same way from fanned-out results instead.
+    calls ``finalize_run`` from fanned-out results instead. Returns the
+    correlation result alongside the run (``None`` when every AD domain
+    failed) so a caller can also write the full classified frame out, e.g.
+    as a CSV, without re-running collection.
     """
     client = sync_client_from_config(session, client_cfg)
     run = CorrelationRun(client_id=client.id, stale_days=config.stale_days)
     session.add(run)
     session.flush()
 
-    ad_df, vendor_status = collect_ad_frame(config, client_cfg.slug)
+    result, vendor_status = run_correlation_for_client(config, client_cfg, stale_days=config.stale_days)
 
-    agent_records: list[AgentDevice] = []
-    for vendor_name in sorted(client_cfg.vendors):
-        records, site_status = collect_vendor_inventory(config, client_cfg.slug, vendor_name)
-        agent_records.extend(records)
-        vendor_status.update(site_status)
-
-    finalize_run(session, run, ad_df, agent_records, vendor_status, splunk=config.splunk)
+    persist_result(session, run, result, vendor_status, splunk=config.splunk)
     session.commit()
-    return run
+    return run, result

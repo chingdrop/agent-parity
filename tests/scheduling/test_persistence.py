@@ -46,8 +46,10 @@ def test_finalize_run_marks_failed_when_ad_data_is_missing():
 def test_run_and_persist_for_client_persists_acmes_fixture_run():
     config = load_config()
     with _session() as session:
-        run = run_and_persist_for_client(session, config, config.client("acme"))
+        run, result = run_and_persist_for_client(session, config, config.client("acme"))
 
+        assert result is not None
+        assert len(result.frame) == 51
         assert run.status == RunStatus.COMPLETE.value
         assert run.finished_at is not None
         snapshots = session.query(CoverageSnapshot).filter_by(run_id=run.id).all()
@@ -64,23 +66,14 @@ def test_run_and_persist_for_client_persists_acmes_fixture_run():
 def test_persist_correlation_is_idempotent_on_duplicate_call():
     config = load_config()
     with _session() as session:
-        run = run_and_persist_for_client(session, config, config.client("acme"))
+        run, result = run_and_persist_for_client(session, config, config.client("acme"))
         first_count = session.query(CoverageSnapshot).filter_by(run_id=run.id).count()
         assert first_count > 0
+        assert result is not None
 
-        # Re-correlate the same inputs and try to persist again against the
-        # already-finalized run — must no-op, not double the snapshot count.
-        from agent_parity.correlation import agents_to_frame, correlate
-        from agent_parity.pipeline import collect_ad_frame, collect_vendor_inventory
-
-        ad_df, vendor_status = collect_ad_frame(config, "acme")
-        agent_records = []
-        for vendor_name in sorted(config.client("acme").vendors):
-            records, site_status = collect_vendor_inventory(config, "acme", vendor_name)
-            agent_records.extend(records)
-            vendor_status.update(site_status)
-        result = correlate(ad_df, agents_to_frame(agent_records), stale_days=config.stale_days)
-
+        # Persist the same result again against the already-finalized run —
+        # must no-op, not double the snapshot count.
+        vendor_status = dict(run.vendor_status)
         second_return = persist_correlation(session, run, result, vendor_status)
         session.commit()
 
