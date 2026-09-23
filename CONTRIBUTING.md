@@ -41,7 +41,7 @@ tests/
     mirrors the layout above (tests/connectors/, tests/scheduling/, tests/shared/); see CLAUDE.md's "Testing conventions"
 ```
 
-See [CLAUDE.md](CLAUDE.md) for the full architecture writeup — why each
+See [docs/architecture.md](docs/architecture.md) for the full architecture writeup — why each
 piece is shaped the way it is, not just what's where.
 
 ## Running tests

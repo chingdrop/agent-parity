@@ -64,8 +64,6 @@ and [OS end-of-life](docs/architecture.md#os-end-of-life-a-third-prioritization-
 This package is a standalone library and CLI — no Django, no web framework —
 but it does own real scheduling (Celery) and persistence (SQLAlchemy/SQLite)
 directly; see [Scheduling & persistence](docs/architecture.md#scheduling--persistence). It
-can be used either directly (the CLI below) or as a pinned git dependency
-(`uv add git+https://.../agent-parity@vX.Y.Z`) inside a larger project. It
 models a real MSSP-style topology: multiple client organizations in one
 `config.yaml`, each with its own AD domain(s) and enabled vendor(s) — see
 [Credentials](docs/architecture.md#credentials-configyaml--env).

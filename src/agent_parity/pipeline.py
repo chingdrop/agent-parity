@@ -1,12 +1,16 @@
-"""Collect from every configured source and correlate for one client.
+"""Collect and correlate: the package's two orchestration entrypoints.
 
-The one entrypoint every caller of this package should use: given an
-``AppConfig`` and a ``ClientConfig``, collect the AD export (across every
-domain the client spans) and every enabled vendor's inventory (across every
-site/tenant it has), then hand the result to
-``agent_parity.correlation.correlate``. No persistence, no history —
-that's the caller's job (a CLI writing a CSV, or a hub project persisting to
-its own store).
+``run_correlation_for_client``: given an ``AppConfig`` and a
+``ClientConfig``, collect the AD export (across every domain the client
+spans) and every enabled vendor's inventory (across every site/tenant it
+has), then hand the result to ``agent_parity.correlation.correlate``.
+
+``correlate_from_csvs``: the zero-config path, two CSVs straight into
+``correlate``, no config.yaml, connector or credentials.
+
+No persistence, no history — that's the caller's job: the ``run``/``compare``
+CLI commands write a CSV, while ``sync`` and the Celery tasks persist through
+``agent_parity.scheduling.persistence``.
 """
 
 from __future__ import annotations

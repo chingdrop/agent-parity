@@ -458,8 +458,9 @@ needs to stay in sync with a project that isn't being developed further.
 with `uv run --env-file .env ...`) into `AppConfig`/
 `ClientConfig`/`VendorConfig` dataclasses — every secret in `config.yaml` is a `${VAR}`
 reference; an unset variable resolves to `None` rather than raising, which is exactly
-what puts a connector into fixture mode. This is the *only* config entrypoint — there
-is no database, so there's nothing else for a consuming project to call.
+what puts a connector into fixture mode. This is the *only* config entrypoint — the
+SQLite run history never stores topology or credentials, so there's no second source
+of configuration to consult.
 `sites_for(client_slug, vendor_name)` returns one merged dict per site/tenant a (client, vendor) pair has — almost
 always a one-element tuple, more for a client
 with multiple sites/tenants (see "Multi-site/tenant" below) — it's the one place

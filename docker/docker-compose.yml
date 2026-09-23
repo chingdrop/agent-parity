@@ -16,10 +16,9 @@
 #   `sync` runs, share one SQLite file via the `dbdata` volume — SQLite is a
 #   file, not a service, so there's nothing else to run for persistence.
 #
-# This is a standalone dev/demo stack, not this project's production
-# deployment story — there is no separate "hub" project superseding it
-# (that was planned once; it's archived and won't be built), so this is the
-# real shape a production deployment of this package would extend.
+# This is this package's deployment shape, run here as a local dev/demo
+# stack; a production deployment extends it (real S3 instead of MinIO,
+# live credentials via --env-file) rather than replacing it.
 
 x-celery-env: &celery-env
   CELERY_BROKER_URL: redis://redis:6379/0

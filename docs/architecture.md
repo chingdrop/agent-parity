@@ -33,8 +33,9 @@ The [README](../README.md) has the quick start, the CSV schema, sample data, Doc
 
 Everything above the `pipeline.py` line is pure, dependency-light Python:
 pandas/numpy for the correlation engine, `requests`/`boto3` for the connectors and object
-storage, `pyyaml` for config. No web framework, no ORM, no task queue — a
-consumer decides what to do with a `CorrelationResult`.
+storage, `pyyaml` for config. Those layers import no ORM and no task queue; SQLAlchemy and
+Celery live only below the line, in `scheduling/`, which decides what to do with a
+`CorrelationResult`.
 
 ## The deployment model: remote script execution, not direct AD access
 
@@ -468,8 +469,8 @@ here — adding support for a vendor beyond SentinelOne/Carbon Black/BitDefender
 is writing one connector class decorated `@register_connector`
 (`src/agent_parity/connectors/base.py`), not editing a central table.
 `src/agent_parity/config.py`'s `load_config()` is the single entrypoint that
-resolves `config.yaml` plus the environment into an `AppConfig` — there's no database and no second
-config path, so this is also exactly what a consuming project should call.
+resolves `config.yaml` plus the environment into an `AppConfig`. There's no second config path: the SQLite run
+history never stores topology or credentials, so this is the one place to read what's configured.
 
 A `${VAR}` pointing at an unset variable resolves to `None`, which is
 precisely what puts a connector into fixture mode — a fresh checkout with no

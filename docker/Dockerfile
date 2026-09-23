@@ -1,9 +1,7 @@
 # Bare-bones image for running the agent-parity CLI standalone (an analyst's
-# laptop, a CI job, an ad-hoc box) without a local uv install. cyberhub
-# consumes this package as a pinned git dependency and has its own
-# deployment/container story that supersedes this entirely — this Dockerfile
-# only exists to run the CLI on its own when there's no reason to pull in
-# the whole hub.
+# laptop, a CI job, an ad-hoc box) without a local uv install. The same
+# image also runs the Celery `worker` and `beat` services in
+# docker/docker-compose.yml, the scheduled deployment path.
 #
 # Build from the repo root:
 #
