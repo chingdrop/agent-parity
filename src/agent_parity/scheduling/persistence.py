@@ -2,8 +2,8 @@
 
 ``pipeline.run_correlation_for_client``/``correlate_from_csvs`` stay pure —
 no persistence, no history — exactly as documented there. This module is
-the layer that gives a caller (the ``run`` CLI subcommand, or a Celery
-chord callback — see ``agent_parity.scheduling.tasks``) a place to record run history
+the layer that gives the Celery chord callback (``agent_parity.scheduling.tasks``,
+which both ``agent-parity run`` and beat go through) a place to record run history
 and, critically, to make a chord callback firing twice a no-op rather than
 double-counting data.
 
@@ -22,10 +22,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from agent_parity import splunk_export
-from agent_parity.config import AppConfig, ClientConfig, SplunkConfig
+from agent_parity.config import ClientConfig, SplunkConfig
 from agent_parity.correlation import CorrelationResult, agents_to_frame, correlate
 from agent_parity.models import AgentDevice
-from agent_parity.pipeline import run_correlation_for_client
 from agent_parity.scheduling.db import Client, CorrelationRun, CoverageSnapshot, Device, RunStatus
 from agent_parity.splunk_export import SplunkExportError
 
@@ -238,34 +237,13 @@ def finalize_run(
     agent_records: list[AgentDevice],
     vendor_status: dict[str, str],
     splunk: SplunkConfig | None = None,
-) -> int:
-    """Correlate + persist — the Celery chord callback's fan-in.
+) -> CorrelationResult | None:
+    """Correlate + persist — the chord callback's fan-in.
 
     ``ad_df`` is ``None`` when every AD domain failed; see ``persist_result``.
+    Returns the correlation result (``None`` in that case) so the callback
+    can report on it without re-correlating.
     """
     result = correlate(ad_df, agents_to_frame(agent_records), stale_days=run.stale_days) if ad_df is not None else None
-    return persist_result(session, run, result, vendor_status, splunk=splunk)
-
-
-def run_and_persist_for_client(
-    session: Session, config: AppConfig, client_cfg: ClientConfig
-) -> tuple[CorrelationRun, CorrelationResult | None]:
-    """Collect, correlate, and persist for one client, all in-process.
-
-    This is what the ``run`` CLI subcommand calls (demo/single-node path);
-    ``agent_parity.scheduling.tasks.correlate_client`` is the Celery chord callback that
-    calls ``finalize_run`` from fanned-out results instead. Returns the
-    correlation result alongside the run (``None`` when every AD domain
-    failed) so a caller can also write the full classified frame out, e.g.
-    as a CSV, without re-running collection.
-    """
-    client = sync_client_from_config(session, client_cfg)
-    run = CorrelationRun(client_id=client.id, stale_days=config.stale_days)
-    session.add(run)
-    session.flush()
-
-    result, vendor_status = run_correlation_for_client(config, client_cfg, stale_days=config.stale_days)
-
-    persist_result(session, run, result, vendor_status, splunk=config.splunk)
-    session.commit()
-    return run, result
+    persist_result(session, run, result, vendor_status, splunk=splunk)
+    return result

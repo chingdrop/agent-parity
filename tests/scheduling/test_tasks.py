@@ -57,6 +57,33 @@ def test_chord_produces_partial_run_when_one_vendor_fails(celery_eager, sqlite_d
     assert "carbonblack" not in vendors_persisted
 
 
+def test_start_client_run_resolves_to_the_callbacks_report(celery_eager, sqlite_db):
+    """What `agent-parity run` prints comes back through the chord result —
+    JSON-safe, with the classified frame as CSV text when asked for."""
+    import io
+
+    import pandas as pd
+
+    config = load_config()
+
+    run_id, pending = tasks.start_client_run(config, config.client("acme"), include_csv=True)
+    report = pending.get()
+
+    assert report["run_id"] == run_id
+    assert report["status"] == "complete"
+    assert report["rows"] == 51
+    assert report["coverage_pct"] == 81.8
+    assert set(report["vendor_status"]) == {
+        "ad:ACME-DC01",
+        "sentinelone",
+        "carbonblack:0",
+        "carbonblack:branch",
+        "bitdefender",
+    }
+    assert len(pd.read_csv(io.StringIO(report["csv"]))) == 51
+    assert len(_get_run(sqlite_db, run_id).snapshots) == 51
+
+
 def test_chord_completes_cleanly_when_all_vendors_succeed(celery_eager, sqlite_db):
     """Globex has two AD domains (see config.yaml) — both domains' export
     tasks must fire and both must show up in vendor_status."""

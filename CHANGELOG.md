@@ -45,6 +45,10 @@ Notes on the record:
   `run_correlation_for_client` instead of duplicating collection. The persist-and-forward half of `finalize_run` is now
   `persist_result`.
 
+- `agent-parity run` now executes the same Celery chord the beat schedule dispatches: in-process by default, or on
+  running workers with the new `--workers` flag. `run_and_persist_for_client` is removed; `finalize_run` returns the
+  `CorrelationResult` instead of a snapshot count.
+
 ### Removed
 
 - The `sync` subcommand, merged into `run` (see above).

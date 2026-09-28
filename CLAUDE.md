@@ -40,6 +40,7 @@ uv sync                                     # install deps
 uv run agent-parity compare ad.csv agent.csv   # two CSVs, zero config.yaml/connectors/credentials
 uv run agent-parity run --all                  # config.yaml + connectors, every client, persisted as a CorrelationRun (SQLite)
 uv run agent-parity run --client acme --csv    # just one client, and also write output/acme.csv
+uv run agent-parity run --all --workers        # same chord, on running Celery workers (in parallel)
 
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
@@ -144,12 +145,14 @@ not because this package avoids owning persistence (it doesn't, see "What this i
 above), but because collection/correlation and persistence are a clean seam regardless
 of which package owns both sides of it. `src/agent_parity/cli.py`'s `compare` subcommand
 calls `correlate_from_csvs` directly and stays pure (writes a CSV, prints a summary,
-nothing persisted); `run` and `src/agent_parity/scheduling/tasks.py` are the persisted
-callers, both going through `persistence.py`. `run --csv` also writes the classified frame
-to `output/<client>.csv` — `run_and_persist_for_client` returns the `CorrelationResult`
-alongside the `CorrelationRun` for exactly that, so the CSV never needs a second
-collection pass. There is deliberately no un-persisted config.yaml path any more (a
-separate pure `run` and persisted `sync` used to duplicate each other).
+nothing persisted); `run` executes the Celery chord in `src/agent_parity/scheduling/tasks.py`
+(see "Scheduling & persistence" below), which persists through `persistence.py`. `run --csv`
+also writes the classified frame to `output/<client>.csv` — the chord callback returns it as
+CSV text in its report, so the CSV never needs a second collection pass and works even when
+the worker doesn't share the CLI's filesystem. There is deliberately no un-persisted
+config.yaml path in the CLI any more (a separate pure `run` and persisted `sync` used to
+duplicate each other). `run_correlation_for_client` itself stays pure and is still used
+directly by `scripts/gen_sample_report.py` and the tests.
 
 ## Scheduling & persistence (`src/agent_parity/scheduling/`: `db.py`, `persistence.py`, `celery_app.py`, `tasks.py`)
 
@@ -176,11 +179,10 @@ migration-managed production schema.
 **`src/agent_parity/scheduling/persistence.py`** is the layer between `pipeline.py` (pure) and a
 persisted caller: `persist_correlation` loads a classified frame into `CoverageSnapshot`
 rows, `persist_result` persists an already-correlated result (or marks the run `FAILED`
-outright when it's `None`) and forwards Splunk deltas, `finalize_run` is the Celery
-callback's correlate-then-`persist_result`, and `run_and_persist_for_client` is the
-synchronous entrypoint the `run` CLI subcommand calls — it reuses
-`pipeline.run_correlation_for_client` for collection/correlation rather than duplicating it,
-and returns `(CorrelationRun, CorrelationResult | None)`. **Idempotency**: `persist_correlation` re-fetches the run inside
+outright when it's `None`) and forwards Splunk deltas, and `finalize_run` is the chord
+callback's correlate-then-`persist_result`, returning the `CorrelationResult` (or `None`)
+so the callback can report on it without re-correlating. There is no separate synchronous
+persisted entrypoint: `agent-parity run` goes through the same chord as beat. **Idempotency**: `persist_correlation` re-fetches the run inside
 its own transaction and no-ops if `status != PENDING` — the pre-created `CorrelationRun`
 id is the idempotency key. SQLite has no row-level lock like Postgres's
 `SELECT ... FOR UPDATE`, so this instead relies on
@@ -194,11 +196,26 @@ before storing or comparing; a comparison that skips it will crash the *second* 
 device's `last_seen` needs updating (this broke once during Stage 4a verification,
 fixed there, not a hypothetical).
 
-**`src/agent_parity/scheduling/celery_app.py`**/ **`tasks.py`** are the scaled path: one *group* of
+**`src/agent_parity/scheduling/celery_app.py`**/ **`tasks.py`** are how every persisted run is
+collected — `agent-parity run` and beat both call `tasks.start_client_run`, the same chord
+either way, exactly as the original tool did (its manual runs went through Celery too;
+sequential collection took hours). `run` executes it in-process by default
+(`celery_app.run_eagerly`, so the demo needs no Redis) or on real workers with
+`--workers` (fails fast via a worker `ping` if none respond); every client's chord is
+dispatched before any is awaited, so clients run concurrently on workers. With
+`--workers` the CLI and workers must share one `AGENT_PARITY_DB_URL` — the CLI creates
+the `CorrelationRun` row and the worker's callback finalizes it by id — which the compose
+`agent-parity` service does via the shared `dbdata` volume. That volume only works because
+`docker/Dockerfile` creates `/app/data` owned by the non-root `parity` user; without it
+Docker creates the volume root-owned and no container can write the database.
+`run_eagerly` sets `task_eager_propagates=False` deliberately: a task exception is then
+captured in the result like on a real worker, so the chord's `link_error` still marks
+the run FAILED — with propagation on, the error escapes at dispatch and the run is left
+PENDING forever. The shape: one *group* of
 fan-out tasks per client (one AD export task per domain controller, one inventory-pull
 task per vendor/site-tenant), feeding a *chord* callback (`correlate_client`) that runs
 the correlation exactly once against the client's complete result set. Each fan-out
-task is a thin wrapper around the same per-unit helper the in-process path loops over
+task is a thin wrapper around the same per-unit helper `run_correlation_for_client` loops over
 (`pipeline.collect_ad_domain` per domain, `pipeline.collect_vendor_site` per site/tenant),
 so both paths share one set of error handling and status keys — keep it that way rather
 than re-implementing collection in `tasks.py`. The helpers never raise; a failure comes
@@ -247,10 +264,9 @@ follows.
 `splunk` parameter wraps the `export_deltas_to_splunk` call in a
 `try`/`except SplunkExportError`, logging and swallowing it; the run itself stays
 `COMPLETE`/`PARTIAL` based on collection/correlation outcome alone. Both persisted
-entrypoints thread a live `SplunkConfig` through: `run_and_persist_for_client` passes
-`config.splunk`, and `tasks.correlate_client` (the Celery chord callback, which has no
-live `AppConfig` in scope) loads one fresh via `load_config().splunk` the same way its
-own fan-out tasks already do. The pure `compare` CLI path never touches Splunk at
+runs get a live `SplunkConfig` the same way: `tasks.correlate_client` (the chord
+callback, which has no live `AppConfig` in scope) loads one fresh via
+`load_config().splunk`, as its own fan-out tasks already do. The pure `compare` CLI path never touches Splunk at
 all — delta computation needs run history to diff against, which only the persisted
 paths have.
 

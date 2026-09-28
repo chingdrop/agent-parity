@@ -66,9 +66,10 @@ def collect_ad_domain(config: AppConfig, client_slug: str, target_device: str) -
     """Collect one domain's AD export: ``(status_key, csv_text or None, status)``.
 
     The per-domain unit both collection paths share — ``collect_ad_frame``
-    loops it in-process, and the Celery fan-out runs it as one task per
-    domain. Never raises: a failure comes back as ``(key, None, "error: ...")``
-    so one domain being unreachable doesn't sink the others. The CSV is
+    loops it for ``run_correlation_for_client``, and the Celery fan-out (which
+    ``agent-parity run`` and beat both use) runs it as one task per domain.
+    Never raises: a failure comes back as ``(key, None, "error: ...")`` so
+    one domain being unreachable doesn't sink the others. The CSV is
     parsed here only to validate it, so a malformed export fails its own
     domain rather than whatever later step parses it; the raw text is what's
     returned, since that's what crosses a Celery task boundary.
@@ -125,8 +126,8 @@ def collect_vendor_site(
     """Fetch one site/tenant's inventory: ``(status_key, records or None, status)``.
 
     The per-site unit both collection paths share — ``collect_vendor_inventory``
-    loops it in-process, and the Celery fan-out runs it as one task per
-    (vendor, site/tenant). Never raises: a failure comes back as
+    loops it for ``run_correlation_for_client``, and the Celery fan-out runs it
+    as one task per (vendor, site/tenant). Never raises: a failure comes back as
     ``(key, None, "error: ...")`` so one site/tenant down doesn't sink the others.
     """
     sites = config.sites_for(client_slug, vendor_name)

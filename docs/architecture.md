@@ -198,22 +198,26 @@ sized for the demo/single-node case, not a migration-managed production
 schema.
 
 `src/agent_parity/scheduling/persistence.py` sits between `pipeline.py` (pure, no
-persistence) and a persisted caller: `finalize_run` correlates and writes
+persistence) and the chord callback: `finalize_run` correlates and writes
 `CoverageSnapshot` rows (or marks the run `FAILED` outright when every AD
-domain failed), `run_and_persist_for_client` is the synchronous entrypoint
-`agent-parity run` calls (it also returns the `CorrelationResult`, which is
-how `run --csv` writes the full classified frame without collecting twice). It's **idempotent** — a duplicate call against an
+domain failed). It's **idempotent** — a duplicate call against an
 already-finalized run no-ops rather than double-counting. SQLite has no
 row lock like Postgres's `SELECT ... FOR UPDATE`, so this relies on SQLite's
 own writer serialization — adequate at this single-node/demo scale, but a
 real, disclosed difference from a Postgres-backed production database.
 
-`src/agent_parity/scheduling/celery_app.py`/`tasks.py` are the scaled path: one *group* of
+`src/agent_parity/scheduling/celery_app.py`/`tasks.py` are how every persisted
+run is collected. `agent-parity run` and the beat schedule both dispatch the
+same chord (`tasks.start_client_run`), as the original tool did: its manual
+runs went through Celery too, because collecting sequentially took hours.
+`run` executes the chord in-process by default, so the demo needs no broker,
+or on running workers with `--workers`, where every client's fan-out runs in
+parallel. The chord is one *group* of
 fan-out tasks per client (one AD-export task per domain controller, one
 inventory-pull task per vendor/site-tenant) feeding a *chord* callback that
 runs the correlation exactly once against the client's complete result set.
 Each task wraps the same per-domain or per-site helper in `pipeline.py` that
-the in-process `run` loops over, so both paths share one set of error
+`run_correlation_for_client` loops over, so both share one set of error
 handling. Fan-out tasks never raise — a broken vendor API comes back as an
 `"error: ..."` status instead, so the chord still fires and the run completes `PARTIAL` rather
 than not at all. `dispatch_all_clients` (the beat entrypoint) reads each
@@ -223,8 +227,9 @@ default to `redis://localhost:6379/0`
 (`CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` to override).
 
 ```console
-uv run agent-parity run --all                         # synchronous, persisted
-docker compose -f docker/docker-compose.yml up -d redis worker beat   # scheduled path
+uv run agent-parity run --all                         # the chord, in-process
+docker compose -f docker/docker-compose.yml up -d redis worker beat   # workers + the schedule
+uv run agent-parity run --all --workers               # the chord, on those workers
 ```
 
 Tests run Celery tasks eagerly (`task_always_eager`, no broker needed) —

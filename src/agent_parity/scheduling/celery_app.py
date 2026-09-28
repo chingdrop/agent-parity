@@ -7,6 +7,8 @@ default to a local Redis instance (``docker/docker-compose.yml`` runs one).
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 
 from celery import Celery
 from celery.schedules import crontab
@@ -31,3 +33,24 @@ app.conf.beat_schedule = {
         "kwargs": {"force": True},
     },
 }
+
+
+@contextmanager
+def run_eagerly() -> Iterator[None]:
+    """Run every task in-process for the duration of the block.
+
+    ``agent-parity run`` without ``--workers`` uses this to execute the same
+    chord beat dispatches, with no broker or worker: the fan-out tasks run
+    one after another in this process instead of in parallel on workers.
+    Exceptions are captured in the task result rather than raised at
+    dispatch, as on a real worker — that's what lets the chord's
+    ``link_error`` backstop mark a failed run FAILED instead of leaving it
+    PENDING. Restores the previous settings on exit.
+    """
+    saved = app.conf.task_always_eager, app.conf.task_eager_propagates
+    app.conf.task_always_eager = True
+    app.conf.task_eager_propagates = False
+    try:
+        yield
+    finally:
+        app.conf.task_always_eager, app.conf.task_eager_propagates = saved

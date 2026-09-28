@@ -1,4 +1,9 @@
-"""Celery tasks: the scaled-mode pipeline.
+"""Celery tasks: how every persisted run is collected.
+
+``agent-parity run`` and beat's ``dispatch_all_clients`` both go through
+``start_client_run`` — the same chord either way. ``run`` executes it
+in-process by default (``celery_app.run_eagerly``) or on real workers with
+``--workers``; beat always uses workers.
 
 Shape: one *group* of fan-out tasks per client — one AD export task per
 domain controller (a client with multiple AD domains has more than one),
@@ -19,7 +24,7 @@ Three deliberate design points:
 
 * **Partial-failure tolerance** — fan-out tasks never raise; they return a
   payload whose ``status`` is ``"error: ..."`` instead (the same per-domain /
-  per-site helpers in ``agent_parity.pipeline`` the in-process path uses), so one throttled or
+  per-site helpers ``agent_parity.pipeline.run_correlation_for_client`` loops over), so one throttled or
   broken vendor API can't stop the chord from firing. The callback records
   per-vendor outcomes on the run (COMPLETE vs PARTIAL) rather than silently
   dropping the whole run. ``link_error`` on the callback is the backstop for
@@ -39,6 +44,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
+from celery import chord
+from celery.result import AsyncResult
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -73,7 +80,7 @@ def _vendor_payload(client_slug: str, vendor_name: str, site_index: int) -> dict
     """Fetch one (vendor, site/tenant)'s inventory as a JSON-safe envelope.
 
     ``pipeline.collect_vendor_site`` does the work (and the error handling)
-    for both this and the in-process path. Failures are *returned*, not
+    for both this and ``pipeline.collect_vendor_inventory``. Failures are *returned*, not
     raised — the chord callback must always fire with whatever succeeded.
     """
     key, records, status = collect_vendor_site(load_config(), client_slug, vendor_name, site_index)
@@ -111,7 +118,7 @@ def collect_ad_export(client_slug: str, target_device: str) -> dict:
     """The AD export leg of the fan-out (remote script execution is slow).
 
     One task per (client, domain controller); ``pipeline.collect_ad_domain``
-    does the work and error handling, same as the in-process path.
+    does the work and error handling, same as for ``pipeline.collect_ad_frame``.
     """
     key, csv_text, status = collect_ad_domain(load_config(), client_slug, target_device)
     return {"source": "ad", "key": key, "status": status, "csv": csv_text}
@@ -121,11 +128,14 @@ def collect_ad_export(client_slug: str, target_device: str) -> dict:
 
 
 @app.task
-def correlate_client(results: list[dict], run_id: int) -> dict:
+def correlate_client(results: list[dict], run_id: int, include_csv: bool = False) -> dict:
     """Correlate one client's complete fan-out results and persist them.
 
     Runs once per client per run, against everything the group returned —
-    correlation never races partial state from another worker.
+    correlation never races partial state from another worker. Returns a
+    JSON-safe report of the run (what ``agent-parity run`` prints); with
+    ``include_csv`` it also carries the classified frame as CSV text, since
+    a worker needn't share a filesystem with whoever asked for the run.
     """
     with _session() as session:
         run = session.get_one(CorrelationRun, run_id)
@@ -152,9 +162,19 @@ def correlate_client(results: list[dict], run_id: int) -> dict:
         # fanned-out payloads + run_id) — loaded fresh, same as
         # _vendor_payload/collect_ad_export already do.
         splunk = load_config().splunk
-        count = finalize_run(session, run, ad_df, agent_records, vendor_status, splunk=splunk)
+        result = finalize_run(session, run, ad_df, agent_records, vendor_status, splunk=splunk)
         session.commit()
-        return {"run_id": run_id, "status": run.status, "snapshots": count}
+        report: dict = {
+            "run_id": run_id,
+            "status": run.status,
+            "vendor_status": vendor_status,
+            "rows": len(result.frame) if result is not None else 0,
+            "coverage_pct": result.summary["coverage_pct"] if result is not None else None,
+            "status_counts": result.summary["status_counts"] if result is not None else {},
+        }
+        if include_csv and result is not None:
+            report["csv"] = result.frame.to_csv(index=False)
+        return report
 
 
 @app.task
@@ -177,10 +197,16 @@ def mark_run_failed(_request, exc, _traceback, run_id: int) -> None:
 # --- orchestration ---------------------------------------------------------------
 
 
-def dispatch_client(config: AppConfig, client_cfg: ClientConfig) -> int | None:
-    """Create the pending run and dispatch the group+chord for one client."""
-    from celery import chord
+def start_client_run(
+    config: AppConfig, client_cfg: ClientConfig, *, include_csv: bool = False
+) -> tuple[int, AsyncResult]:
+    """Create the pending run and dispatch the group+chord for one client.
 
+    The one way a client gets collected and persisted, whether beat
+    scheduled it (``dispatch_all_clients``) or ``agent-parity run`` asked for
+    it. Returns the run id and the chord callback's result, which resolves
+    to ``correlate_client``'s report once the fan-in has run.
+    """
     with _session() as session:
         client = sync_client_from_config(session, client_cfg)
         run = CorrelationRun(client_id=client.id, stale_days=config.stale_days)
@@ -196,8 +222,13 @@ def dispatch_client(config: AppConfig, client_cfg: ClientConfig) -> int | None:
     header = [
         collect_ad_export.s(client_cfg.slug, target_device) for target_device in client_cfg.ad_target_devices
     ] + vendor_tasks
-    callback = correlate_client.s(run_id=run_id).on_error(mark_run_failed.s(run_id=run_id))
-    chord(header)(callback)
+    callback = correlate_client.s(run_id=run_id, include_csv=include_csv).on_error(mark_run_failed.s(run_id=run_id))
+    return run_id, chord(header)(callback)
+
+
+def dispatch_client(config: AppConfig, client_cfg: ClientConfig) -> int:
+    """Fire-and-forget ``start_client_run`` for beat: just the run id."""
+    run_id, _ = start_client_run(config, client_cfg)
     return run_id
 
 
@@ -229,7 +260,7 @@ def dispatch_all_clients(force: bool = False) -> list[str]:
     for slug, client_cfg in sorted(config.clients.items()):
         if not force and not _client_is_due(client_cfg):
             continue
-        if dispatch_client(config, client_cfg) is not None:
-            dispatched.append(slug)
+        dispatch_client(config, client_cfg)
+        dispatched.append(slug)
     logger.info("Dispatched sync for: %s", ", ".join(dispatched) or "no clients due")
     return dispatched

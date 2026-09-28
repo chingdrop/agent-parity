@@ -78,6 +78,7 @@ uv sync
 uv run agent-parity compare ad_export.csv agent_export.csv   # your own two CSVs, zero config
 uv run agent-parity run --all                                 # config.yaml + connectors, every client
 uv run agent-parity run --client acme --csv                   # just one client, plus output/acme.csv
+uv run agent-parity run --all --workers                       # fan out to running Celery workers
 uv run pytest                                                  # 290+ tests, all offline
 ```
 
@@ -85,7 +86,12 @@ uv run pytest                                                  # 290+ tests, all
 all, and saves nothing but its output CSV — see [Bring your own CSVs](#bring-your-own-csvs) right below. `run` is
 the config.yaml/connector-driven path: each run is recorded in a local SQLite
 history (`agent_parity.db`, or `AGENT_PARITY_DB_URL`), and `--csv` also writes
-`output/<client>.csv`. Put live credentials in `.env` (copy
+`output/<client>.csv`. It runs the same Celery tasks as the schedule: in-process
+by default, so nothing else needs to be running, or in parallel on Celery workers
+with `--workers` (see [Optional: Docker](#optional-docker) to start some). With
+`--workers`, the CLI and the workers must share one database (the same
+`AGENT_PARITY_DB_URL`), because the CLI creates each run and a worker finishes it;
+running the CLI as the compose `agent-parity` service does that. Put live credentials in `.env` (copy
 `.env.example`) and load them with `uv run --env-file .env agent-parity run`;
 with no `.env` (or unset credentials in it) every connector falls back to
 `sample_data/` fixtures — see
@@ -182,6 +188,9 @@ docker compose -f docker/docker-compose.yml run --rm agent-parity run --csv
 
 # the scheduled path: Redis broker + a worker + beat, all sharing one SQLite file
 docker compose -f docker/docker-compose.yml up -d redis worker beat
+
+# a manual run on those workers, sharing their SQLite file
+docker compose -f docker/docker-compose.yml run --rm agent-parity run --all --csv --workers
 ```
 
 Runs fully offline by default (config.yaml's fixture-mode connector + AD

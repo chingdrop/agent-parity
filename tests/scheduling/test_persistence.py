@@ -15,7 +15,6 @@ from agent_parity.scheduling.persistence import (
     export_deltas_to_splunk,
     finalize_run,
     persist_correlation,
-    run_and_persist_for_client,
     sync_client_from_config,
 )
 
@@ -34,19 +33,41 @@ def test_finalize_run_marks_failed_when_ad_data_is_missing():
         session.add(run)
         session.flush()
 
-        count = finalize_run(session, run, None, [], {"ad:ACME-DC01": "error: offline"})
+        result = finalize_run(session, run, None, [], {"ad:ACME-DC01": "error: offline"})
         session.commit()
 
-        assert count == 0
+        assert result is None
         assert run.status == RunStatus.FAILED.value
         assert run.finished_at is not None
         assert session.query(CoverageSnapshot).filter_by(run_id=run.id).count() == 0
 
 
-def test_run_and_persist_for_client_persists_acmes_fixture_run():
+def _finalize_acme_run(session, splunk=None):
+    """Collect acme in-process and finalize a fresh run with it — what the
+    chord callback does, minus Celery."""
+    from agent_parity.pipeline import collect_ad_frame, collect_vendor_inventory
+
     config = load_config()
+    client = sync_client_from_config(session, config.client("acme"))
+    run = CorrelationRun(client_id=client.id, stale_days=config.stale_days)
+    session.add(run)
+    session.flush()
+
+    ad_df, vendor_status = collect_ad_frame(config, "acme")
+    agent_records = []
+    for vendor_name in sorted(config.client("acme").vendors):
+        records, site_status = collect_vendor_inventory(config, "acme", vendor_name)
+        agent_records.extend(records)
+        vendor_status.update(site_status)
+
+    result = finalize_run(session, run, ad_df, agent_records, vendor_status, splunk=splunk)
+    session.commit()
+    return run, result
+
+
+def test_finalize_run_persists_acmes_fixture_run():
     with _session() as session:
-        run, result = run_and_persist_for_client(session, config, config.client("acme"))
+        run, result = _finalize_acme_run(session)
 
         assert result is not None
         assert len(result.frame) == 51
@@ -64,9 +85,8 @@ def test_run_and_persist_for_client_persists_acmes_fixture_run():
 
 
 def test_persist_correlation_is_idempotent_on_duplicate_call():
-    config = load_config()
     with _session() as session:
-        run, result = run_and_persist_for_client(session, config, config.client("acme"))
+        run, result = _finalize_acme_run(session)
         first_count = session.query(CoverageSnapshot).filter_by(run_id=run.id).count()
         assert first_count > 0
         assert result is not None
@@ -240,24 +260,9 @@ def test_finalize_run_does_not_fail_when_splunk_export_raises(monkeypatch):
 
     monkeypatch.setattr("agent_parity.scheduling.persistence.export_deltas_to_splunk", _raise)
 
-    config = load_config()
     with _session() as session:
-        client = sync_client_from_config(session, config.client("acme"))
-        run = CorrelationRun(client_id=client.id, stale_days=config.stale_days)
-        session.add(run)
-        session.flush()
+        run, result = _finalize_acme_run(session, splunk=_splunk_config())
 
-        from agent_parity.pipeline import collect_ad_frame, collect_vendor_inventory
-
-        ad_df, vendor_status = collect_ad_frame(config, "acme")
-        agent_records = []
-        for vendor_name in sorted(config.client("acme").vendors):
-            records, site_status = collect_vendor_inventory(config, "acme", vendor_name)
-            agent_records.extend(records)
-            vendor_status.update(site_status)
-
-        count = finalize_run(session, run, ad_df, agent_records, vendor_status, splunk=_splunk_config())
-        session.commit()
-
-    assert count == 51
+    assert result is not None
+    assert len(result.frame) == 51
     assert run.status == RunStatus.COMPLETE.value
