@@ -18,7 +18,8 @@ Three deliberate design points:
   connection opened afterward (including a worker picking up the chord).
 
 * **Partial-failure tolerance** — fan-out tasks never raise; they return a
-  ``{"ok": False, "error": ...}`` payload instead, so one throttled or
+  payload whose ``status`` is ``"error: ..."`` instead (the same per-domain /
+  per-site helpers in ``agent_parity.pipeline`` the in-process path uses), so one throttled or
   broken vendor API can't stop the chord from firing. The callback records
   per-vendor outcomes on the run (COMPLETE vs PARTIAL) rather than silently
   dropping the whole run. ``link_error`` on the callback is the backstop for
@@ -36,10 +37,9 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
-from agent_parity.ad_export import concat_ad_frames, parse_ad_export
-from agent_parity.config import AppConfig, ClientConfig, get_connectors, load_config
+from agent_parity.config import AppConfig, ClientConfig, load_config
 from agent_parity.models import AgentDevice
-from agent_parity.pipeline import collect_ad_csv, site_status_key
+from agent_parity.pipeline import ad_frame_from_csvs, collect_ad_domain, collect_vendor_site
 from agent_parity.scheduling.celery_app import app
 from agent_parity.scheduling.db import CorrelationRun, RunStatus, get_engine, init_db, session_factory
 from agent_parity.scheduling.persistence import finalize_run, sync_client_from_config
@@ -56,49 +56,38 @@ def _session():
 # --- fan-out: one task per (client, vendor, site/tenant) -----------------------
 
 
-def _vendor_payload(client_slug: str, vendor_name: str, site_index: int, key: str) -> dict:
-    """Fetch one (vendor, site/tenant)'s inventory, returning a JSON-safe
-    result envelope. ``key`` is precomputed at dispatch time
-    (``dispatch_client``, via ``pipeline.site_status_key``) since it needs
-    to know how many sites/tenants this vendor has in total to decide
-    whether an index suffix is even necessary — this task only needs to use
-    it, not recompute it.
+def _vendor_payload(client_slug: str, vendor_name: str, site_index: int) -> dict:
+    """Fetch one (vendor, site/tenant)'s inventory as a JSON-safe envelope.
 
-    Failures are *returned*, not raised — the chord callback must always fire
-    with whatever succeeded. (Transient-error retries would slot in here with
-    autoretry; omitted to keep the failure semantics easy to follow.)
+    ``pipeline.collect_vendor_site`` does the work (and the error handling)
+    for both this and the in-process path. Failures are *returned*, not
+    raised — the chord callback must always fire with whatever succeeded.
     """
-    try:
-        config = load_config()
-        connector = get_connectors(config, client_slug, vendor_name)[site_index]
-        records = connector.fetch_inventory()
-        return {
-            "source": vendor_name,
-            "key": key,
-            "ok": True,
-            "records": [record.to_dict() for record in records],
-        }
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("%s (%s) inventory failed for %s: %s", vendor_name, key, client_slug, exc)
-        return {"source": vendor_name, "key": key, "ok": False, "error": str(exc)}
+    key, records, status = collect_vendor_site(load_config(), client_slug, vendor_name, site_index)
+    return {
+        "source": vendor_name,
+        "key": key,
+        "status": status,
+        "records": [record.to_dict() for record in records] if records is not None else None,
+    }
 
 
 # Rate limits reflect each vendor's practical API budget: SentinelOne's
 # management API is generous; Carbon Black Live Response sessions are a
 # scarce per-org resource; GravityZone's JSON-RPC endpoint throttles hard.
 @app.task(rate_limit="30/m")
-def fetch_sentinelone_inventory(client_slug: str, site_index: int, key: str) -> dict:
-    return _vendor_payload(client_slug, "sentinelone", site_index, key)
+def fetch_sentinelone_inventory(client_slug: str, site_index: int) -> dict:
+    return _vendor_payload(client_slug, "sentinelone", site_index)
 
 
 @app.task(rate_limit="10/m")
-def fetch_carbonblack_inventory(client_slug: str, site_index: int, key: str) -> dict:
-    return _vendor_payload(client_slug, "carbonblack", site_index, key)
+def fetch_carbonblack_inventory(client_slug: str, site_index: int) -> dict:
+    return _vendor_payload(client_slug, "carbonblack", site_index)
 
 
 @app.task(rate_limit="6/m")
-def fetch_bitdefender_inventory(client_slug: str, site_index: int, key: str) -> dict:
-    return _vendor_payload(client_slug, "bitdefender", site_index, key)
+def fetch_bitdefender_inventory(client_slug: str, site_index: int) -> dict:
+    return _vendor_payload(client_slug, "bitdefender", site_index)
 
 
 VENDOR_TASKS = {
@@ -112,17 +101,11 @@ VENDOR_TASKS = {
 def collect_ad_export(client_slug: str, target_device: str) -> dict:
     """The AD export leg of the fan-out (remote script execution is slow).
 
-    One task per (client, domain controller) — a client with multiple AD
-    domains gets one of these per entry in ``ClientConfig.ad_target_devices``
-    (see ``dispatch_client``); ``correlate_client`` concatenates whichever
-    domains' exports succeed.
+    One task per (client, domain controller); ``pipeline.collect_ad_domain``
+    does the work and error handling, same as the in-process path.
     """
-    try:
-        raw_csv = collect_ad_csv(load_config(), client_slug, target_device)
-        return {"source": "ad", "target_device": target_device, "ok": True, "csv": raw_csv}
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("AD export failed for %s domain %s: %s", client_slug, target_device, exc)
-        return {"source": "ad", "target_device": target_device, "ok": False, "error": str(exc)}
+    key, csv_text, status = collect_ad_domain(load_config(), client_slug, target_device)
+    return {"source": "ad", "key": key, "status": status, "csv": csv_text}
 
 
 # --- fan-in: the chord callback ------------------------------------------------
@@ -145,25 +128,17 @@ def correlate_client(results: list[dict], run_id: int) -> dict:
         ad_csvs: list[str] = []
         agent_records: list[AgentDevice] = []
         for payload in results:
-            source = payload["source"]
-            # AD payloads are keyed per domain (ad:<target_device>) since a
-            # client can have more than one; vendor payloads carry their own
-            # precomputed key (pipeline.site_status_key) — plain vendor name
-            # for the common single-site/tenant case, vendor:label or
-            # vendor:index when there's more than one.
-            key = f"ad:{payload['target_device']}" if source == "ad" else payload["key"]
-            if not payload.get("ok"):
-                vendor_status[key] = f"error: {payload.get('error', 'unknown')}"
+            vendor_status[payload["key"]] = payload["status"]
+            if payload["status"] != "ok":
                 continue
-            vendor_status[key] = "ok"
-            if source == "ad":
+            if payload["source"] == "ad":
                 ad_csvs.append(payload["csv"])
             else:
                 agent_records.extend(AgentDevice.from_dict(r) for r in payload["records"])
 
-        # concat_ad_frames/finalize_run handle "every domain failed" (ad_csvs
-        # empty) by failing the run outright — nothing to reconcile against.
-        ad_df = concat_ad_frames([parse_ad_export(csv) for csv in ad_csvs]) if ad_csvs else None
+        # None when every domain failed; finalize_run then fails the run
+        # outright — nothing to reconcile against.
+        ad_df = ad_frame_from_csvs(ad_csvs)
         # No live AppConfig in scope here (this callback only receives the
         # fanned-out payloads + run_id) — loaded fresh, same as
         # _vendor_payload/collect_ad_export already do.
@@ -204,12 +179,11 @@ def dispatch_client(config: AppConfig, client_cfg: ClientConfig) -> int | None:
         session.commit()  # the run row must exist before the chord's callback can reference it
         run_id = run.id
 
-    vendor_tasks = []
-    for vendor in sorted(client_cfg.vendors):
-        sites = client_cfg.vendors[vendor]
-        for index, site in enumerate(sites):
-            key = site_status_key(vendor, site, index, len(sites))
-            vendor_tasks.append(VENDOR_TASKS[vendor].s(client_cfg.slug, index, key))
+    vendor_tasks = [
+        VENDOR_TASKS[vendor].s(client_cfg.slug, index)
+        for vendor in sorted(client_cfg.vendors)
+        for index in range(len(client_cfg.vendors[vendor]))
+    ]
     header = [
         collect_ad_export.s(client_cfg.slug, target_device) for target_device in client_cfg.ad_target_devices
     ] + vendor_tasks

@@ -6,11 +6,14 @@ run_correlation_for_client/correlate_from_csvs orchestration.
 from dataclasses import replace
 from datetime import UTC, datetime
 
+from agent_parity import pipeline
 from agent_parity.config import load_config
 from agent_parity.models import CoverageStatus
 from agent_parity.pipeline import (
+    collect_ad_domain,
     collect_ad_frame,
     collect_vendor_inventory,
+    collect_vendor_site,
     correlate_from_csvs,
     run_correlation_for_client,
     site_status_key,
@@ -58,6 +61,26 @@ def test_collect_ad_frame_returns_none_when_every_domain_fails():
     assert all(v.startswith("error") for v in status.values())
 
 
+def test_collect_ad_domain_returns_the_raw_csv_for_one_domain():
+    key, csv_text, status = collect_ad_domain(load_config(), "globex", "GLOBEX-BR-DC01")
+
+    assert (key, status) == ("ad:GLOBEX-BR-DC01", "ok")
+    assert csv_text is not None
+    assert "GLOBEX-BR-WS01" in csv_text
+
+
+def test_collect_ad_domain_fails_its_own_domain_on_a_malformed_export(monkeypatch):
+    """A malformed export must fail at collection, per domain, rather than
+    whichever later step parses it (the Celery chord callback, for one)."""
+    monkeypatch.setattr(pipeline, "collect_ad_csv", lambda config, slug, target: "Oops,Something\nbroke,badly\n")
+
+    key, csv_text, status = collect_ad_domain(load_config(), "globex", "GLOBEX-DC01")
+
+    assert key == "ad:GLOBEX-DC01"
+    assert csv_text is None
+    assert status.startswith("error")
+
+
 # --- site_status_key -------------------------------------------------------------
 
 
@@ -83,6 +106,23 @@ def test_collect_vendor_inventory_returns_fixture_records():
     assert status == {"sentinelone": "ok"}
     assert records
     assert all(r.vendor == "sentinelone" for r in records)
+
+
+def test_collect_vendor_site_fetches_one_tenant_under_its_own_key():
+    key, records, status = collect_vendor_site(load_config(), "acme", "carbonblack", 1)
+
+    assert (key, status) == ("carbonblack:branch", "ok")
+    assert records
+
+
+def test_collect_vendor_site_reports_failure_without_raising(tmp_path, monkeypatch):
+    monkeypatch.setattr("agent_parity.config.SAMPLE_DATA_DIR", tmp_path)
+
+    key, records, status = collect_vendor_site(load_config(), "acme", "sentinelone", 0)
+
+    assert key == "sentinelone"
+    assert records is None
+    assert status.startswith("error")
 
 
 def test_collect_vendor_inventory_reports_failure_without_raising(tmp_path, monkeypatch):

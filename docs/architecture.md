@@ -212,8 +212,10 @@ real, disclosed difference from a Postgres-backed production database.
 fan-out tasks per client (one AD-export task per domain controller, one
 inventory-pull task per vendor/site-tenant) feeding a *chord* callback that
 runs the correlation exactly once against the client's complete result set.
-Fan-out tasks never raise — a broken vendor API returns `{"ok": False, ...}`
-instead, so the chord still fires and the run completes `PARTIAL` rather
+Each task wraps the same per-domain or per-site helper in `pipeline.py` that
+the in-process `run` loops over, so both paths share one set of error
+handling. Fan-out tasks never raise — a broken vendor API comes back as an
+`"error: ..."` status instead, so the chord still fires and the run completes `PARTIAL` rather
 than not at all. `dispatch_all_clients` (the beat entrypoint) reads each
 client's own `sync_interval_hours` to decide whether it's due; the beat
 schedule ticks it hourly plus a forced daily 07:00 run. Broker/backend

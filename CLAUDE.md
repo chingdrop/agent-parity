@@ -197,9 +197,12 @@ fixed there, not a hypothetical).
 **`src/agent_parity/scheduling/celery_app.py`**/ **`tasks.py`** are the scaled path: one *group* of
 fan-out tasks per client (one AD export task per domain controller, one inventory-pull
 task per vendor/site-tenant), feeding a *chord* callback (`correlate_client`) that runs
-the correlation exactly once against the client's complete result set. Fan-out tasks
-never raise — they return `{"ok": False, "error": ...}` so one broken vendor API can't
-stop the chord from firing; the callback records per-vendor outcomes in `vendor_status`
+the correlation exactly once against the client's complete result set. Each fan-out
+task is a thin wrapper around the same per-unit helper the in-process path loops over
+(`pipeline.collect_ad_domain` per domain, `pipeline.collect_vendor_site` per site/tenant),
+so both paths share one set of error handling and status keys — keep it that way rather
+than re-implementing collection in `tasks.py`. The helpers never raise; a failure comes
+back as an `"error: ..."` status so one broken vendor API can't stop the chord from firing; the callback records per-vendor outcomes in `vendor_status`
 (`COMPLETE` vs `PARTIAL`), and `mark_run_failed` (`link_error`) is the backstop for the
 callback itself blowing up. `dispatch_client` does a plain `session.commit()` before
 dispatching the chord,
@@ -495,8 +498,9 @@ A client can span more than one AD domain/forest — no single domain controller
 enumerate computer objects outside its own domain, so `ad_target_devices` is a tuple,
 not a single hostname, and the export script runs once per entry.
 `src/agent_parity/pipeline.py`'s `collect_ad_frame` is the orchestrator: it loops the tuple,
-calling `collect_ad_csv` + `parse_ad_export` per domain, and concatenates the results
-with `src/agent_parity/ad_export.py`'s `concat_ad_frames` into the one master
+calling `collect_ad_domain` per domain (which collects and validates that the export
+parses, so a malformed export fails only its own domain), and concatenates the results
+(`ad_frame_from_csvs`, via `src/agent_parity/ad_export.py`'s `concat_ad_frames`) into the one master
 DataFrame `correlate()` actually sees. A single-domain client (most of them) is just
 the `len == 1` case of this same loop — there's no separate single-domain code path,
 by design.

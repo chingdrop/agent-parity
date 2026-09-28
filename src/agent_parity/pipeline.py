@@ -62,31 +62,50 @@ def collect_ad_csv(config: AppConfig, client_slug: str, target_device: str) -> s
     return run_ad_export(connector, target_device, storage=storage)
 
 
+def collect_ad_domain(config: AppConfig, client_slug: str, target_device: str) -> tuple[str, str | None, str]:
+    """Collect one domain's AD export: ``(status_key, csv_text or None, status)``.
+
+    The per-domain unit both collection paths share — ``collect_ad_frame``
+    loops it in-process, and the Celery fan-out runs it as one task per
+    domain. Never raises: a failure comes back as ``(key, None, "error: ...")``
+    so one domain being unreachable doesn't sink the others. The CSV is
+    parsed here only to validate it, so a malformed export fails its own
+    domain rather than whatever later step parses it; the raw text is what's
+    returned, since that's what crosses a Celery task boundary.
+    """
+    key = f"ad:{target_device}"
+    try:
+        csv_text = collect_ad_csv(config, client_slug, target_device)
+        parse_ad_export(csv_text)
+    except Exception as exc:  # noqa: BLE001 — one domain down must not sink the others
+        logger.warning("AD export failed for %s domain %s: %s", client_slug, target_device, exc)
+        return key, None, f"error: {exc}"
+    return key, csv_text, "ok"
+
+
 def collect_ad_frame(config: AppConfig, client_slug: str) -> tuple[pd.DataFrame | None, dict[str, str]]:
     """Collect, parse, and concatenate the AD export from every one of this
     client's domain controllers into one master DataFrame.
 
-    Tolerant of partial failure the same way vendor-inventory collection
-    already is — one domain being unreachable doesn't sink the others; a
-    client with only one domain still goes through this same loop, just with
-    one iteration. The returned frame is ``None`` only when *every* domain
-    failed, meaning there's nothing at all to correlate against.
+    A client with only one domain still goes through this same loop, just
+    with one iteration. The returned frame is ``None`` only when *every*
+    domain failed, meaning there's nothing at all to correlate against.
     """
-    client_cfg = config.client(client_slug)
-    frames: list[pd.DataFrame] = []
+    csv_texts: list[str] = []
     status: dict[str, str] = {}
-    for target_device in client_cfg.ad_target_devices:
-        key = f"ad:{target_device}"
-        try:
-            csv_text = collect_ad_csv(config, client_slug, target_device)
-            frames.append(parse_ad_export(csv_text))
-            status[key] = "ok"
-        except Exception as exc:  # noqa: BLE001 — one domain down must not sink the others
-            logger.warning("AD export failed for %s domain %s: %s", client_slug, target_device, exc)
-            status[key] = f"error: {exc}"
-    if not frames:
-        return None, status
-    return concat_ad_frames(frames), status
+    for target_device in config.client(client_slug).ad_target_devices:
+        key, csv_text, status[key] = collect_ad_domain(config, client_slug, target_device)
+        if csv_text is not None:
+            csv_texts.append(csv_text)
+    return ad_frame_from_csvs(csv_texts), status
+
+
+def ad_frame_from_csvs(csv_texts: list[str]) -> pd.DataFrame | None:
+    """Parse and concatenate successful per-domain exports; ``None`` when
+    there are none (every domain failed)."""
+    if not csv_texts:
+        return None
+    return concat_ad_frames([parse_ad_export(text) for text in csv_texts])
 
 
 def site_status_key(vendor_name: str, site: dict, index: int, total: int) -> str:
@@ -100,27 +119,39 @@ def site_status_key(vendor_name: str, site: dict, index: int, total: int) -> str
     return f"{vendor_name}:{label}" if label else vendor_name
 
 
+def collect_vendor_site(
+    config: AppConfig, client_slug: str, vendor_name: str, site_index: int
+) -> tuple[str, list[AgentDevice] | None, str]:
+    """Fetch one site/tenant's inventory: ``(status_key, records or None, status)``.
+
+    The per-site unit both collection paths share — ``collect_vendor_inventory``
+    loops it in-process, and the Celery fan-out runs it as one task per
+    (vendor, site/tenant). Never raises: a failure comes back as
+    ``(key, None, "error: ...")`` so one site/tenant down doesn't sink the others.
+    """
+    sites = config.sites_for(client_slug, vendor_name)
+    key = site_status_key(vendor_name, sites[site_index], site_index, len(sites))
+    try:
+        connector = get_connectors(config, client_slug, vendor_name)[site_index]
+        records = connector.fetch_inventory()
+    except Exception as exc:  # noqa: BLE001 — one site/tenant down must not sink the others
+        logger.warning("%s inventory failed for %s (%s): %s", vendor_name, client_slug, key, exc)
+        return key, None, f"error: {exc}"
+    return key, records, "ok"
+
+
 def collect_vendor_inventory(
     config: AppConfig, client_slug: str, vendor_name: str
 ) -> tuple[list[AgentDevice], dict[str, str]]:
     """Fetch and concatenate this vendor's inventory across every
     site/tenant the client has (see ``AppConfig.sites_for``) — almost
-    always exactly one. Tolerant of partial failure the same way
-    ``collect_ad_frame`` already is for AD domains: one site/tenant failing
-    doesn't sink the others.
+    always exactly one.
     """
-    sites = config.sites_for(client_slug, vendor_name)
-    connectors = get_connectors(config, client_slug, vendor_name)
     records: list[AgentDevice] = []
     status: dict[str, str] = {}
-    for index, (site, connector) in enumerate(zip(sites, connectors, strict=True)):
-        key = site_status_key(vendor_name, site, index, len(sites))
-        try:
-            records.extend(connector.fetch_inventory())
-            status[key] = "ok"
-        except Exception as exc:  # noqa: BLE001 — one site/tenant down must not sink the others
-            logger.warning("%s inventory failed for %s (%s): %s", vendor_name, client_slug, key, exc)
-            status[key] = f"error: {exc}"
+    for index in range(len(config.sites_for(client_slug, vendor_name))):
+        key, site_records, status[key] = collect_vendor_site(config, client_slug, vendor_name, index)
+        records.extend(site_records or [])
     return records, status
 
 

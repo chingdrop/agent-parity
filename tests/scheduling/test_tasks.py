@@ -75,6 +75,30 @@ def test_chord_completes_cleanly_when_all_vendors_succeed(celery_eager, sqlite_d
     assert len(run.snapshots) > 0
 
 
+def test_chord_isolates_a_malformed_ad_export_to_its_own_domain(celery_eager, sqlite_db, monkeypatch):
+    """One domain returning a malformed export fails that domain only: the
+    run is PARTIAL with the other domain's devices still persisted."""
+    from agent_parity import pipeline
+
+    real_collect_ad_csv = pipeline.collect_ad_csv
+
+    def collect_ad_csv(config, slug, target_device):
+        if target_device == "GLOBEX-BR-DC01":
+            return "Oops,Something\nbroke,badly\n"
+        return real_collect_ad_csv(config, slug, target_device)
+
+    monkeypatch.setattr(pipeline, "collect_ad_csv", collect_ad_csv)
+    config = load_config()
+
+    run_id = tasks.dispatch_client(config, config.client("globex"))
+
+    run = _get_run(sqlite_db, run_id)
+    assert run.status == "partial"
+    assert run.vendor_status["ad:GLOBEX-DC01"] == "ok"
+    assert run.vendor_status["ad:GLOBEX-BR-DC01"].startswith("error")
+    assert len(run.snapshots) > 0
+
+
 def test_run_failed_when_ad_export_is_missing(celery_eager, sqlite_db):
     """No AD export means nothing to reconcile against: FAILED, not partial."""
     config = load_config()
@@ -88,13 +112,8 @@ def test_run_failed_when_ad_export_is_missing(celery_eager, sqlite_db):
         run_id = run.id
 
     results = [
-        {
-            "source": "ad",
-            "target_device": "ACME-DC01",
-            "ok": False,
-            "error": "target endpoint offline",
-        },
-        {"source": "sentinelone", "key": "sentinelone", "ok": True, "records": []},
+        {"source": "ad", "key": "ad:ACME-DC01", "status": "error: target endpoint offline", "csv": None},
+        {"source": "sentinelone", "key": "sentinelone", "status": "ok", "records": []},
     ]
     tasks.correlate_client(results, run_id=run_id)
 
@@ -120,11 +139,11 @@ def test_callback_is_idempotent_on_duplicate_delivery(celery_eager, sqlite_db):
     csv_text = collect_ad_csv(config, "globex", "GLOBEX-DC01")
     records, _ = collect_vendor_inventory(config, "globex", "sentinelone")
     results = [
-        {"source": "ad", "target_device": "GLOBEX-DC01", "ok": True, "csv": csv_text},
+        {"source": "ad", "key": "ad:GLOBEX-DC01", "status": "ok", "csv": csv_text},
         {
             "source": "sentinelone",
             "key": "sentinelone",
-            "ok": True,
+            "status": "ok",
             "records": [r.to_dict() for r in records],
         },
     ]
