@@ -158,6 +158,26 @@ def test_callback_is_idempotent_on_duplicate_delivery(celery_eager, sqlite_db):
     assert first.get("duplicate") is None
 
 
+def test_every_registered_connector_gets_a_rate_limited_inventory_task():
+    """Vendor tasks are built from the connector registry: one per vendor,
+    under a stable task name, with the connector's own rate limit."""
+    from agent_parity.connectors import CONNECTOR_CLASSES
+
+    assert set(tasks.VENDOR_TASKS) == set(CONNECTOR_CLASSES)
+    for vendor, task in tasks.VENDOR_TASKS.items():
+        assert task.name == f"agent_parity.scheduling.tasks.fetch_{vendor}_inventory"
+        assert task.rate_limit == CONNECTOR_CLASSES[vendor].inventory_rate_limit
+
+
+def test_registered_inventory_task_is_a_thin_wrapper_over_collect_vendor_site(celery_eager):
+    payload = tasks.VENDOR_TASKS["carbonblack"].delay("acme", 1).get()
+
+    assert payload["source"] == "carbonblack"
+    assert payload["key"] == "carbonblack:branch"
+    assert payload["status"] == "ok"
+    assert payload["records"]
+
+
 def test_dispatch_all_clients_respects_per_client_cadence(celery_eager, sqlite_db):
     config = load_config()
 

@@ -36,6 +36,8 @@ class CarbonBlackConnector(AgentConnector):
     # A handful of the original client base — second preference behind
     # SentinelOne when both are capable of carrying a client's AD export.
     ad_export_priority = 1
+    # Live Response sessions are a scarce per-org resource.
+    inventory_rate_limit = "10/m"
 
     @property
     def _headers(self) -> dict:

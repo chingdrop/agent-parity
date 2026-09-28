@@ -317,6 +317,12 @@ class AgentConnector(VendorConnector):
     #: alphabetically among any other default-priority vendors.
     ad_export_priority: ClassVar[int] = 100
 
+    #: Celery ``rate_limit`` for this vendor's inventory-pull task (see
+    #: agent_parity.scheduling.tasks, which builds one task per registered
+    #: connector from this). Set it to the vendor's practical API budget;
+    #: ``None`` means no Celery-side limit.
+    inventory_rate_limit: ClassVar[str | None] = None
+
     # -- inventory ---------------------------------------------------------
 
     def fetch_inventory(self) -> list[AgentDevice]:

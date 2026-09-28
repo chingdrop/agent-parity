@@ -165,6 +165,8 @@ class SentinelOneConnector(SentinelOneRSOMixin, AgentConnector):
     # Covered the bulk of the original client base — preferred over Carbon
     # Black when both are capable of carrying a client's AD export.
     ad_export_priority = 0
+    # The management API is generous.
+    inventory_rate_limit = "30/m"
 
     def _in_scoped_sites(self, item: dict) -> bool:
         """True unless this client's ``site_ids`` is set and ``item`` belongs

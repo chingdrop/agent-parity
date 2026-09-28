@@ -470,7 +470,9 @@ for what a global vendor's `account:` key picks between.
 Any vendor registered in `agent_parity.connectors.CONNECTOR_CLASSES` works
 here — adding support for a vendor beyond SentinelOne/Carbon Black/BitDefender
 is writing one connector class decorated `@register_connector`
-(`src/agent_parity/connectors/base.py`), not editing a central table.
+(`src/agent_parity/connectors/base.py`), not editing a central table. The Celery
+inventory task for it is generated from the registry too, rate-limited by the
+connector's `inventory_rate_limit`.
 `src/agent_parity/config.py`'s `load_config()` is the single entrypoint that
 resolves `config.yaml` plus the environment into an `AppConfig`. There's no second config path: the SQLite run
 history never stores topology or credentials, so this is the one place to read what's configured.

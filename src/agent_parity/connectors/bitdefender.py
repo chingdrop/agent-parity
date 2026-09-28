@@ -59,6 +59,8 @@ class BitDefenderConnector(AgentConnector):
     vendor = Vendor.BITDEFENDER.value
     required_credentials = ("api_url", "api_key")
     supports_remote_execution = False
+    # GravityZone's JSON-RPC endpoint throttles hard.
+    inventory_rate_limit = "6/m"
 
     _rpc_ids = itertools.count(1)
 

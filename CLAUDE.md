@@ -261,7 +261,11 @@ paths have.
 `CONNECTOR_REGISTRY` (re-exported as `connectors.CONNECTOR_CLASSES`) keyed by its own
 `vendor` attribute — `config.load_config()` validates `config.yaml`'s `vendor:` value
 against this registry. A 4th vendor needs a new module (decorated) plus one import
-line in `connectors/__init__.py` to trigger registration — nothing else.
+line in `connectors/__init__.py` to trigger registration — nothing else. That includes
+the Celery path: `scheduling/tasks.py` builds one `fetch_<vendor>_inventory` task per
+registered connector, rate-limited by the connector's own `inventory_rate_limit` class
+attribute (set it to the vendor's practical API budget; `None` means no limit). Don't
+hand-write a per-vendor task in `tasks.py`.
 
 **`connectors/base.py` holds two layers.** `VendorConnector` — a credentialed `RestAdapter`
 session, `is_live`, live/fixture dispatch for `deploy_and_run()`, `_poll_until`,

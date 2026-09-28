@@ -27,7 +27,9 @@ Three deliberate design points:
   hanging in PENDING forever.
 
 * **Rate limits** — each vendor gets its own task so Celery's per-task
-  ``rate_limit`` can encode that vendor's real-world API throttling.
+  ``rate_limit`` can encode that vendor's real-world API throttling. The
+  tasks are built from the connector registry, each connector supplying its
+  own ``inventory_rate_limit``, so adding a vendor needs no change here.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select
 
 from agent_parity.config import AppConfig, ClientConfig, load_config
+from agent_parity.connectors import CONNECTOR_CLASSES
 from agent_parity.models import AgentDevice
 from agent_parity.pipeline import ad_frame_from_csvs, collect_ad_domain, collect_vendor_site
 from agent_parity.scheduling.celery_app import app
@@ -72,28 +75,24 @@ def _vendor_payload(client_slug: str, vendor_name: str, site_index: int) -> dict
     }
 
 
-# Rate limits reflect each vendor's practical API budget: SentinelOne's
-# management API is generous; Carbon Black Live Response sessions are a
-# scarce per-org resource; GravityZone's JSON-RPC endpoint throttles hard.
-@app.task(rate_limit="30/m")
-def fetch_sentinelone_inventory(client_slug: str, site_index: int) -> dict:
-    return _vendor_payload(client_slug, "sentinelone", site_index)
+def _register_inventory_task(vendor_name: str, rate_limit: str | None):
+    """One inventory-pull task per registered connector, named
+    ``fetch_<vendor>_inventory``. A task per vendor (rather than one generic
+    task) is what lets Celery apply each vendor's own ``rate_limit``, taken
+    from the connector's ``inventory_rate_limit``."""
+
+    def fetch_inventory(client_slug: str, site_index: int) -> dict:
+        return _vendor_payload(client_slug, vendor_name, site_index)
+
+    fetch_inventory.__name__ = f"fetch_{vendor_name}_inventory"
+    return app.task(name=f"{__name__}.{fetch_inventory.__name__}", rate_limit=rate_limit)(fetch_inventory)
 
 
-@app.task(rate_limit="10/m")
-def fetch_carbonblack_inventory(client_slug: str, site_index: int) -> dict:
-    return _vendor_payload(client_slug, "carbonblack", site_index)
-
-
-@app.task(rate_limit="6/m")
-def fetch_bitdefender_inventory(client_slug: str, site_index: int) -> dict:
-    return _vendor_payload(client_slug, "bitdefender", site_index)
-
-
+#: vendor name -> its inventory task, built from the connector registry so a
+#: new connector needs no change here.
 VENDOR_TASKS = {
-    "sentinelone": fetch_sentinelone_inventory,
-    "carbonblack": fetch_carbonblack_inventory,
-    "bitdefender": fetch_bitdefender_inventory,
+    vendor: _register_inventory_task(vendor, connector_cls.inventory_rate_limit)
+    for vendor, connector_cls in CONNECTOR_CLASSES.items()
 }
 
 
