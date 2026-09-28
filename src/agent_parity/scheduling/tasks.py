@@ -35,9 +35,12 @@ Three deliberate design points:
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from agent_parity.config import AppConfig, ClientConfig, load_config
 from agent_parity.connectors import CONNECTOR_CLASSES
@@ -50,10 +53,17 @@ from agent_parity.scheduling.persistence import finalize_run, sync_client_from_c
 logger = logging.getLogger(__name__)
 
 
-def _session():
+@contextmanager
+def _session() -> Iterator[Session]:
+    """A session on a fresh engine, disposed on exit so each task closes its
+    own SQLite connections."""
     engine = get_engine()
     init_db(engine)
-    return session_factory(engine)()
+    try:
+        with session_factory(engine)() as session:
+            yield session
+    finally:
+        engine.dispose()
 
 
 # --- fan-out: one task per (client, vendor, site/tenant) -----------------------
@@ -118,7 +128,7 @@ def correlate_client(results: list[dict], run_id: int) -> dict:
     correlation never races partial state from another worker.
     """
     with _session() as session:
-        run = session.get(CorrelationRun, run_id)
+        run = session.get_one(CorrelationRun, run_id)
         if run.status != RunStatus.PENDING.value:
             logger.warning("Run %s already finalized; ignoring duplicate callback", run_id)
             return {"run_id": run_id, "status": run.status, "duplicate": True}
