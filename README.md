@@ -176,13 +176,14 @@ This is this package's actual deployment shape now (see
 placeholder for a separate hub project's deployment, since that plan is
 archived. Enough to run the CLI standalone without a local `uv` install, run
 the scheduled Celery path, or exercise the real object-storage handoff
-against a local MinIO instead of `moto`'s simulated S3:
+against a local S3 server ([Versity S3 Gateway](https://github.com/versity/versitygw))
+instead of `moto`'s simulated S3:
 
 ```bash
 docker build -f docker/Dockerfile -t agent-parity .
 docker run --rm -v "$PWD/output:/app/output" agent-parity run --csv
 
-# or, via compose (also brings up a local MinIO the container can reach, and
+# or, via compose (also brings up the local S3 server the container can reach, and
 # keeps run history in the shared SQLite volume):
 docker compose -f docker/docker-compose.yml run --rm agent-parity run --csv
 
@@ -200,12 +201,12 @@ The two live-infrastructure paths this package has — the AD-export
 object-storage handoff (see
 [the architecture doc](docs/architecture.md#ad-export-handoff-object-storage-instead-of-the-vendor-channel-mandatory-for-live-exports))
 and the Celery scheduling stack — can be exercised locally against real
-MinIO/Redis/worker/beat instead of just `moto`'s simulated S3 and
+S3/Redis/worker/beat instead of just `moto`'s simulated S3 and
 `task_always_eager`:
 
 ```console
 cd docker
-./smoke_test.sh     # brings up minio+redis+worker+beat, round-trips a real
+./smoke_test.sh     # brings up s3+redis+worker+beat, round-trips a real
                      # object AND a real Celery chord through them
 ```
 
@@ -244,7 +245,7 @@ module does too:
   wording, `infer_platform`/`infer_machine_type` for vendors with no
   equivalent field) — and that both survive the correlation merge intact.
 - **Object storage and AD-export handoff**: presigned-URL round trip against
-  a mocked S3 backend (`moto` — no real MinIO/AWS S3 needed); the
+  a mocked S3 backend (`moto` — no real S3 server needed); the
   storage-vs-direct-channel branch in `script_runner.run_ad_export`, including
   that fixture mode never touches storage even when it's configured.
 - **Pipeline data shapes** (`test_models.py`): `normalize_hostname` edge
@@ -276,7 +277,7 @@ module does too:
   logging setup and tabular file I/O. All run under the normal
   `uv run pytest`.
 
-Also deliberately **not** covered here: whether a real MinIO/AWS S3 endpoint
+Also deliberately **not** covered here: whether a real S3 endpoint
 actually works — `moto` proves the *logic* is right but never touches a real
 network. That's what `docker/smoke_test.sh` is for; see
 [Optional: Docker](#optional-docker) above.

@@ -101,7 +101,7 @@ clients:
 # can exceed, so the remote script uploads its CSV directly to object storage
 # via a short-lived presigned URL instead of returning it through the vendor
 # channel. Built against the S3 API (boto3): point endpoint_url at a
-# self-hosted MinIO instance (docker/docker-compose.yml runs one) for
+# self-hosted S3-compatible server (docker/docker-compose.yml runs one) for
 # local/dev use, or leave it unset to use real AWS S3 in production — same
 # code either way. Unconfigured (the uv demo default, since these all resolve
 # to null with no .env) is only valid because the demo path has no live

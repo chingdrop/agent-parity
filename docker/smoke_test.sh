@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# MinIO + Celery integration smoke test.
+# Object storage + Celery integration smoke test.
 #
 # Proves two things the fast, offline `uv run pytest` suite structurally
 # can't: agent_parity.storage.ObjectStorage round-trips a real object
@@ -19,7 +19,7 @@ cd "$(dirname "$0")"
 KEEP=0
 [[ "${1:-}" == "--keep" ]] && KEEP=1
 
-# MinIO's own root credentials — read from .env if present so the smoke
+# The local S3 server's root credentials — read from .env if present so the smoke
 # test can't drift from whatever the stack is actually configured with;
 # fall back to docker-compose.yml's own defaults otherwise.
 if [[ -f ../.env ]]; then
@@ -28,8 +28,8 @@ if [[ -f ../.env ]]; then
     source ../.env
     set +a
 fi
-MINIO_ROOT_USER="${MINIO_ROOT_USER:-agent_parity}"
-MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-agent_parity_minio}"
+LOCAL_S3_ACCESS_KEY="${LOCAL_S3_ACCESS_KEY:-agent_parity}"
+LOCAL_S3_SECRET_KEY="${LOCAL_S3_SECRET_KEY:-agent_parity_s3}"
 
 cleanup() {
     if [[ "$KEEP" -eq 1 ]]; then
@@ -41,19 +41,19 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "--- starting MinIO, Redis, worker, beat ---"
-if ! docker compose up -d --wait minio redis worker beat; then
+echo "--- starting S3 (Versity), Redis, worker, beat ---"
+if ! docker compose up -d --wait s3 redis worker beat; then
     echo "FAIL: docker compose up" >&2
     exit 1
 fi
 
 FAILED=0
 
-echo "--- round-tripping a real object through MinIO (not moto) ---"
+echo "--- round-tripping a real object through a real S3 server (not moto) ---"
 if ! STORAGE_ENDPOINT_URL=http://localhost:9000 \
     STORAGE_BUCKET=smoke-test \
-    STORAGE_ACCESS_KEY="$MINIO_ROOT_USER" \
-    STORAGE_SECRET_KEY="$MINIO_ROOT_PASSWORD" \
+    STORAGE_ACCESS_KEY="$LOCAL_S3_ACCESS_KEY" \
+    STORAGE_SECRET_KEY="$LOCAL_S3_SECRET_KEY" \
     uv run python smoke_check_storage.py; then
     echo "FAIL: storage smoke check" >&2
     FAILED=1

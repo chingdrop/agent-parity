@@ -49,6 +49,10 @@ Notes on the record:
   running workers with the new `--workers` flag. `run_and_persist_for_client` is removed; `finalize_run` returns the
   `CorrelationResult` instead of a snapshot count.
 
+- The Docker Compose object store is now the Versity S3 Gateway (`s3` service, pinned image) instead of MinIO, whose
+  images were withdrawn from Docker Hub. `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` are renamed `LOCAL_S3_ACCESS_KEY`/
+  `LOCAL_S3_SECRET_KEY`. See ADR 0011.
+
 ### Removed
 
 - The `sync` subcommand, merged into `run` (see above).

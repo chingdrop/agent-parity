@@ -64,8 +64,9 @@ SQLite's writer serialization) and a plain `create_all` with no migrations.
 See [ADR 0009](decisions/0009-standalone-package-owning-scheduling-and-persistence.md) and [
 `db.py`](../src/agent_parity/scheduling/db.py).
 
-**The MinIO and Celery smoke tests are manual.** [`docker/smoke_test.sh`](../docker/smoke_test.sh) needs Docker and runs
-neither in `uv run pytest` nor in CI, so real MinIO and a real Celery chord are only checked when someone runs it. See
+**The object-storage and Celery smoke tests are manual.** [`docker/smoke_test.sh`](../docker/smoke_test.sh) needs Docker
+and runs neither in `uv run pytest` nor in CI, so a real S3 server and a real Celery chord are only checked when someone
+runs it. See
 the README's "Optional: Docker" section.
 
 ## Possible next steps
@@ -82,8 +83,8 @@ maintainer's own picks.
   (see "Matching is hostname-only" above).
 - **The EOL drift check in CI.** [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) is manual today; a weekly
   scheduled workflow would flag stale dates without anyone remembering to run it.
-- **The smoke tests in CI.** [`docker/smoke_test.sh`](../docker/smoke_test.sh) could run in a job that brings up MinIO,
-  Redis, a worker and beat, so real object storage and a real Celery chord are checked automatically.
+- **The smoke tests in CI.** [`docker/smoke_test.sh`](../docker/smoke_test.sh) could run in a job that brings up the S3
+  server, Redis, a worker and beat, so real object storage and a real Celery chord are checked automatically.
 - **A live endoflife.date source** with a fixture fallback, the same shape as the vendor connectors. The API is free and
   needs no credentials. [`os_eol.py`](../src/agent_parity/os_eol.py) calls it "a natural, self-contained extension if
   ever needed" and does not build it; the drift check above covers the "is this still right" question for now.

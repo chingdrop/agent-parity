@@ -1,9 +1,8 @@
-# Applied automatically by `docker compose up` — exposes MinIO's API and
-# web console for local inspection (http://localhost:9001, login with
-# MINIO_ROOT_USER/PASSWORD).
+# Applied automatically by `docker compose up` — exposes the local S3 API
+# (http://localhost:9000, credentials LOCAL_S3_ACCESS_KEY/LOCAL_S3_SECRET_KEY)
+# so the host can reach it, e.g. for docker/smoke_check_storage.py.
 
 services:
-  minio:
+  s3:
     ports:
       - "9000:9000"
-      - "9001:9001"

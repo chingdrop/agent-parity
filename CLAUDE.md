@@ -52,7 +52,7 @@ uv run mypy                                 # type-check; config in pyproject.to
 lychee './**/*.md'                          # doc links + #anchors (config in .lychee.toml)
 
 docker build -f docker/Dockerfile -t agent-parity .   # bare-bones standalone image
-docker compose -f docker/docker-compose.yml up -d minio redis worker beat   # local storage + scheduling stack
+docker compose -f docker/docker-compose.yml up -d s3 redis worker beat   # local storage + scheduling stack
 docker/smoke_test.sh                                 # round-trips a real object + a real Celery chord
 ```
 
@@ -430,10 +430,13 @@ configured. This is also why the uv demo path can leave `STORAGE_*` unset in
 `.env`: safe only because the vendor has no live credentials there either, so
 no script ever actually runs.
 
-Built against the S3 API via `boto3`, not a specific product — MinIO (self-hosted, via `docker/docker-compose.yml`) for
-local/dev, real AWS S3 in
+Built against the S3 API via `boto3`, not a specific product — the compose `s3` service
+([Versity S3 Gateway](docs/decisions/0011-versity-s3-gateway-for-local-dev.md), pinned, serving a local
+directory) for local/dev, real AWS S3 in
 production, same `ObjectStorage` class either way; only `endpoint_url`
-changes. This is *not* Azure Blob Storage capable — different API, would need
+changes. It was MinIO until MinIO withdrew its community images (the stack broke on
+a floating `latest` tag) — keep the local server's image pinned, and don't reintroduce
+product-specific tooling (the old `mc` healthcheck) into the compose file. This is *not* Azure Blob Storage capable — different API, would need
 a second implementation with a different SDK, not just different config. **`StorageConfig`/`parse_storage_config`/`build_storage` live in
 `config.py`** —
 `get_storage(config)` there is a one-line delegate to
@@ -451,7 +454,7 @@ command line (`CarbonBlackConnector._powershell_args`) since Live Response's
 mechanisms, same `script_args: dict[str, str]` contract from `deploy_and_run`.
 
 Tests use `moto` (`@mock_aws` / the `mock_aws()` context manager) — no real
-MinIO or AWS S3 touches the test suite, and a real presigned-URL PUT/GET round
+S3 server touches the test suite, and a real presigned-URL PUT/GET round
 trip still gets exercised. `ObjectStorage`'s own unit tests live in
 `tests/test_storage.py`; the *orchestration logic*
 (mandatory-storage rule, fixture bypass, upload/download/cleanup, empty/
@@ -461,18 +464,18 @@ fake connector, alongside a few *wiring* tests proving
 path through correctly.
 `moto` proves the code path, not the network — `docker/smoke_check_storage.py`
 (run via `docker/smoke_test.sh`, Docker-only) round-trips a real object through
-the actual `minio` service, including auto-creating the smoke-test bucket (`ObjectStorage` itself has no bucket-admin
+the actual `s3` service, including auto-creating the smoke-test bucket (`ObjectStorage` itself has no bucket-admin
 methods on purpose; production
 bucket provisioning is out-of-band, so that stays smoke-test-only code).
 
-`docker/Dockerfile` is a separate, bare-bones concern from the MinIO
+`docker/Dockerfile` is a separate, bare-bones concern from the `s3`
 service above — it builds a standalone image for running the `agent-parity`
 CLI itself (`docker build -f docker/Dockerfile -t agent-parity .`; entrypoint
 is `uv run --no-sync agent-parity`, `--no-sync` because a plain `uv run`
 would re-resolve against `uv.lock`'s full `[dev]` group on every container
 start, silently reinstalling `moto`/`boto3-stubs`/etc. that `--no-dev`
 deliberately excluded from the image at build time). `docker-compose.yml`'s
-`agent-parity` service just wires that Dockerfile up alongside `minio`, so
+`agent-parity` service just wires that Dockerfile up alongside `s3`, so
 `docker compose run agent-parity run` works out of the box. This is now this
 project's actual deployment story (see "Scheduling & persistence" above) —
 not a placeholder for a separate hub project's deployment, since that plan

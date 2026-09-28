@@ -70,8 +70,9 @@ if enabled, Splunk. The endpoint receives a URL, never a storage credential.
 - The script runs as the SYSTEM account on the endpoint, the highest local privilege, although all it does is read
   computer objects and upload one file. Anything that could alter the script before it is pushed would run with the
   same privileges.
-- The Docker Compose stack is a dev/demo setup: MinIO uses default root credentials when `.env` is unset, the override
-  file publishes ports 9000 and 9001, and the MinIO and `uv` images use `latest` tags.
+- The Docker Compose stack is a dev/demo setup: the local S3 server (Versity S3 Gateway) uses default root credentials
+  when `.env` is unset, the override file publishes port 9000, and the `uv` and `redis` images use floating tags (the
+  S3 server's image is pinned).
 
 ## Non-goals
 

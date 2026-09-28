@@ -1,6 +1,7 @@
 # 0003. Build on the S3 API (boto3), with MinIO for local development
 
-Status: Accepted (2026-07-03)
+Status: Accepted (2026-07-03). The local server (MinIO) was replaced by the Versity S3 Gateway in
+[0011](0011-versity-s3-gateway-for-local-dev.md); building on the S3 API still stands.
 
 ## Context
 

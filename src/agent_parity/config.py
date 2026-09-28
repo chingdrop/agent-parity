@@ -52,7 +52,7 @@ class StorageConfig:
     """
 
     backend: str = "s3"
-    endpoint_url: str | None = None  # unset -> real AWS S3; set for MinIO/other S3-compatible services
+    endpoint_url: str | None = None  # unset -> real AWS S3; set for self-hosted S3-compatible services
     bucket: str | None = None
     access_key: str | None = None
     secret_key: str | None = None

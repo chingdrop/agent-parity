@@ -193,10 +193,10 @@ def test_storage_unconfigured_by_default(monkeypatch):
 
 
 def test_storage_enabled_when_fully_configured(monkeypatch):
-    monkeypatch.setenv("STORAGE_ENDPOINT_URL", "http://minio:9000")
+    monkeypatch.setenv("STORAGE_ENDPOINT_URL", "http://s3:9000")
     monkeypatch.setenv("STORAGE_BUCKET", "agent-parity-ad-exports")
-    monkeypatch.setenv("STORAGE_ACCESS_KEY", "minio-access")
-    monkeypatch.setenv("STORAGE_SECRET_KEY", "minio-secret")
+    monkeypatch.setenv("STORAGE_ACCESS_KEY", "s3-access")
+    monkeypatch.setenv("STORAGE_SECRET_KEY", "s3-secret")
     config = load_config()
 
     assert config.storage.enabled
@@ -228,7 +228,7 @@ def test_parse_storage_config_reads_all_fields():
         {
             "storage": {
                 "backend": "s3",
-                "endpoint_url": "http://minio:9000",
+                "endpoint_url": "http://s3:9000",
                 "bucket": "my-bucket",
                 "access_key": "ak",
                 "secret_key": "sk",
@@ -238,7 +238,7 @@ def test_parse_storage_config_reads_all_fields():
     )
     assert config == StorageConfig(
         backend="s3",
-        endpoint_url="http://minio:9000",
+        endpoint_url="http://s3:9000",
         bucket="my-bucket",
         access_key="ak",
         secret_key="sk",

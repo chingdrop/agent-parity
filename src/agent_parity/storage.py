@@ -5,7 +5,7 @@ storage credential, then fetch/clean up the result with your own real
 credentials. Requires ``boto3``.
 
 Built against the S3 API, not a specific product: point ``endpoint_url`` at a
-self-hosted MinIO instance for local/dev use, or leave it unset to talk to
+self-hosted S3-compatible server for local/dev use, or leave it unset to talk to
 real AWS S3 in production — same class, same code, just different config.
 This is *not* Azure Blob Storage capable: Azure Blob doesn't speak the S3
 API, so supporting it would mean a second implementation with a different
@@ -53,7 +53,7 @@ class ObjectStorage:
             aws_secret_access_key=secret_key,
             region_name=region,
             config=BotoConfig(
-                # MinIO (and most non-AWS S3-compatible services) expect
+                # Most non-AWS S3-compatible services expect
                 # path-style bucket addressing (http://host/bucket/key)
                 # rather than AWS's virtual-hosted-style (http://bucket.host/key).
                 s3={"addressing_style": "path"},

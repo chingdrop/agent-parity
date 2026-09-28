@@ -15,6 +15,7 @@ they rule out.
 | [0008](0008-classify-os-eol-by-build-number-with-free-text-fallback.md) | Classify OS end-of-life by build number              | Exact build first, free-text table as fallback, and deliberately no bare "Windows 11" entry.                                               |
 | [0009](0009-standalone-package-owning-scheduling-and-persistence.md)    | Standalone package owning scheduling and persistence | No web dashboard; Celery and SQLite are owned here. Replaces the 2026-07-05 single-organization scope.                                     |
 | [0010](0010-multi-domain-ad-one-export-per-domain.md)                   | Multi-domain AD: one export per domain               | Exports are concatenated and tolerate partial failure; `None` only when every domain fails.                                                |
+| [0011](0011-versity-s3-gateway-for-local-dev.md)                        | Versity S3 Gateway for local development             | Replaces MinIO (images withdrawn) as the local S3 server; pinned, and no code change needed.                                               |
 
 ## How decisions are recorded
 

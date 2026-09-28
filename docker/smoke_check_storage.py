@@ -1,4 +1,4 @@
-"""Round-trip a real object through a real S3-compatible server (MinIO).
+"""Round-trip a real object through a real S3-compatible server (the compose `s3` service).
 
 ``tests/test_script_runner.py`` proves ``ObjectStorage`` works against
 ``moto``'s simulated S3 — this proves it against the genuine article,
@@ -25,8 +25,8 @@ from agent_parity.storage import ObjectStorage, StorageError
 def _ensure_bucket(storage: ObjectStorage) -> None:
     """Create the smoke-test bucket if it doesn't exist yet.
 
-    MinIO doesn't auto-create buckets; production use is expected to
-    provision the real bucket out-of-band (Terraform, the AWS/MinIO
+    S3 servers don't auto-create buckets; production use is expected to
+    provision the real bucket out-of-band (Terraform, the AWS
     console, ...), so ``ObjectStorage`` itself deliberately has no
     bucket-administration methods — this is smoke-test-only setup.
     """

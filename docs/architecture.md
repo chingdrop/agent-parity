@@ -293,9 +293,12 @@ doesn't go through them at all:
 
 This is built against the **S3 API** (`boto3`), not a specific product:
 `agent_parity.storage.ObjectStorage` talks to a
-self-hosted **MinIO** instance (`docker/docker-compose.yml` runs one) for
+self-hosted S3-compatible server (`docker/docker-compose.yml` runs the
+[Versity S3 Gateway](decisions/0011-versity-s3-gateway-for-local-dev.md)) for
 local/dev use, or real **AWS S3** in production, with `endpoint_url` as the
-only thing that changes.
+only thing that changes. The local server was MinIO until MinIO stopped
+publishing community images; swapping it needed no code change, which is the
+point of targeting the API rather than a product.
 It is *not* Azure Blob Storage capable — Blob doesn't speak the S3 API, so
 that would need a second implementation with a different SDK, not just
 different credentials.

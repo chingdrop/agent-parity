@@ -1,5 +1,5 @@
 """Object storage tests: presigned-URL round trip against a mocked S3 backend
-(moto) — no real MinIO or AWS S3 needed, no real network access.
+(moto) — no real S3 server needed, no real network access.
 """
 
 import boto3

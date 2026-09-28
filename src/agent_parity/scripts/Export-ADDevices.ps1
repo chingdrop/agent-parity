@@ -50,7 +50,7 @@ $rows = Get-ADComputer -Filter * -Properties DNSHostName, OperatingSystem, Opera
 
 $csv = $rows | ConvertTo-Csv -NoTypeInformation
 
-# Presigned S3/MinIO PUT URLs accept a plain PUT of the object bytes; no
+# Presigned S3 PUT URLs accept a plain PUT of the object bytes; no
 # storage credentials ever touch this endpoint, and the URL expires in
 # minutes and can write exactly this one object.
 Invoke-RestMethod -Uri $UploadUrl -Method Put -Body ($csv -join "`n") -ContentType 'text/csv'
