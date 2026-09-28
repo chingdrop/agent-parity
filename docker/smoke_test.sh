@@ -31,6 +31,12 @@ fi
 LOCAL_S3_ACCESS_KEY="${LOCAL_S3_ACCESS_KEY:-agent_parity}"
 LOCAL_S3_SECRET_KEY="${LOCAL_S3_SECRET_KEY:-agent_parity_s3}"
 
+# Always its own compose project (set after .env is sourced, so nothing there
+# can override it): the teardown's `down -v` then only removes this test's own
+# containers and volumes, never a dev stack's run history (docker_dbdata). It
+# still publishes port 9000, so stop a dev stack's `s3` service first if one is up.
+export COMPOSE_PROJECT_NAME=agent-parity-smoke
+
 cleanup() {
     if [[ "$KEEP" -eq 1 ]]; then
         echo "--- --keep passed: leaving the stack running ---"

@@ -206,7 +206,8 @@ S3/Redis/worker/beat instead of just `moto`'s simulated S3 and
 
 ```console
 cd docker
-./smoke_test.sh     # brings up s3+redis+worker+beat, round-trips a real
+./smoke_test.sh     # in its own compose project (never touches your dev stack's
+                     # volumes): brings up s3+redis+worker+beat, round-trips a real
                      # object AND a real Celery chord through them
 ```
 
