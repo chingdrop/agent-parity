@@ -25,7 +25,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 RUN uv sync --frozen --no-dev
 
-RUN useradd --create-home --uid 1000 parity && chown -R parity:parity /app
+# /app/data is where compose mounts the shared SQLite volume (dbdata). It has to
+# exist in the image, owned by parity, so a new named volume inherits that
+# ownership; otherwise Docker creates it root-owned and nothing can write the DB.
+RUN mkdir -p /app/data && useradd --create-home --uid 1000 parity && chown -R parity:parity /app
 USER parity
 
 # --no-sync: without it, "uv run" re-resolves against uv.lock's full [dev]
