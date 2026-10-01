@@ -49,6 +49,7 @@ from celery.result import AsyncResult
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from agent_parity import os_eol_live
 from agent_parity.config import AppConfig, ClientConfig, load_config
 from agent_parity.connectors import CONNECTOR_CLASSES
 from agent_parity.models import AgentDevice
@@ -260,6 +261,15 @@ def _client_is_due(client_cfg: ClientConfig) -> bool:
     if started_at.tzinfo is None:
         started_at = started_at.replace(tzinfo=UTC)
     return started_at <= datetime.now(UTC) - timedelta(hours=client_cfg.sync_interval_hours)
+
+
+@app.task
+def refresh_os_eol_data() -> str:
+    """Beat entrypoint (daily, 06:30): refresh the OS end-of-life data from
+    endoflife.date into the shared cache (see ``os_eol_live.refresh_cache``)."""
+    if not load_config().refresh_os_eol:
+        return "disabled"
+    return os_eol_live.refresh_cache().result
 
 
 @app.task

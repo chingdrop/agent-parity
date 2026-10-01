@@ -288,3 +288,12 @@ def test_pending_run_timeout_is_read_from_config_yaml(tmp_path):
     path.write_text("pending_run_timeout_hours: 6\n")
 
     assert load_config(path).pending_run_timeout_hours == 6
+
+
+def test_refresh_os_eol_is_on_by_default_and_can_be_turned_off(tmp_path):
+    assert load_config().refresh_os_eol is True
+
+    path = tmp_path / "config.yaml"
+    path.write_text("refresh_os_eol: false\n")
+
+    assert load_config(path).refresh_os_eol is False

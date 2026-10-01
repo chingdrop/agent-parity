@@ -16,6 +16,8 @@ output/
 # `run` subcommand's default run-history store (see src/agent_parity/scheduling/db.py) —
 # AGENT_PARITY_DB_URL points elsewhere for anything that isn't local/demo.
 agent_parity.db
+# The refreshed OS end-of-life data (see src/agent_parity/os_eol_live.py).
+os_eol_cache.json
 *.db
 
 # Secrets — config.yaml holds only ${VAR} references and is safe to commit;

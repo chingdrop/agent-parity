@@ -36,6 +36,9 @@ Notes on the record:
   matched only to the AD object with that exact `DNSHostName` (`match_method = fqdn_exact`); one that reported only the
   short name is flagged `ambiguous_join_key` on every row it matched, counted in the summary, logged and noted in
   `run`'s output. Previously one agent silently made every same-named machine look covered.
+- OS end-of-life data refreshed from endoflife.date daily by beat (06:30) and at the start of `run` when over a day
+  old, written to a shared cache (`AGENT_PARITY_EOL_CACHE`) and logged when dates change. The bundled snapshot is the
+  fallback on any error; `refresh_os_eol: false` in `config.yaml` turns it off.
 - `run --workers --timeout MINUTES`, to stop waiting at a deadline while unfinished runs keep going on the workers.
 - An `inventory_rate_limit` attribute on each connector. The Celery inventory tasks are built from the connector
   registry with it, so adding a vendor needs no change to `scheduling/tasks.py`.

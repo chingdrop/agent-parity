@@ -27,6 +27,11 @@ app.conf.beat_schedule = {
         "task": "agent_parity.scheduling.tasks.dispatch_all_clients",
         "schedule": 3600.0,
     },
+    # Just before the forced 07:00 run, so it classifies against current dates.
+    "refresh-os-eol-data-daily": {
+        "task": "agent_parity.scheduling.tasks.refresh_os_eol_data",
+        "schedule": crontab(hour=6, minute=30),
+    },
     "dispatch-all-clients-daily-7am": {
         "task": "agent_parity.scheduling.tasks.dispatch_all_clients",
         "schedule": crontab(hour=7, minute=0),

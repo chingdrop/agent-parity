@@ -1,6 +1,8 @@
 """OS end-of-life reference data and matching.
 
-``os_eol_data.json`` is a snapshot of endoflife.date's Windows and Windows
+Lookups use the refreshed copy written daily by ``os_eol_live.refresh_cache``
+(``AGENT_PARITY_EOL_CACHE``) when there is one, else the bundled snapshot.
+``os_eol_data.json`` is that snapshot of endoflife.date's Windows and Windows
 Server lifecycle data, derived by ``agent_parity.os_eol_live`` (regenerate it
 with ``scripts/check_eol_drift.py --write``). It holds two tables, two
 precisions, matching what's actually available per source:
@@ -33,6 +35,8 @@ holds the earliest EOL date, matching this project's risk-flagging bias (see
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -40,7 +44,13 @@ from pathlib import Path
 
 from agent_parity.models import OSLifecycleStatus
 
+logger = logging.getLogger(__name__)
+
 _DATA_PATH = Path(__file__).resolve().parent / "os_eol_data.json"
+
+#: Where the daily refresh (``os_eol_live.refresh_cache``) writes current data.
+#: Read in preference to the bundled snapshot whenever it exists and is valid.
+DEFAULT_CACHE_PATH = "os_eol_cache.json"
 
 #: How close to its EOL date an OS has to be to count as "eol_soon" rather
 #: than "supported" — long enough to actually plan and execute a migration.
@@ -80,16 +90,46 @@ def tables_from_data(data: dict) -> LifecycleTables:
     return LifecycleTables(free_text=sorted(free_text, key=lambda lc: len(lc.match), reverse=True), builds=builds)
 
 
-def _load_bundled() -> LifecycleTables:
+def load_bundled_data() -> dict:
     with open(_DATA_PATH) as fh:
-        return tables_from_data(json.load(fh))
+        return json.load(fh)
 
 
-_BUNDLED: LifecycleTables = _load_bundled()
+def cache_path() -> Path:
+    """``AGENT_PARITY_EOL_CACHE``, else ``os_eol_cache.json`` in the working
+    directory (the same convention as the SQLite database)."""
+    return Path(os.environ.get("AGENT_PARITY_EOL_CACHE") or DEFAULT_CACHE_PATH)
+
+
+def load_current_data() -> dict:
+    """The data lookups use: the refreshed cache if valid, else the bundled snapshot."""
+    path = cache_path()
+    try:
+        data = json.loads(path.read_text())
+        tables_from_data(data)  # validate before trusting it
+        return data
+    except FileNotFoundError:
+        return load_bundled_data()
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        logger.warning("Ignoring unreadable OS EOL cache %s (%s); using the bundled data", path, exc)
+        return load_bundled_data()
+
+
+_BUNDLED: LifecycleTables = tables_from_data(load_bundled_data())
+#: (cache path, mtime) -> tables, so lookups re-read the cache only when it changes.
+_loaded: tuple[tuple[str, float] | None, LifecycleTables] = (None, _BUNDLED)
 
 
 def _tables() -> LifecycleTables:
-    return _BUNDLED
+    global _loaded
+    path = cache_path()
+    try:
+        key: tuple[str, float] | None = (str(path), path.stat().st_mtime)
+    except OSError:
+        key = None
+    if key != _loaded[0]:
+        _loaded = (key, tables_from_data(load_current_data()) if key else _BUNDLED)
+    return _loaded[1]
 
 
 def is_server_os(os_text: str | None) -> bool:

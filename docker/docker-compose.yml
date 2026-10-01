@@ -26,6 +26,8 @@ x-celery-env: &celery-env
   CELERY_BROKER_URL: redis://redis:6379/0
   CELERY_RESULT_BACKEND: redis://redis:6379/0
   AGENT_PARITY_DB_URL: sqlite:////app/data/agent_parity.db
+  # Shared by the CLI, worker and beat so one daily refresh serves them all.
+  AGENT_PARITY_EOL_CACHE: /app/data/os_eol_cache.json
 
 services:
   agent-parity:

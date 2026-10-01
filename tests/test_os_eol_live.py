@@ -103,3 +103,72 @@ def test_an_unexpected_response_shape_raises_eol_fetch_error(monkeypatch):
 
     with pytest.raises(EOLFetchError):
         fetch_lifecycle_data()
+
+
+# --- refresh_cache: the daily refresh and the cache lookups read ---------------
+
+
+def _bundled_with(**eol_by_name):
+    """The bundled snapshot with some free-text dates changed, as a fetch would return it."""
+    from agent_parity import os_eol
+
+    data = os_eol.load_bundled_data()
+    data["free_text"] = [{**e, "eol_date": eol_by_name.get(e["name"], e["eol_date"])} for e in data["free_text"]]
+    return data
+
+
+def test_a_refresh_with_new_dates_writes_the_cache_and_lookups_use_it(monkeypatch):
+    from datetime import date
+
+    from agent_parity import os_eol
+
+    monkeypatch.setattr(
+        os_eol_live, "fetch_lifecycle_data", lambda timeout: _bundled_with(**{"Windows Server 2019": "2030-01-01"})
+    )
+    assert os_eol.eol_date_for("Windows Server 2019 Standard") == date(2029, 1, 9)
+
+    outcome = os_eol_live.refresh_cache()
+
+    assert outcome.result == "updated"
+    assert outcome.changes == ["changed name 'Windows Server 2019': 2029-01-09 -> 2030-01-01"]
+    assert os_eol.cache_path().exists()
+    assert os_eol.eol_date_for("Windows Server 2019 Standard") == date(2030, 1, 1)
+
+
+def test_a_refresh_with_the_same_data_is_unchanged_but_marks_the_cache_fresh(monkeypatch):
+    from datetime import timedelta
+
+    from agent_parity import os_eol
+
+    calls = []
+    monkeypatch.setattr(os_eol_live, "fetch_lifecycle_data", lambda timeout: calls.append(1) or _bundled_with())
+
+    assert os_eol_live.refresh_cache().result == "unchanged"
+    assert os_eol.cache_path().exists()
+    assert os_eol_live.refresh_cache(max_age=timedelta(days=1)).result == "fresh"
+    assert len(calls) == 1  # the second call didn't fetch
+
+
+def test_a_failed_refresh_keeps_the_current_data_and_writes_nothing():
+    from datetime import date
+
+    from agent_parity import os_eol
+
+    outcome = os_eol_live.refresh_cache()  # the autouse fixture makes every fetch fail
+
+    assert outcome.result == "failed"
+    assert "network disabled in tests" in outcome.error
+    assert not os_eol.cache_path().exists()
+    assert os_eol.eol_date_for("Windows Server 2019 Standard") == date(2029, 1, 9)
+
+
+def test_an_unreadable_cache_falls_back_to_the_bundled_data(caplog):
+    from datetime import date
+
+    from agent_parity import os_eol
+
+    os_eol.cache_path().write_text("{not json")
+
+    with caplog.at_level("WARNING", logger="agent_parity.os_eol"):
+        assert os_eol.eol_date_for("Windows Server 2019 Standard") == date(2029, 1, 9)
+    assert "Ignoring unreadable OS EOL cache" in caplog.text

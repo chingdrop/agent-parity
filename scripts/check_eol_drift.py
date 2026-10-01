@@ -18,25 +18,9 @@ import json
 import sys
 from pathlib import Path
 
-from agent_parity.os_eol_live import EOLFetchError, fetch_lifecycle_data
+from agent_parity.os_eol_live import EOLFetchError, diff_lifecycle_data, fetch_lifecycle_data
 
 DATA_PATH = Path(__file__).resolve().parent.parent / "src" / "agent_parity" / "os_eol_data.json"
-
-
-def _keyed(data: dict) -> dict[str, str]:
-    """Every entry as a readable key -> EOL date, for diffing."""
-    entries = {f"name {e['name']!r}": e["eol_date"] for e in data["free_text"]}
-    entries.update({f"{e['product']} build {e['build']} ({e['name']})": e["eol_date"] for e in data["builds"]})
-    return entries
-
-
-def diff(committed: dict, live: dict) -> list[str]:
-    old, new = _keyed(committed), _keyed(live)
-    changes = [f"added {key}: {new[key]}" for key in sorted(new.keys() - old.keys())]
-    changes += [f"removed {key} (was {old[key]})" for key in sorted(old.keys() - new.keys())]
-    changed = [key for key in sorted(old.keys() & new.keys()) if old[key] != new[key]]
-    changes += [f"changed {key}: {old[key]} -> {new[key]}" for key in changed]
-    return changes
 
 
 def main() -> int:
@@ -50,7 +34,7 @@ def main() -> int:
         print(exc, file=sys.stderr)
         return 2
 
-    changes = diff(json.loads(DATA_PATH.read_text()), live)
+    changes = diff_lifecycle_data(json.loads(DATA_PATH.read_text()), live)
     if not changes:
         print("No drift: the committed EOL data matches endoflife.date.")
         return 0

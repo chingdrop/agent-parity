@@ -430,7 +430,20 @@ both Server 2019 and a short-lived semi-annual server release. So build
 entries are keyed by product, and servers are looked up by their release
 name first ("Windows Server 2019" is exact), using the server build table
 only when the name carries no year. Before this, every Windows Server 2025
-machine was flagged end of life nine years early. AD's own build number is captured for *every*
+machine was flagged end of life nine years early.
+
+The data stays current on its own, as the original tool did by querying
+endoflife.date every time. `os_eol_live.refresh_cache` fetches both products,
+derives the tables with the same rules as the bundled snapshot, and writes
+them atomically to a cache file (`AGENT_PARITY_EOL_CACHE`, on the shared
+`dbdata` volume in Docker Compose), logging any dates that changed. Beat runs
+it daily at 06:30, ahead of the forced 07:00 run, and `agent-parity run`
+runs it at start when the cache is more than a day old. Lookups use the
+cache whenever it exists and is valid, re-reading it when it changes, and
+fall back to the bundled snapshot (`os_eol_data.json`) otherwise, so an
+endoflife.date outage never stops a run. `refresh_os_eol: false` in
+`config.yaml` turns it off for air-gapped deployments. The bundled snapshot
+in the repo is regenerated with `scripts/check_eol_drift.py --write`. AD's own build number is captured for *every*
 device (the same backfill principle as `machine_type`), so even a
 `missing_agent` row — no agent record at all — still gets a precise EOL
 classification instead of `unknown`.

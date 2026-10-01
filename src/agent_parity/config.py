@@ -154,6 +154,10 @@ class AppConfig:
     #: agent_parity.scheduling.persistence.fail_abandoned_runs. Generous on
     #: purpose: sequential collection of a large estate took hours.
     pending_run_timeout_hours: int = 24
+    #: Fetch current OS end-of-life data from endoflife.date (daily via beat,
+    #: and at `run` start when over a day old). False keeps the bundled
+    #: snapshot only, e.g. for an air-gapped deployment.
+    refresh_os_eol: bool = True
 
     def client(self, slug: str) -> ClientConfig:
         try:
@@ -269,6 +273,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         storage=parse_storage_config(raw),
         splunk=splunk,
         pending_run_timeout_hours=int(raw.get("pending_run_timeout_hours", 24)),
+        refresh_os_eol=bool(raw.get("refresh_os_eol", True)),
     )
 
 

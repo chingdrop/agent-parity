@@ -18,7 +18,7 @@ Two more axes rank the gaps: **server / Domain Controller** priority (a missing 
 
 ## Try it in 60 seconds
 
-Needs [uv](https://docs.astral.sh/uv/) and Python 3.12+. No credentials, no server, no network beyond installing dependencies: it runs against synthetic fixtures in `sample_data/`.
+Needs [uv](https://docs.astral.sh/uv/) and Python 3.12+. No credentials and no server: it runs against synthetic fixtures in `sample_data/`. The only network call is a daily fetch of OS end-of-life dates from [endoflife.date](https://endoflife.date/); offline, it uses the bundled copy.
 
 ```console
 git clone https://github.com/chingdrop/agent-parity.git
@@ -195,8 +195,10 @@ docker compose -f docker/docker-compose.yml up -d redis worker beat
 docker compose -f docker/docker-compose.yml run --rm agent-parity run --all --csv --workers
 ```
 
-Runs fully offline by default (config.yaml's fixture-mode connector + AD
-export) — no `.env` required.
+Runs on fixtures by default (config.yaml's fixture-mode connector + AD
+export) — no `.env` required. The worker, beat and CLI containers share one
+copy of the OS end-of-life data on the `dbdata` volume, refreshed daily from
+endoflife.date.
 
 The two live-infrastructure paths this package has — the AD-export
 object-storage handoff (see
