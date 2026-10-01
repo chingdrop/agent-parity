@@ -26,11 +26,13 @@ from __future__ import annotations
 import logging
 import time
 from contextlib import nullcontext
+from datetime import timedelta
 from pathlib import Path
 
 import click
 from celery.exceptions import TimeoutError as CeleryTimeoutError
 
+from agent_parity import os_eol_live
 from agent_parity.ad_export import ADParseError
 from agent_parity.agent_csv import AgentCSVParseError
 from agent_parity.config import load_config
@@ -99,6 +101,11 @@ def run(client: str | None, run_all: bool, write_csv: bool, workers: bool, timeo
 
     if write_csv:
         ensure_dir(OUT_DIR)
+
+    if config.refresh_os_eol:
+        refresh = os_eol_live.refresh_cache(max_age=timedelta(days=1), timeout=5.0)
+        if refresh.result == "updated":
+            click.echo(f"OS end-of-life data updated from endoflife.date ({len(refresh.changes)} changes).", err=True)
 
     abandoned = fail_abandoned_runs(config)
     if abandoned:

@@ -134,7 +134,19 @@ server build table only for year-less SAC names. Don't reintroduce a build-only 
 flagged every Server 2025 machine end of life from 2026-10-14. The data is
 `src/agent_parity/os_eol_data.json`, a snapshot derived from endoflife.date by
 `os_eol_live.derive_lifecycle_data` — regenerate it with `scripts/check_eol_drift.py --write`,
-never by hand, so the snapshot and any live fetch follow the same rules. Because a column is only pandas-suffixed
+never by hand, so the snapshot and any live fetch follow the same rules.
+**Live refresh**: `os_eol_live.refresh_cache` (the original tool queried endoflife.date
+every run) fetches and writes `os_eol.cache_path()` (`AGENT_PARITY_EOL_CACHE`, default
+`os_eol_cache.json` in the working directory, gitignored; `/app/data/os_eol_cache.json` on
+the shared volume in compose). Beat runs it daily at 06:30 (`tasks.refresh_os_eol_data`,
+before the 07:00 forced run) and `agent-parity run` at start when the cache is over a day
+old; `refresh_os_eol: false` in `config.yaml` disables both. Lookups (`os_eol._tables()`)
+prefer a valid cache, re-reading it when its mtime changes, else the bundled snapshot — a
+failed fetch writes nothing and never fails a run. The package-shipped JSON is deliberately
+never overwritten at runtime (each container has its own copy, and a rebuild would undo it).
+Tests can't reach endoflife.date: an autouse fixture in `tests/conftest.py` points the cache
+at `tmp_path` and makes every fetch fail; tests of the refresh patch
+`os_eol_live.fetch_lifecycle_data` over it. Because a column is only pandas-suffixed
 when it exists on *both* merge sides, watch for a bare (unsuffixed) `os_build`
 column if a test helper's frame doesn't include it on both the AD and agent side —
 this silently breaks the precedence logic without erroring. `eol_status` is always

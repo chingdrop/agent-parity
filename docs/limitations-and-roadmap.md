@@ -33,8 +33,9 @@ See [ADR 0008](decisions/0008-classify-os-eol-by-build-number-with-free-text-fal
 
 **The OS end-of-life data is Windows-only.** It covers Windows and Windows Server (named releases plus every build
 since Windows 10, per product); other operating systems classify as `unknown`. It is a committed snapshot of
-endoflife.date, which [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) compares and, with `--write`,
-regenerates. See [
+endoflife.date, kept current at runtime by a daily refresh (see the architecture doc's "OS end-of-life" section) and
+regenerated in the repo by [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) `--write`. A deployment
+that can't reach endoflife.date uses the bundled snapshot, which is only as current as its last regeneration. See [
 `os_eol.py`](../src/agent_parity/os_eol.py) and `test_eol_date_for_unknown_os_returns_none` in [
 `test_os_eol.py`](../tests/test_os_eol.py).
 
@@ -81,11 +82,9 @@ maintainer's own picks.
   command reports it. See [`db.py`](../src/agent_parity/scheduling/db.py).
 - **A Splunk dashboard and saved reports.** The opt-in Splunk export forwards every run, but this repository doesn't
   include the dashboard and reports that turned it into the quarterly report.
-- **The EOL drift check in CI.** [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) is manual today; a weekly
-  scheduled workflow would flag stale dates without anyone remembering to run it.
-- **A live endoflife.date source** with a fixture fallback, the same shape as the vendor connectors. The API is free and
-  needs no credentials. [`os_eol.py`](../src/agent_parity/os_eol.py) calls it "a natural, self-contained extension if
-  ever needed" and does not build it; the drift check above covers the "is this still right" question for now.
+- **The EOL drift check in CI.** Running deployments refresh their OS end-of-life data daily, but the snapshot committed
+  in the repo only changes when someone runs [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) `--write`. A
+  weekly workflow could run it and open a PR when the snapshot drifts.
 - **Confirming the two unverified vendor details** (SentinelOne's build-number field and BitDefender's company filter)
   against current API docs or a live tenant, as their docstrings recommend before relying on them live.
 

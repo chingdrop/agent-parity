@@ -1,4 +1,21 @@
 import pytest
+import requests
+
+
+@pytest.fixture(autouse=True)
+def offline_os_eol(tmp_path, monkeypatch):
+    """No test reaches endoflife.date, and none reads or writes a real EOL cache.
+
+    `agent-parity run` refreshes the OS EOL data at start; here that fetch fails
+    the way an offline machine's would, so runs use the bundled snapshot. Tests
+    of the refresh itself patch the fetch over this.
+    """
+    monkeypatch.setenv("AGENT_PARITY_EOL_CACHE", str(tmp_path / "os_eol_cache.json"))
+
+    def offline(url, timeout):
+        raise requests.ConnectionError("network disabled in tests")
+
+    monkeypatch.setattr("agent_parity.os_eol_live.requests.get", offline)
 
 
 @pytest.fixture

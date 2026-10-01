@@ -2,7 +2,9 @@
 
 The one place the rules for turning endoflife.date's public API into
 ``os_eol``'s lookup tables live, so the committed snapshot
-(``scripts/check_eol_drift.py --write``) and the daily refresh can't disagree:
+(``scripts/check_eol_drift.py --write``) and the daily refresh
+(``refresh_cache``: beat at 06:30, and ``agent-parity run`` when the cache is
+over a day old) can't disagree:
 
 * **Builds, per product.** A build number alone doesn't identify an OS: 26100 is
   both Windows 11 24H2 and Windows Server 2025, and 17763 is Windows 10 1809 and
@@ -19,10 +21,19 @@ The one place the rules for turning endoflife.date's public API into
 
 from __future__ import annotations
 
+import json
+import logging
 import re
-from datetime import UTC, datetime
+import time
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 
 import requests
+
+from agent_parity import os_eol
+from agent_parity.shared.atomic_io import atomic_write, ensure_dir
+
+logger = logging.getLogger(__name__)
 
 WINDOWS_API_URL = "https://endoflife.date/api/windows.json"
 WINDOWS_SERVER_API_URL = "https://endoflife.date/api/windows-server.json"
@@ -37,6 +48,58 @@ _CLIENT_NAMES = {"10": "Windows 10", "8.1": "Windows 8.1", "8": "Windows 8", "7"
 
 class EOLFetchError(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class RefreshOutcome:
+    #: "fresh" (cache younger than max_age, nothing fetched), "updated" (data
+    #: changed), "unchanged" (fetched, same data) or "failed" (kept current data).
+    result: str
+    changes: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+def refresh_cache(max_age: timedelta | None = None, timeout: float = 10.0) -> RefreshOutcome:
+    """Fetch endoflife.date and write the result to ``os_eol.cache_path()``.
+
+    Skips the fetch when the cache is younger than ``max_age``. On success the
+    cache is rewritten atomically (which also marks it fresh) and any
+    differences from the data in use are logged. On failure nothing is written
+    and lookups keep using what they had — the previous cache, else the bundled
+    snapshot — so an endoflife.date outage never stops a run.
+    """
+    path = os_eol.cache_path()
+    if max_age is not None and path.exists() and time.time() - path.stat().st_mtime < max_age.total_seconds():
+        return RefreshOutcome("fresh")
+    try:
+        live = fetch_lifecycle_data(timeout=timeout)
+    except EOLFetchError as exc:
+        logger.warning("Keeping the current OS EOL data: %s", exc)
+        return RefreshOutcome("failed", error=str(exc))
+
+    changes = diff_lifecycle_data(os_eol.load_current_data(), live)
+    ensure_dir(path.parent)
+    atomic_write(path, json.dumps(live, indent=2) + "\n")
+    if changes:
+        logger.info("OS EOL data updated from endoflife.date (%d changes): %s", len(changes), "; ".join(changes))
+        return RefreshOutcome("updated", changes)
+    return RefreshOutcome("unchanged")
+
+
+def diff_lifecycle_data(old: dict, new: dict) -> list[str]:
+    """Readable differences between two lifecycle datasets (added/removed/changed entries)."""
+    before, after = _keyed(old), _keyed(new)
+    changes = [f"added {key}: {after[key]}" for key in sorted(after.keys() - before.keys())]
+    changes += [f"removed {key} (was {before[key]})" for key in sorted(before.keys() - after.keys())]
+    changed = [key for key in sorted(before.keys() & after.keys()) if before[key] != after[key]]
+    changes += [f"changed {key}: {before[key]} -> {after[key]}" for key in changed]
+    return changes
+
+
+def _keyed(data: dict) -> dict[str, str]:
+    entries = {f"name {e['name']!r}": e["eol_date"] for e in data["free_text"]}
+    entries.update({f"{e['product']} build {e['build']} ({e['name']})": e["eol_date"] for e in data["builds"]})
+    return entries
 
 
 def fetch_lifecycle_data(timeout: float = 10.0) -> dict:

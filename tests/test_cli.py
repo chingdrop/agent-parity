@@ -270,3 +270,33 @@ def test_run_summary_notes_hostnames_ambiguous_across_ad_domains(capsys):
     assert cli._echo_report("acme", report, write_csv=False)
 
     assert "; 2 hostname(s) ambiguous across AD domains)" in capsys.readouterr().out
+
+
+def test_run_refreshes_os_eol_data_first_and_reports_an_update(monkeypatch, sqlite_db):
+    from agent_parity import os_eol, os_eol_live
+
+    data = os_eol.load_bundled_data()
+    data["free_text"][0] = {**data["free_text"][0], "eol_date": "2099-01-01"}
+    monkeypatch.setattr(os_eol_live, "fetch_lifecycle_data", lambda timeout: data)
+
+    result = CliRunner().invoke(cli.cli, ["run", "--client", "acme"])
+
+    assert result.exit_code == 0, result.output
+    assert "OS end-of-life data updated from endoflife.date (1 changes)." in result.output
+    assert os_eol.cache_path().exists()
+
+
+def test_run_skips_the_os_eol_refresh_when_disabled(monkeypatch, sqlite_db):
+    from dataclasses import replace
+
+    from agent_parity import os_eol, os_eol_live
+    from agent_parity.config import load_config
+
+    config = replace(load_config(), refresh_os_eol=False)
+    monkeypatch.setattr(cli, "load_config", lambda: config)
+    monkeypatch.setattr(os_eol_live, "fetch_lifecycle_data", lambda timeout: pytest.fail("must not fetch"))
+
+    result = CliRunner().invoke(cli.cli, ["run", "--client", "acme"])
+
+    assert result.exit_code == 0, result.output
+    assert not os_eol.cache_path().exists()

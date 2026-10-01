@@ -24,8 +24,9 @@ agent-parity host ──vendor token──▶ EDR vendor ──runs script──
         presigned PUT URL travels to the endpoint as a script argument
 ```
 
-The boundaries are the operator host, the vendor API and remote-scripting channel, the endpoint, the object store and,
-if enabled, Splunk. The endpoint receives a URL, never a storage credential.
+The boundaries are the operator host, the vendor API and remote-scripting channel, the endpoint, the object store,
+endoflife.date (an unauthenticated daily `GET` for OS end-of-life dates; nothing about the client is sent) and, if
+enabled, Splunk. The endpoint receives a URL, never a storage credential.
 
 ## The presigned PUT URL
 
@@ -53,6 +54,9 @@ if enabled, Splunk. The endpoint receives a URL, never a storage credential.
 - **Credentials in error text:** vendor API credentials and the Splunk token are sent only in request headers, never in
   the URL, params or body. HTTP error text includes the URL but not headers, so it does not contain them. Vendor error
   bodies are echoed as received (for example BitDefender's RPC error) and have not been checked for embedded secrets.
+- **OS end-of-life cache:** the daily refresh writes endoflife.date's public lifecycle data to
+  `AGENT_PARITY_EOL_CACHE` (`os_eol_cache.json`, gitignored). A tampered cache could misreport OS lifecycle status, not
+  coverage; an unreadable one is ignored in favour of the bundled snapshot.
 - **Splunk (opt-in):** forwards each run (one event per device row, with hostnames, OS and coverage status, plus
   a summary) to the configured HEC URL.
 - **Keeping secrets out of the repo:** `.env` and `.env.*` are gitignored (`.env.example` has empty values),

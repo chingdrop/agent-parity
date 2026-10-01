@@ -238,3 +238,24 @@ def test_dispatch_all_clients_first_fails_runs_abandoned_past_the_timeout(celery
     stuck = _get_run(sqlite_db, stuck_id)
     assert stuck.status == "failed"
     assert stuck.vendor_status["run"].startswith("error: abandoned")
+
+
+def test_refresh_os_eol_data_task_refreshes_the_cache(celery_eager, monkeypatch):
+    from agent_parity import os_eol, os_eol_live
+
+    monkeypatch.setattr(os_eol_live, "fetch_lifecycle_data", lambda timeout: os_eol.load_bundled_data())
+
+    assert tasks.refresh_os_eol_data() == "unchanged"
+    assert os_eol.cache_path().exists()
+
+
+def test_refresh_os_eol_data_task_does_nothing_when_disabled(celery_eager, monkeypatch):
+    from dataclasses import replace
+
+    from agent_parity import os_eol
+
+    config = replace(load_config(), refresh_os_eol=False)
+    monkeypatch.setattr(tasks, "load_config", lambda: config)
+
+    assert tasks.refresh_os_eol_data() == "disabled"
+    assert not os_eol.cache_path().exists()

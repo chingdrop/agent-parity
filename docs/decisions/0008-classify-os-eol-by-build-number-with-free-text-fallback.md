@@ -19,8 +19,9 @@ endoflife.date by `agent_parity.os_eol_live`.
 ## Alternatives considered
 
 - **One end-of-life date for bare "Windows 11"**: rejected as "a guess dressed up as data".
-- **Fetching endoflife.date live**: noted as a natural extension, not built; a static file answers the question, and
-  `scripts/check_eol_drift.py` checks it on demand.
+- **Fetching endoflife.date live**: built on 2026-10-01, matching the original tool, which queried it every run.
+  `os_eol_live.refresh_cache` refreshes a cache daily (beat) and at `run` start when it's over a day old; the bundled
+  snapshot is the fallback.
 
 ## Consequences
 
