@@ -437,6 +437,7 @@ testable:
 (
     ad_df.pipe(add_join_key)  # hostname -> normalized join key
     .pipe(merge_with_agents, agents_df)  # outer merge, indicator=True
+    .pipe(resolve_ambiguous_join_keys)  # same short name in two AD domains
     .pipe(classify_coverage, stale_days=14)  # indicator + staleness -> status
 )
 ```
@@ -447,6 +448,15 @@ depending on a vectorized `last_seen` check (`np.select`). Join keys are
 hostnames with the DNS suffix stripped, lowercased, and trimmed — so
 `ACME-WS-014.corp.acme.example` and `acme-ws-014` correlate. Coverage
 percentages fall out of `groupby`/`value_counts` (`summarize()`).
+
+One case breaks the "a short hostname is one machine" assumption: a
+multi-domain client can have `WS-001` in two domains. When an agent reported
+a full DNS name, `resolve_ambiguous_join_keys` keeps only its pairing with
+the AD object whose `DNSHostName` is that exact name (`match_method =
+fqdn_exact`), so the other domain's machine correctly shows as
+`missing_agent`. An agent that reported only `WS-001` can't be attributed,
+so its rows are flagged `ambiguous_join_key`, counted in the summary, logged
+as a warning and noted on `run`'s output instead of being silently trusted.
 
 ## Credentials: config.yaml + .env
 

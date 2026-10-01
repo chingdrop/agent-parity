@@ -24,8 +24,8 @@ the one-element case of the same loop, not a separate path. One domain failing d
 ## Consequences
 
 - Per-domain outcomes appear in `vendor_status` as `ad:<target_device>`.
-- Domains are assumed to be disjoint namespaces; a duplicate join key across domains is not detected or deduplicated,
-  matching [0005](0005-correlate-on-normalized-hostname-only.md).
+- A short hostname present in two domains is resolved by an exact FQDN match when the agent reports one, and flagged
+  `ambiguous_join_key` otherwise (see [0005](0005-correlate-on-normalized-hostname-only.md)).
 - Each domain needs its own reachable domain-joined endpoint
   (see [0001](0001-collect-ad-data-via-vendor-remote-scripting.md)).
 - The demo's `globex` client has two domains; `acme` has one.
