@@ -6,8 +6,8 @@
 # (including a real presigned-URL PUT over the actual network) through a
 # real S3-compatible server, not moto's simulation; and a real Celery chord
 # fans out/in through a real Redis broker and real worker/beat containers,
-# not task_always_eager. Needs Docker; not part of `uv run pytest` or any
-# fast/CI path — run manually, e.g. before a release.
+# not task_always_eager. Needs Docker, so it isn't part of `uv run pytest`;
+# .github/workflows/smoke.yml runs it weekly and on changes to the stack.
 #
 # Usage: docker/smoke_test.sh [--keep]
 #   --keep   leave the stack running on exit (default: always tears down)

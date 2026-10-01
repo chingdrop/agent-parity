@@ -1,0 +1,65 @@
+name: Smoke
+
+# docker/smoke_test.sh against the real compose stack: a real S3 server and a
+# real Celery chord through Redis, a worker and beat. The offline test suite
+# can't catch the things this does, such as an image disappearing from its
+# registry or a volume the containers can't write to.
+on:
+  schedule:
+    # Weekly, so upstream changes (a withdrawn image, a breaking base-image
+    # update) surface within days even when nothing in this repo changes.
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "src/agent_parity/storage.py"
+      - "src/agent_parity/scheduling/**"
+      - ".github/workflows/smoke.yml"
+  pull_request:
+    paths:
+      - "docker/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "src/agent_parity/storage.py"
+      - "src/agent_parity/scheduling/**"
+      - ".github/workflows/smoke.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        # The storage check runs on the host against the published S3 port.
+        run: uv sync --locked
+
+      - name: Smoke test
+        # --keep leaves the stack up so a failure's logs can be collected below.
+        run: docker/smoke_test.sh --keep
+
+      - name: Container logs
+        if: failure()
+        run: docker compose -p agent-parity-smoke -f docker/docker-compose.yml logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose -p agent-parity-smoke -f docker/docker-compose.yml down -v --remove-orphans

@@ -30,6 +30,8 @@ Notes on the record:
 - Runs still `pending` after `pending_run_timeout_hours` (a new `config.yaml` setting, default 24) are marked
   `failed`, checked on every beat tick and at the start of every `run`. A killed CLI or worker could otherwise leave a
   run `pending` forever.
+- `.github/workflows/smoke.yml`, which runs `docker/smoke_test.sh` (a real S3 server and a real Celery chord) weekly
+  and on changes to the Docker stack or scheduling code.
 - `run --workers --timeout MINUTES`, to stop waiting at a deadline while unfinished runs keep going on the workers.
 - An `inventory_rate_limit` attribute on each connector. The Celery inventory tasks are built from the connector
   registry with it, so adding a vendor needs no change to `scheduling/tasks.py`.

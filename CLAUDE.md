@@ -59,7 +59,9 @@ docker/smoke_test.sh                                 # round-trips a real object
 
 Ruff, mypy and the coverage gate are configured in `pyproject.toml` and run in CI (`.github/workflows/ci.yml`: `lint`,
 `typecheck`, `test`, `build`, and a `security` job with
-pip-audit and gitleaks; CodeQL and the `links.yml` lychee check run separately). `pre-commit` runs ruff and mypy locally.
+pip-audit and gitleaks; CodeQL, the `links.yml` lychee check and `smoke.yml` run separately —
+`smoke.yml` runs `docker/smoke_test.sh` weekly and on changes to `docker/`, the scheduling code,
+`storage.py` or the lockfile). `pre-commit` runs ruff and mypy locally.
 Tests are exempt from ruff's `S101`/`S106` by a per-file ignore, not by disabling the rules.
 
 ## Architecture
@@ -247,7 +249,7 @@ Broker/backend default to `redis://localhost:6379/0`, overridable via
 Tests run Celery tasks with `task_always_eager`/`task_eager_propagates` (the
 `celery_eager` fixture in `tests/conftest.py`) — in-process, no broker needed, same
 task semantics either way. `docker/smoke_check_celery.py` (via `docker/smoke_test.sh`,
-Docker-only) is the one thing eager-mode tests structurally can't prove: a real chord
+Docker-only, run by `.github/workflows/smoke.yml`) is the one thing eager-mode tests structurally can't prove: a real chord
 round-tripping through a real Redis broker and real `worker`/`beat` containers.
 
 ## Splunk export (`src/agent_parity/splunk_export.py`, `persistence.py`)
