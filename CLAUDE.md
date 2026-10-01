@@ -78,8 +78,9 @@ Four layers, collect → correlate → report:
 - **`src/agent_parity/pipeline.py`** — two orchestration entrypoints that tie the above
   together: `run_correlation_for_client()` (config.yaml + connectors, live or fixture)
   and `correlate_from_csvs()` (two CSVs, zero config). **`src/agent_parity/cli.py`** is a
-  thin wrapper: `compare` calls `correlate_from_csvs()` directly, while `run` goes
-  through `persistence.py` (as do the Celery `tasks.py`) — see "Scheduling & persistence" below.
+  thin wrapper: `compare` calls `correlate_from_csvs()` directly, while `run` executes the
+  Celery chord in `tasks.py` (in-process or on workers), which persists through
+  `persistence.py` — see "Scheduling & persistence" below.
 
 ## Correlation engine (`src/agent_parity/correlation.py`)
 
@@ -221,7 +222,7 @@ so both paths share one set of error handling and status keys — keep it that w
 than re-implementing collection in `tasks.py`. The helpers never raise; a failure comes
 back as an `"error: ..."` status so one broken vendor API can't stop the chord from firing; the callback records per-vendor outcomes in `vendor_status`
 (`COMPLETE` vs `PARTIAL`), and `mark_run_failed` (`link_error`) is the backstop for the
-callback itself blowing up. `dispatch_client` does a plain `session.commit()` before
+callback itself blowing up. `start_client_run` does a plain `session.commit()` before
 dispatching the chord,
 since a committed SQLite write is immediately visible to any connection opened
 afterward. `dispatch_all_clients` (the beat entrypoint) reads each client's own

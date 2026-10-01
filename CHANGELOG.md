@@ -22,7 +22,7 @@ Notes on the record:
 - `docs/sample-report.md`, generated from a real run against the fixtures by `scripts/gen_sample_report.py`.
 - `docs/architecture.md`, ten architecture decision records under `docs/decisions/`, and `docs/threat-model.md`.
 - A README first screen with badges, a short "what it answers" list and a 60-second try-it, plus `docs/demo.tape`, a vhs
-  script for a terminal recording (the GIF is not rendered yet).
+  script for a terminal recording, rendered as `docs/demo.gif`.
 - `SECURITY.md`, Dependabot (uv and GitHub Actions) and a weekly CodeQL workflow.
 - CI: a `security` job running pip-audit and gitleaks (also weekly), coverage reporting with an 88% gate, ruff's
   security (`S`) rules and stricter mypy flags.
