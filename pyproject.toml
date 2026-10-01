@@ -7,6 +7,7 @@ name = "agent-parity"
 version = "1.2.0"
 description = "Device coverage reconciliation: correlate an AD computer inventory against EDR agent inventories (SentinelOne, Carbon Black, BitDefender) to find missing, orphaned, and stale agent coverage."
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
     "pandas>=2.2",
@@ -79,10 +80,10 @@ warn_unused_ignores = true
 check_untyped_defs = true
 strict_equality = true
 warn_unreachable = true
-# Deliberately not `strict = true`: that currently reports 80 errors in 19 files
+# Deliberately not `strict = true`: that currently reports 71 errors in 17 files
 # (41 bare generics [type-arg], 15 missing annotations [no-untyped-def],
-# 10 [no-untyped-call], 7 untyped Celery decorators [untyped-decorator],
-# 6 [no-any-return], 1 [attr-defined]). Tighten one flag at a time from here.
+# 6 [no-untyped-call], 4 untyped Celery decorators [untyped-decorator],
+# 5 [no-any-return]). Tighten one flag at a time from here.
 
 [[tool.mypy.overrides]]
 module = ["celery.*"]

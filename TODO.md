@@ -52,10 +52,9 @@ Set up by the security-hygiene branch; none of the new workflows has run on GitH
   `.github/workflows/codeql.yml`.
 - [ ] `main` has no branch protection or rulesets today. If you add protection, require these check names: `lint`,
   `typecheck`, `test`, `build`, `security` and `Analyze (python)`. `lint` no longer runs mypy; that is `typecheck`.
-- [ ] Decide on a coverage badge. None was added on purpose; the CI gate is 88% (measured 90.83%, line and branch).
-- [ ] Optionally tighten mypy toward `strict`, one flag at a time. `--strict` currently reports 80 errors in 19 files:
-  41 bare generics, 15 missing annotations, 10 untyped calls, 7 untyped Celery decorators, 6 `no-any-return`, 1
-  `attr-defined`.
+- [ ] Decide on a coverage badge. None was added on purpose; the CI gate is 88% (measured 92.84%, line and branch).
+- [ ] Optionally tighten mypy toward `strict`, one flag at a time. `--strict` currently reports 71 errors in 17 files:
+  41 bare generics, 15 missing annotations, 6 untyped calls, 4 untyped Celery decorators, 5 `no-any-return`.
 
 ## Repo hygiene
 
