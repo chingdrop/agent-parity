@@ -79,6 +79,7 @@ uv run agent-parity compare ad_export.csv agent_export.csv   # your own two CSVs
 uv run agent-parity run --all                                 # config.yaml + connectors, every client
 uv run agent-parity run --client acme --csv                   # just one client, plus output/acme.csv
 uv run agent-parity run --all --workers                       # fan out to running Celery workers
+uv run agent-parity run --all --workers --timeout 90          # ... and stop waiting after 90 minutes
 uv run pytest                                                  # 290+ tests, all offline
 ```
 

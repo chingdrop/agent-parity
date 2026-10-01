@@ -270,3 +270,21 @@ def test_build_storage_rejects_unsupported_backend():
     config = StorageConfig(backend="azure_blob", bucket="b", access_key="a", secret_key="s")
     with pytest.raises(ConfigError, match="Unsupported storage backend"):
         build_storage(config)
+
+
+def test_pending_run_timeout_comes_from_config_yaml():
+    assert load_config().pending_run_timeout_hours == 24
+
+
+def test_pending_run_timeout_defaults_when_config_yaml_omits_it(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("stale_days: 14\n")
+
+    assert load_config(path).pending_run_timeout_hours == 24
+
+
+def test_pending_run_timeout_is_read_from_config_yaml(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text("pending_run_timeout_hours: 6\n")
+
+    assert load_config(path).pending_run_timeout_hours == 6

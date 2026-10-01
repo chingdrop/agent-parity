@@ -24,10 +24,12 @@ repeatable/scheduled runs against a live API.
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import nullcontext
 from pathlib import Path
 
 import click
+from celery.exceptions import TimeoutError as CeleryTimeoutError
 
 from agent_parity.ad_export import ADParseError
 from agent_parity.agent_csv import AgentCSVParseError
@@ -35,7 +37,7 @@ from agent_parity.config import load_config
 from agent_parity.pipeline import correlate_from_csvs
 from agent_parity.scheduling.celery_app import app as celery_app
 from agent_parity.scheduling.celery_app import run_eagerly
-from agent_parity.scheduling.tasks import start_client_run
+from agent_parity.scheduling.tasks import fail_abandoned_runs, start_client_run
 from agent_parity.shared.atomic_io import atomic_write, ensure_dir
 from agent_parity.shared.logging_setup import setup_logging
 from agent_parity.shared.tabular_io import write_structured_file
@@ -68,12 +70,20 @@ def cli() -> None:
     is_flag=True,
     help="Dispatch to running Celery workers (in parallel) instead of running the tasks in-process.",
 )
-def run(client: str | None, run_all: bool, write_csv: bool, workers: bool) -> None:
+@click.option(
+    "--timeout",
+    type=click.FloatRange(min=0, min_open=True),
+    metavar="MINUTES",
+    help="With --workers: stop waiting after this many minutes in total. Unfinished runs keep going on the workers.",
+)
+def run(client: str | None, run_all: bool, write_csv: bool, workers: bool, timeout: float | None) -> None:
     """Collect + correlate via config.yaml and connectors, recorded in SQLite run history.
 
     Runs the same Celery chord beat schedules: in-process by default, or on
     real workers with --workers.
     """
+    if timeout is not None and not workers:
+        raise click.UsageError("--timeout only applies with --workers; an in-process run finishes before returning.")
     config = load_config()
     if not config.clients:
         raise click.ClickException("No clients configured in config.yaml.")
@@ -90,7 +100,16 @@ def run(client: str | None, run_all: bool, write_csv: bool, workers: bool) -> No
     if write_csv:
         ensure_dir(OUT_DIR)
 
+    abandoned = fail_abandoned_runs(config)
+    if abandoned:
+        click.echo(
+            f"Marked {len(abandoned)} run(s) still pending after {config.pending_run_timeout_hours} h as failed: "
+            + ", ".join(map(str, abandoned)),
+            err=True,
+        )
+
     had_failure = False
+    deadline = time.monotonic() + timeout * 60 if timeout is not None else None
     with nullcontext() if workers else run_eagerly():
         if workers:
             _require_workers()
@@ -99,7 +118,14 @@ def run(client: str | None, run_all: bool, write_csv: bool, workers: bool) -> No
         started = [(slug, *start_client_run(config, config.client(slug), include_csv=write_csv)) for slug in slugs]
         for slug, run_id, pending in started:
             try:
-                report = pending.get()
+                report = pending.get(timeout=None if deadline is None else max(0.0, deadline - time.monotonic()))
+            except CeleryTimeoutError:
+                click.echo(
+                    f"[{slug}] run {run_id}: still running after {timeout:g} min; left running on the workers.",
+                    err=True,
+                )
+                had_failure = True
+                continue
             except Exception as exc:  # noqa: BLE001 — report every client, not just the first failure
                 click.echo(f"[{slug}] run {run_id}: failed: {exc}", err=True)
                 had_failure = True

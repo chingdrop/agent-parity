@@ -222,8 +222,12 @@ handling. Fan-out tasks never raise — a broken vendor API comes back as an
 `"error: ..."` status instead, so the chord still fires and the run completes `PARTIAL` rather
 than not at all. `dispatch_all_clients` (the beat entrypoint) reads each
 client's own `sync_interval_hours` to decide whether it's due; the beat
-schedule ticks it hourly plus a forced daily 07:00 run. Broker/backend
-default to `redis://localhost:6379/0`
+schedule ticks it hourly plus a forced daily 07:00 run. Each tick, and each
+`run`, first marks any run still `pending` after `pending_run_timeout_hours`
+(`config.yaml`, default 24) as `failed`, so a killed CLI or a dead worker
+can't leave a run unfinished forever. With `--workers`, `--timeout MINUTES`
+stops `run` waiting at a deadline; unfinished runs keep going on the workers.
+Broker/backend default to `redis://localhost:6379/0`
 (`CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND` to override).
 
 ```console

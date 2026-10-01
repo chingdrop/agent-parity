@@ -41,6 +41,7 @@ uv run agent-parity compare ad.csv agent.csv   # two CSVs, zero config.yaml/conn
 uv run agent-parity run --all                  # config.yaml + connectors, every client, persisted as a CorrelationRun (SQLite)
 uv run agent-parity run --client acme --csv    # just one client, and also write output/acme.csv
 uv run agent-parity run --all --workers        # same chord, on running Celery workers (in parallel)
+uv run agent-parity run --all --workers --timeout 90   # ... but stop waiting after 90 minutes
 
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
@@ -229,6 +230,17 @@ afterward. `dispatch_all_clients` (the beat entrypoint) reads each client's own
 `ClientConfig.sync_interval_hours` to decide whether it's due; `celery_app.py`'s
 `beat_schedule` ticks it hourly plus a daily 07:00 forced run (`force=True`, ignoring
 cadence) — both real, settled facts from the historical schedule, not arbitrary.
+**Abandoned runs**: a run whose process dies before the callback (Ctrl-C during an
+in-process `run`, a killed worker) would otherwise stay PENDING forever, so
+`tasks.fail_abandoned_runs` (wrapping `persistence.fail_abandoned_runs`) marks PENDING runs
+older than `config.yaml`'s `pending_run_timeout_hours` (default 24 — generous because
+sequential collection took hours) as FAILED, recording why under `vendor_status["run"]`.
+It runs at the start of every beat tick (`dispatch_all_clients`) and every `agent-parity
+run`; a late callback for such a run is discarded by `persist_correlation`'s PENDING
+check. `run --workers --timeout MINUTES` stops *waiting* at one overall deadline and
+exits non-zero, but deliberately leaves the run alone — the workers may still finish it,
+and the abandoned-run cleanup catches it if they don't. `--timeout` without `--workers`
+is a usage error (an in-process run can't be left running).
 Broker/backend default to `redis://localhost:6379/0`, overridable via
 `CELERY_BROKER_URL`/`CELERY_RESULT_BACKEND`.
 

@@ -218,3 +218,23 @@ def test_dispatch_all_clients_respects_per_client_cadence(celery_eager, sqlite_d
     # force=True overrides the cadence check.
     forced = tasks.dispatch_all_clients(force=True)
     assert sorted(forced) == sorted(config.clients)
+
+
+def test_dispatch_all_clients_first_fails_runs_abandoned_past_the_timeout(celery_eager, sqlite_db):
+    from datetime import UTC, datetime, timedelta
+
+    from agent_parity.scheduling.persistence import sync_client_from_config
+
+    config = load_config()
+    with _sessionmaker(sqlite_db)() as session:
+        client = sync_client_from_config(session, config.client("acme"))
+        stuck = CorrelationRun(client_id=client.id, started_at=datetime.now(UTC) - timedelta(hours=48))
+        session.add(stuck)
+        session.commit()
+        stuck_id = stuck.id
+
+    tasks.dispatch_all_clients()
+
+    stuck = _get_run(sqlite_db, stuck_id)
+    assert stuck.status == "failed"
+    assert stuck.vendor_status["run"].startswith("error: abandoned")
