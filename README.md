@@ -4,7 +4,7 @@ Correlate an Active Directory computer inventory against an EDR/security agent i
 
 [![CI](https://github.com/chingdrop/agent-parity/actions/workflows/ci.yml/badge.svg)](https://github.com/chingdrop/agent-parity/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ## What it answers
 
@@ -47,7 +47,7 @@ This is a from-scratch rebuild of a tool I originally built professionally, usin
 
 In the original deployment, agent coverage (SentinelOne agents divided by computers in AD) rose from 47% to 80%, a gain of 33 percentage points, across roughly 6,000 endpoints over about six months.
 
-I also automated the quarterly report, which had been assembled by hand: gathering the data, running the calculations and building the graphs. Splunk dashboards and reports replaced that. This repo includes the opt-in [Splunk delta export](docs/architecture.md#splunk-delta-export) that feeds Splunk, but not the dashboards themselves.
+I also automated the quarterly report, which had been assembled by hand: gathering the data, running the calculations and building the graphs. Splunk dashboards and reports replaced that. This repo includes the opt-in [Splunk export](docs/architecture.md#splunk-export) that feeds Splunk, but not the dashboards themselves.
 
 ## About this project
 
@@ -263,13 +263,14 @@ module does too:
   the FAILED-on-no-AD-data path through the real callback, a duplicate
   callback delivery not double-counting, and `dispatch_all_clients` respecting
   (and `force`-overriding) each client's `sync_interval_hours`.
-- **Splunk delta export** (`test_splunk_export.py`, plus cases in
+- **Splunk export** (`test_splunk_export.py`, plus cases in
   `test_persistence.py`): the HEC forwarder — disabled/no-op when
-  unconfigured, correct envelope shape, batching above 100 events,
-  `SplunkExportError` on a failed POST — and the diffing logic itself: a
-  first run with no history emits every snapshot as new, a second run only
-  emits genuinely changed statuses, an unchanged run emits nothing, and a
-  simulated Splunk outage never fails the underlying `finalize_run`.
+  unconfigured, one event per row then the summary last, every event
+  stamped with the run's time, batching above 100 events,
+  `SplunkExportError` on a failed POST — and building the events from a
+  run: every row of the table plus a correct summary, a run after a failed
+  run sending exactly its own rows, and a simulated Splunk outage never
+  failing the underlying `finalize_run`.
 - **Inlined helpers in isolation** (`tests/shared/`): `RestAdapter`'s
   content-type-based parsing, retry configuration, header merging, `files=`
   passthrough; `ObjectStorage`'s presigned-URL round trip (against `moto`);

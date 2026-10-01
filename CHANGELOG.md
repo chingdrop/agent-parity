@@ -49,9 +49,14 @@ Notes on the record:
   running workers with the new `--workers` flag. `run_and_persist_for_client` is removed; `finalize_run` returns the
   `CorrelationResult` instead of a snapshot count.
 
+- **Breaking:** the Splunk export sends every run whole, one event per row (`agent_parity:coverage`) plus a summary
+  event (`agent_parity:coverage_summary`), as the original tool did, instead of per-run deltas. The delta design lost
+  gap closures (a fixed gap's new row never matched its old one) and re-sent everything after a failed run.
+  `export_deltas_to_splunk`/`send_deltas` are replaced by `export_run_to_splunk`/`send_run`.
 - The Docker Compose object store is now the Versity S3 Gateway (`s3` service, pinned image) instead of MinIO, whose
   images were withdrawn from Docker Hub. `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` are renamed `LOCAL_S3_ACCESS_KEY`/
   `LOCAL_S3_SECRET_KEY`. See ADR 0011.
+- Relicensed from GPL-3.0 to MIT. `pyproject.toml` now declares `license = "MIT"`.
 
 ### Removed
 

@@ -77,7 +77,7 @@ maintainer's own picks.
 - **A coverage-trend report.** A command that reports coverage over time from the stored `CoverageSnapshot` history. The
   original tool existed to show the quarterly upward trend; today `run` and the Celery tasks store the history, but no
   command reports it. See [`db.py`](../src/agent_parity/scheduling/db.py).
-- **A Splunk dashboard and saved reports.** The opt-in delta export forwards the data, but this repository doesn't
+- **A Splunk dashboard and saved reports.** The opt-in Splunk export forwards every run, but this repository doesn't
   include the dashboard and reports that turned it into the quarterly report.
 - **Duplicate join-key detection.** Flag two devices that normalize to the same hostname, including across AD domains
   (see "Matching is hostname-only" above).
@@ -94,7 +94,7 @@ maintainer's own picks.
 ### Explicitly not planned
 
 - **A web dashboard.** There is no plan to build one; reporting is `CorrelationResult` and `CoverageSnapshot` history
-  plus the opt-in Splunk delta export.
+  plus the opt-in Splunk export.
 - **Real-time ingestion.** This is a batch tool on a schedule, not a streaming one.
 - **Fuzzy hostname matching.** A renamed machine resolves itself once its agent reports the new hostname, and a wrong
   fuzzy match would hide a gap. See [ADR 0005](decisions/0005-correlate-on-normalized-hostname-only.md).

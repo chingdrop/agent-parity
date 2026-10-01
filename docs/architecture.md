@@ -237,37 +237,51 @@ Tests run Celery tasks eagerly (`task_always_eager`, no broker needed) —
 thing that can't prove: a real chord round-tripping through a real Redis
 broker and real worker/beat containers.
 
-## Splunk delta export
+## Splunk export
 
-Real production behavior: the original tool fed Splunk. It was briefly removed
-from this repo while a Django dashboard (a rebuild-only addition, never part of
-the original tool, since deleted) handled visualization, then restored. Splunk is a *sink*, never the system of record (SQLite stays
-authoritative), and forwarding is entirely opt-in:
+Real production behavior: the original tool sent every run to Splunk whole,
+one event per row of the final table, and its dashboard showed the most
+recent run. This package does the same. Splunk is a *sink*, never the system
+of record (SQLite stays authoritative), and forwarding is entirely opt-in:
 `src/agent_parity/config.py`'s `SplunkConfig.enabled` is `False` unless both
 `hec_url` and `hec_token` are configured — the same opt-in shape as object
 storage or a vendor's own credentials.
 
-**Deltas, not snapshots**: `persistence.export_deltas_to_splunk` diffs a run's
-`CoverageSnapshot` rows against the client's previous run (keyed by
-`(device, vendor)`) and only forwards rows whose status is new or changed —
-re-indexing every device every run would just bloat a Splunk license for
-data the run history already has. `splunk_export.send_deltas` does
-the actual HTTP Event Collector POST: newline-delimited JSON envelopes,
-batched at 100 events per request.
+**Each run, whole**: `persistence.export_run_to_splunk` sends one event per
+row of the classified table (`agent_parity:coverage`), each tagged with the
+client, `run_id` and run start, then one summary event per run
+(`agent_parity:coverage_summary`) with the run status, per-vendor outcomes,
+coverage percentages and status counts. Every event is timestamped with the
+run's start. The summary goes last, so it marks the run as fully sent: a
+dashboard showing the latest summary's run never shows a half-ingested run.
+
+```
+index=security_coverage sourcetype=agent_parity:coverage
+| eventstats max(run_id) as latest by client | where run_id=latest
+```
+
+Trend charts are a `timechart` over the summary events. Rows are separate
+events rather than one event holding the whole table because Splunk truncates
+events at 10,000 bytes and stops automatic JSON field extraction at 5,000 by
+default. (An earlier version of this rebuild sent per-run deltas instead; it
+lost gap closures, since a fixed gap's new row never matched its old one, and
+re-sent everything after a failed run. A few MB per run is not a license
+concern at this scale.)
 
 ```yaml
 splunk:
   hec_url: ${SPLUNK_HEC_URL}
   hec_token: ${SPLUNK_HEC_TOKEN}
   index: security_coverage
-  sourcetype: agent_parity:coverage_delta
+  sourcetype: agent_parity:coverage
+  summary_sourcetype: agent_parity:coverage_summary
 ```
 
-**A Splunk outage never fails a run** — `persistence.finalize_run` catches
+**A Splunk outage never fails a run** — `persistence.persist_result` catches
 `SplunkExportError` and logs it; the run's own `COMPLETE`/`PARTIAL` status
-depends only on collection/correlation, never on whether the delta export
-succeeded. Only the persisted paths (`run`, Celery) touch Splunk at all —
-`compare` has no run history to diff against.
+depends only on collection/correlation, never on whether the export
+succeeded. A `FAILED` run has no table and sends nothing. Only `run` and the
+schedule send to Splunk; `compare` never does.
 
 ## AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 

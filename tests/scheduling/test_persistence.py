@@ -1,18 +1,19 @@
 """Persistence-layer tests: idempotency, the FAILED-on-no-AD-data case, and
-Splunk coverage-delta export.
+the Splunk export.
 
 These exercise agent_parity/scheduling/persistence.py directly (no Celery involved —
 that's tests/scheduling/test_tasks.py's job); same known scenarios
 tests/test_pipeline_sync.py already pins for the pure (unpersisted) path.
 """
 
-from datetime import UTC, datetime, timedelta
+import json
+from datetime import UTC
 
 from agent_parity.config import SplunkConfig, load_config
 from agent_parity.scheduling.db import CorrelationRun, CoverageSnapshot, RunStatus, get_engine, init_db, session_factory
 from agent_parity.scheduling.persistence import (
     SplunkExportError,
-    export_deltas_to_splunk,
+    export_run_to_splunk,
     finalize_run,
     persist_correlation,
     sync_client_from_config,
@@ -101,164 +102,87 @@ def test_persist_correlation_is_idempotent_on_duplicate_call():
         assert session.query(CoverageSnapshot).filter_by(run_id=run.id).count() == first_count
 
 
-# --- Splunk delta export ----------------------------------------------------
+# --- Splunk export: the whole run, one event per row plus a summary --------
 
 
 def _splunk_config() -> SplunkConfig:
     return SplunkConfig(hec_url="https://splunk.example:8088", hec_token="tok")
 
 
-def _capturing_send_deltas(captured):
-    def _send(deltas, splunk):
-        captured["deltas"] = deltas
-        return len(deltas)
+def _capture_send_run(monkeypatch):
+    calls = []
 
-    return _send
+    def _send(rows, summary, splunk, *, event_time):
+        calls.append({"rows": rows, "summary": summary, "event_time": event_time})
+        return len(rows) + 1
 
-
-def _make_run(session, client, started_at, snapshots):
-    """A CorrelationRun with a fixed set of (device, vendor, status) snapshots,
-    built directly rather than through the full pipeline — export_deltas_to_splunk
-    only cares about run history shape, not how it got there."""
-
-    run = CorrelationRun(
-        client_id=client.id,
-        stale_days=14,
-        started_at=started_at,
-        status=RunStatus.COMPLETE.value,
-        finished_at=started_at,
-    )
-    session.add(run)
-    session.flush()
-    for device, vendor, status in snapshots:
-        session.add(CoverageSnapshot(run_id=run.id, device_id=device.id, status=status, vendor=vendor))
-    session.flush()
-    return run
+    monkeypatch.setattr("agent_parity.scheduling.persistence.splunk_export.send_run", _send)
+    return calls
 
 
-def test_export_deltas_emits_every_snapshot_as_new_when_no_previous_run(monkeypatch):
-    from agent_parity.scheduling.db import Client, Device
-
-    captured: dict = {}
-    monkeypatch.setattr(
-        "agent_parity.scheduling.persistence.splunk_export.send_deltas", _capturing_send_deltas(captured)
-    )
+def test_a_finalized_run_is_sent_as_one_event_per_row_plus_a_summary(monkeypatch):
+    calls = _capture_send_run(monkeypatch)
 
     with _session() as session:
-        client = Client(slug="acme", name="Acme Corp")
-        session.add(client)
-        session.flush()
-        device = Device(client_id=client.id, join_key="acme-ws-001", hostname="ACME-WS-001")
-        session.add(device)
-        session.flush()
+        run, result = _finalize_acme_run(session, splunk=_splunk_config())
+        started_at = run.started_at.replace(tzinfo=UTC)
 
-        run = _make_run(session, client, datetime.now(UTC), [(device, "sentinelone", "covered")])
-        session.commit()
-
-        count = export_deltas_to_splunk(session, run, _splunk_config())
-
-    assert count == 1
-    assert len(captured["deltas"]) == 1
-    delta = captured["deltas"][0]
-    assert delta["previous_status"] is None
-    assert delta["status"] == "covered"
-    assert delta["join_key"] == "acme-ws-001"
-    assert delta["client"] == "acme"
-
-
-def test_export_deltas_only_emits_changed_statuses(monkeypatch):
-    from agent_parity.scheduling.db import Client, Device
-
-    captured: dict = {}
-    monkeypatch.setattr(
-        "agent_parity.scheduling.persistence.splunk_export.send_deltas", _capturing_send_deltas(captured)
-    )
-
-    with _session() as session:
-        client = Client(slug="acme", name="Acme Corp")
-        session.add(client)
-        session.flush()
-        unchanged = Device(client_id=client.id, join_key="acme-ws-001", hostname="ACME-WS-001")
-        changed = Device(client_id=client.id, join_key="acme-ws-002", hostname="ACME-WS-002")
-        session.add_all([unchanged, changed])
-        session.flush()
-
-        now = datetime.now(UTC)
-        _make_run(
-            session,
-            client,
-            now - timedelta(hours=1),
-            [(unchanged, "sentinelone", "covered"), (changed, "carbonblack", "missing_agent")],
-        )
-        second = _make_run(
-            session,
-            client,
-            now,
-            [(unchanged, "sentinelone", "covered"), (changed, "carbonblack", "orphaned_agent")],
-        )
-        session.commit()
-
-        count = export_deltas_to_splunk(session, second, _splunk_config())
-
-    assert count == 1
-    assert len(captured["deltas"]) == 1
-    delta = captured["deltas"][0]
-    assert delta["join_key"] == "acme-ws-002"
-    assert delta["previous_status"] == "missing_agent"
-    assert delta["status"] == "orphaned_agent"
+    assert len(calls) == 1
+    rows, summary = calls[0]["rows"], calls[0]["summary"]
+    assert len(rows) == len(result.frame) == 51
+    assert {(r["client"], r["run_id"]) for r in rows} == {("acme", run.id)}
+    assert {r["run_started_at"] for r in rows} == {started_at.isoformat()}
+    assert "_merge" not in rows[0]
+    assert {"join_key", "status", "vendor", "machine_type", "eol_status"} <= rows[0].keys()
+    assert next(r for r in rows if r["join_key"] == "acme-sql02")["status"] == "missing_agent"
+    assert summary["client"] == "acme"
+    assert summary["run_id"] == run.id
+    assert summary["status"] == RunStatus.COMPLETE.value
+    assert summary["coverage_pct"] == 81.8
+    assert summary["status_counts"]["missing_agent"] == 5
+    assert set(summary["vendor_status"]) >= {"ad:ACME-DC01", "sentinelone"}
+    assert calls[0]["event_time"] == started_at.timestamp()
+    # Everything must survive the trip to HEC as plain JSON.
+    json.dumps(rows)
+    json.dumps(summary)
 
 
-def test_export_deltas_returns_zero_when_nothing_changed(monkeypatch):
-    from agent_parity.scheduling.db import Client, Device
-
-    captured: dict = {}
-    monkeypatch.setattr(
-        "agent_parity.scheduling.persistence.splunk_export.send_deltas", _capturing_send_deltas(captured)
-    )
+def test_a_run_after_a_failed_run_sends_exactly_its_own_rows(monkeypatch):
+    """No previous-run baseline is involved, so a FAILED run (no snapshots)
+    can't make the next run re-send or mislabel anything."""
+    calls = _capture_send_run(monkeypatch)
+    config = load_config()
 
     with _session() as session:
-        client = Client(slug="acme", name="Acme Corp")
-        session.add(client)
+        client = sync_client_from_config(session, config.client("acme"))
+        failed = CorrelationRun(client_id=client.id, stale_days=config.stale_days)
+        session.add(failed)
         session.flush()
-        device = Device(client_id=client.id, join_key="acme-ws-001", hostname="ACME-WS-001")
-        session.add(device)
-        session.flush()
-
-        now = datetime.now(UTC)
-        _make_run(session, client, now - timedelta(hours=1), [(device, "sentinelone", "covered")])
-        second = _make_run(session, client, now, [(device, "sentinelone", "covered")])
+        finalize_run(session, failed, None, [], {"ad:ACME-DC01": "error: offline"}, splunk=_splunk_config())
         session.commit()
 
-        count = export_deltas_to_splunk(session, second, _splunk_config())
+        run, _ = _finalize_acme_run(session, splunk=_splunk_config())
 
-    assert count == 0
-    assert captured["deltas"] == []
+    assert len(calls) == 1  # the failed run sends nothing
+    assert len(calls[0]["rows"]) == 51
+    assert {r["run_id"] for r in calls[0]["rows"]} == {run.id}
 
 
-def test_export_deltas_is_a_noop_when_splunk_is_not_configured():
-    from agent_parity.scheduling.db import Client, Device
+def test_export_run_to_splunk_is_a_noop_when_splunk_is_not_configured(monkeypatch):
+    calls = _capture_send_run(monkeypatch)
 
     with _session() as session:
-        client = Client(slug="acme", name="Acme Corp")
-        session.add(client)
-        session.flush()
-        device = Device(client_id=client.id, join_key="acme-ws-001", hostname="ACME-WS-001")
-        session.add(device)
-        session.flush()
+        run, result = _finalize_acme_run(session)
+        assert export_run_to_splunk(session, run, result, SplunkConfig()) == 0
 
-        run = _make_run(session, client, datetime.now(UTC), [(device, "sentinelone", "covered")])
-        session.commit()
-
-        count = export_deltas_to_splunk(session, run, SplunkConfig())  # unconfigured
-
-    assert count == 0
+    assert calls == []
 
 
 def test_finalize_run_does_not_fail_when_splunk_export_raises(monkeypatch):
     def _raise(*args, **kwargs):
         raise SplunkExportError("HEC unreachable")
 
-    monkeypatch.setattr("agent_parity.scheduling.persistence.export_deltas_to_splunk", _raise)
+    monkeypatch.setattr("agent_parity.scheduling.persistence.export_run_to_splunk", _raise)
 
     with _session() as session:
         run, result = _finalize_acme_run(session, splunk=_splunk_config())

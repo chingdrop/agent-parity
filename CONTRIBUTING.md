@@ -33,7 +33,7 @@ src/agent_parity/
     os_eol.py          # OS end-of-life reference data and matching
     pipeline.py        # pure collect + correlate orchestration, no persistence
     script_runner.py   # runs the AD export script through a vendor connector
-    splunk_export.py   # Splunk delta export
+    splunk_export.py   # Splunk export (one event per row + a run summary)
     scheduling/        # SQLAlchemy schema, persistence, and the Celery scheduled path
     shared/            # inlined HTTP adapter, object storage and helpers
     scripts/           # Export-ADDevices.ps1

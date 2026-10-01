@@ -29,7 +29,7 @@ each with its own AD domain (s) and enabled vendor (s) — `clients:`/`vendors:`
 deliberate, not incidental. This matches what was actually run in production; Django
 and the web dashboard never were (that was a rebuild-only addition, and it stays gone).
 Celery-based scheduling/fan-out (see "Scheduling & persistence" below) and Splunk
-delta export (see "Splunk delta export" below) are both real and both now restored —
+export (see "Splunk export" below) are both real and both now restored —
 this was a staged restoration (see recent git history), but every feature described
 in this file has landed as of this revision.
 
@@ -179,7 +179,7 @@ migration-managed production schema.
 **`src/agent_parity/scheduling/persistence.py`** is the layer between `pipeline.py` (pure) and a
 persisted caller: `persist_correlation` loads a classified frame into `CoverageSnapshot`
 rows, `persist_result` persists an already-correlated result (or marks the run `FAILED`
-outright when it's `None`) and forwards Splunk deltas, and `finalize_run` is the chord
+outright when it's `None`) and sends the run to Splunk, and `finalize_run` is the chord
 callback's correlate-then-`persist_result`, returning the `CorrelationResult` (or `None`)
 so the callback can report on it without re-correlating. There is no separate synchronous
 persisted entrypoint: `agent-parity run` goes through the same chord as beat. **Idempotency**: `persist_correlation` re-fetches the run inside
@@ -237,38 +237,43 @@ task semantics either way. `docker/smoke_check_celery.py` (via `docker/smoke_tes
 Docker-only) is the one thing eager-mode tests structurally can't prove: a real chord
 round-tripping through a real Redis broker and real `worker`/`beat` containers.
 
-## Splunk delta export (`src/agent_parity/splunk_export.py`, `persistence.py`)
+## Splunk export (`src/agent_parity/splunk_export.py`, `persistence.py`)
 
-Real production behavior (the original tool fed Splunk). `git show 41d3dc5` is the
-commit that removed it from this repo while a rebuild-only Django dashboard (never part
-of the original tool, since deleted) handled visualization — restored now that
-Stage 4's `CorrelationRun`/`CoverageSnapshot` schema gives delta computation
-something to diff against. Splunk is a **sink**, never the system of record — SQLite
-stays authoritative — and forwarding is entirely opt-in: `SplunkConfig.enabled` is
-`False` unless both `hec_url` and `hec_token` are configured, matching every other
-optional integration in this project (object storage, live vendor credentials).
+Real production behavior: the original tool sent **every run whole, one Splunk event per
+row of the final DataFrame**, and its dashboard displayed the most recent run. This
+package does the same. (An earlier version of *this rebuild* sent per-run deltas
+instead; that design was the rebuild's own invention, never the original's, and was
+replaced because it lost gap closures and re-sent everything after a failed run. Don't
+reintroduce deltas.) Splunk is a **sink**, never the system of record — SQLite stays
+authoritative — and forwarding is entirely opt-in: `SplunkConfig.enabled` is `False`
+unless both `hec_url` and `hec_token` are configured, matching every other optional
+integration in this project (object storage, live vendor credentials).
 
-**Deltas, not snapshots** — `persistence.export_deltas_to_splunk(session, run, splunk)`
-finds the client's most recent non-`PENDING` `CorrelationRun` before `run`, diffs
-`CoverageSnapshot` rows keyed by `(device_id, vendor)`, and only forwards rows whose
-status is new or changed. Re-indexing every device every run would just bloat a
-Splunk license for data the run history already has. `splunk_export.send_deltas`
-does the actual HEC POST — newline-delimited JSON envelopes (`index`/`sourcetype`/`source`/`event`), batched at 100
-events per request, raising
-`SplunkExportError` on any `requests.RequestException`. This module has zero SQLAlchemy
-imports; it only ever sees plain delta dicts, the same "collection knows nothing about
-persistence, persistence knows nothing about the sink" boundary the rest of this file
-follows.
+**One event per row, then one summary** — `persistence.export_run_to_splunk(session, run,
+result, splunk)` turns the run's classified frame into one event per row (pandas'
+internal `_merge` column dropped; `to_json` handles NaN/timestamps/numpy), each tagged
+with `client`/`run_id`/`run_started_at`, plus a summary event (run status,
+`vendor_status`, coverage percentages and status counts from `CorrelationResult.summary`).
+`splunk_export.send_run` POSTs them to HEC — newline-delimited JSON envelopes with
+`time` set to the run's start for every event, batched at 100 per request, rows under
+`SplunkConfig.sourcetype` (`agent_parity:coverage`) and the summary **last** under
+`summary_sourcetype` (`agent_parity:coverage_summary`), raising `SplunkExportError` on
+any `requests.RequestException`. Sending the summary last makes it a "run fully sent"
+marker: a dashboard keyed off the latest summary's `run_id` never shows a half-sent
+run, and trend charts are a `timechart` over summaries. Per-row rather than one
+event holding the whole frame because Splunk truncates events at 10,000 bytes and
+stops automatic JSON field extraction at 5,000 by default. A FAILED run sends
+nothing (no frame); PARTIAL runs are sent, with `vendor_status` in the summary.
+`splunk_export.py` has no SQLAlchemy or pandas imports; it only sees plain dicts, the
+same "collection knows nothing about persistence, persistence knows nothing about the
+sink" boundary the rest of this file follows.
 
-**A Splunk outage must never fail a run** — `persistence.finalize_run`'s optional
-`splunk` parameter wraps the `export_deltas_to_splunk` call in a
-`try`/`except SplunkExportError`, logging and swallowing it; the run itself stays
-`COMPLETE`/`PARTIAL` based on collection/correlation outcome alone. Both persisted
-runs get a live `SplunkConfig` the same way: `tasks.correlate_client` (the chord
-callback, which has no live `AppConfig` in scope) loads one fresh via
-`load_config().splunk`, as its own fan-out tasks already do. The pure `compare` CLI path never touches Splunk at
-all — delta computation needs run history to diff against, which only the persisted
-paths have.
+**A Splunk outage must never fail a run** — `persistence.persist_result` wraps the
+`export_run_to_splunk` call in a `try`/`except SplunkExportError`, logging and
+swallowing it; the run itself stays `COMPLETE`/`PARTIAL` based on collection/
+correlation outcome alone. The chord callback (`tasks.correlate_client`, which has no
+live `AppConfig` in scope) loads a fresh `SplunkConfig` via `load_config().splunk`, as
+its own fan-out tasks already do. The pure `compare` CLI path never touches Splunk.
 
 ## Connectors (`src/agent_parity/connectors/`)
 
