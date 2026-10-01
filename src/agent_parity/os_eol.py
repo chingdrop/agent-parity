@@ -1,51 +1,33 @@
 """OS end-of-life reference data and matching.
 
-Two datasets, two precisions, matching what's actually available per source:
+``os_eol_data.json`` is a snapshot of endoflife.date's Windows and Windows
+Server lifecycle data, derived by ``agent_parity.os_eol_live`` (regenerate it
+with ``scripts/check_eol_drift.py --write``). It holds two tables, two
+precisions, matching what's actually available per source:
 
-* ``os_eol_data.json`` — free-text OS name -> end-of-life date. All any
-  source has when there's no build number: Carbon Black and BitDefender's
-  APIs report a product name string ("Windows 11 Enterprise") with nothing
-  else, and AD-only ``missing_agent`` rows fall back to this too when no
-  build was captured.
-* ``os_eol_builds_data.json`` — Windows build number -> end-of-life date.
-  Precise: it disambiguates *which* Windows 10/11 feature update a device
-  is on, which free text alone can't. Available when AD's
-  ``operatingSystemVersion`` attribute or SentinelOne's build-carrying field
-  is present (see ``ADDevice``/``AgentDevice``'s docstrings in
-  ``agent_parity.models``); ``eol_status_for_device`` prefers this whenever
-  a build number is available and only falls back to the free-text table
-  otherwise.
+* ``free_text`` — OS name -> end-of-life date ("Windows Server 2019", "Windows
+  10"). All a source has when there's no build number: Carbon Black and
+  BitDefender report only a product name, and AD-only rows fall back to it
+  when no build was captured.
+* ``builds`` — (product, build number) -> end-of-life date. Precise: it pins
+  *which* Windows 10/11 feature update a device is on, which free text alone
+  can't. A build number alone doesn't identify an OS (26100 is both Windows 11
+  24H2 and Windows Server 2025), so entries are keyed by product.
 
-Both are hand-curated from endoflife.date's (https://endoflife.date/) public
-lifecycle data, not fetched live — there's no running pipeline here that
-would benefit from a live API call against a dataset that changes on the
-order of years, not days. endoflife.date does expose a real, free public
-JSON API (no credentials needed); wiring this up as a live-with-fixture-
-fallback source (the same shape as every vendor connector in this project)
-would be a natural, self-contained extension if ever needed, but isn't
-built here since a static reference file already answers the question this
-project actually asks. `scripts/check_eol_drift.py` covers the "is this
-still accurate" question instead — a maintainer-run, dev-only script that
-diffs the two committed JSON files against the live API on demand (not
-part of the test suite or CI, since the data doesn't change often enough
-to justify checking on every run).
+``eol_status_for_device`` picks per device: for a **server** (OS text naming
+Windows Server), the named release wins, since "Windows Server 2019" is exact
+while its build is shared with a short-lived semi-annual release; the server
+build table only covers servers whose name carries no year. For a **client**,
+the build wins, then the free-text name.
 
-endoflife.date splits most Windows 10/11 builds across several editions
-(Workstation, Enterprise, LTSC, IoT) with different EOL dates for the same
-build number — e.g. build 22621 (Windows 11 22H2) is 2024-10-08 for the
-Workstation edition but 2025-10-14 for Enterprise. Both JSON files always
-use the earliest EOL date across a build/version's editions, matching this
-project's own risk-flagging bias (see "High-value assets" in docs/architecture.md) —
-`scripts/check_eol_drift.py` reproduces this same "min EOL across editions"
-rule rather than matching one hardcoded edition name.
+The Windows 11 gap in the free-text table is deliberate: its real end-of-life
+date depends on the feature update, and a bare "Windows 11 Enterprise" string
+carries no version. Assuming one date would be a guess dressed up as data, so
+free-text matching leaves it ``unknown`` and only a build resolves it.
 
-The Windows 11 gap in the free-text table is deliberate, not an oversight:
-its real end-of-life date depends on which feature update is installed, and
-a bare "Windows 11 Enterprise" string carries no version. Assuming a single
-date for it would be a guess dressed up as data, so free-text matching
-leaves it unmatched (``OSLifecycleStatus.UNKNOWN``) rather than silently
-wrong — the build-number table is what actually resolves it, when a build
-is available.
+Where shared builds span editions (Workstation, Enterprise, LTSC), the table
+holds the earliest EOL date, matching this project's risk-flagging bias (see
+"High-value assets" in docs/architecture.md).
 """
 
 from __future__ import annotations
@@ -59,7 +41,6 @@ from pathlib import Path
 from agent_parity.models import OSLifecycleStatus
 
 _DATA_PATH = Path(__file__).resolve().parent / "os_eol_data.json"
-_BUILDS_DATA_PATH = Path(__file__).resolve().parent / "os_eol_builds_data.json"
 
 #: How close to its EOL date an OS has to be to count as "eol_soon" rather
 #: than "supported" — long enough to actually plan and execute a migration.
@@ -81,44 +62,38 @@ class OSLifecycle:
 
 
 @dataclass(frozen=True)
-class BuildLifecycle:
-    build: int
-    name: str
-    eol_date: date
+class LifecycleTables:
+    #: Most specific (longest) match first, so "windows server 2012 r2" wins
+    #: over "windows server 2012" and "windows 8.1" over "windows 8".
+    free_text: list[OSLifecycle]
+    #: (product, build) -> EOL date; product is "windows" or "windows-server".
+    builds: dict[tuple[str, int], date]
 
 
-def _load_lifecycles() -> list[OSLifecycle]:
-    with open(_DATA_PATH) as fh:
-        raw = json.load(fh)
-    lifecycles = [
-        OSLifecycle(
-            name=entry["name"],
-            match=entry["match"],
-            eol_date=date.fromisoformat(entry["eol_date"]),
-        )
-        for entry in raw
+def tables_from_data(data: dict) -> LifecycleTables:
+    """Build lookup tables from the JSON shape ``os_eol_live`` produces."""
+    free_text = [
+        OSLifecycle(name=e["name"], match=e["match"], eol_date=date.fromisoformat(e["eol_date"]))
+        for e in data["free_text"]
     ]
-    # Most-specific (longest) match pattern wins, in case a future entry's
-    # pattern is a substring of another's (e.g. a generic "windows server"
-    # bucket added alongside "windows server 2022").
-    return sorted(lifecycles, key=lambda lc: len(lc.match), reverse=True)
+    builds = {(e["product"], int(e["build"])): date.fromisoformat(e["eol_date"]) for e in data["builds"]}
+    return LifecycleTables(free_text=sorted(free_text, key=lambda lc: len(lc.match), reverse=True), builds=builds)
 
 
-def _load_build_lifecycles() -> dict[int, BuildLifecycle]:
-    with open(_BUILDS_DATA_PATH) as fh:
-        raw = json.load(fh)
-    return {
-        entry["build"]: BuildLifecycle(
-            build=entry["build"],
-            name=entry["name"],
-            eol_date=date.fromisoformat(entry["eol_date"]),
-        )
-        for entry in raw
-    }
+def _load_bundled() -> LifecycleTables:
+    with open(_DATA_PATH) as fh:
+        return tables_from_data(json.load(fh))
 
 
-LIFECYCLES: list[OSLifecycle] = _load_lifecycles()
-BUILD_LIFECYCLES: dict[int, BuildLifecycle] = _load_build_lifecycles()
+_BUNDLED: LifecycleTables = _load_bundled()
+
+
+def _tables() -> LifecycleTables:
+    return _BUNDLED
+
+
+def is_server_os(os_text: str | None) -> bool:
+    return "server" in (os_text or "").lower()
 
 
 def eol_date_for(os_text: str | None) -> date | None:
@@ -128,20 +103,18 @@ def eol_date_for(os_text: str | None) -> date | None:
     "Windows 11" is deliberately one such case, not a data gap to fill in.
     """
     text = (os_text or "").lower()
-    for lifecycle in LIFECYCLES:
+    for lifecycle in _tables().free_text:
         if lifecycle.match in text:
             return lifecycle.eol_date
     return None
 
 
-def eol_date_for_build(build: int | None) -> date | None:
-    """End-of-life date for an exact Windows build number, or None if it's
-    not in the reference table (e.g. a build older or newer than what's
-    curated here)."""
+def eol_date_for_build(build: int | None, server: bool = False) -> date | None:
+    """End-of-life date for an exact build of Windows (``server=False``) or
+    Windows Server (``server=True``), or None if it's not in the table."""
     if build is None:
         return None
-    lifecycle = BUILD_LIFECYCLES.get(build)
-    return lifecycle.eol_date if lifecycle else None
+    return _tables().builds.get(("windows-server" if server else "windows", build))
 
 
 def extract_build_number(text: str | None) -> int | None:
@@ -184,16 +157,21 @@ def eol_status_for_device(
     as_of: date | None = None,
     warning_days: int = DEFAULT_WARNING_DAYS,
 ) -> str:
-    """Classify a device's OS lifecycle status, preferring an exact build
-    number when one is available (AD, SentinelOne) and falling back to
-    free-text OS name matching when it isn't (Carbon Black, BitDefender, or
-    an AD row with no captured build) — see the module docstring for why
-    the two datasets exist at all.
+    """Classify a device's OS lifecycle status.
+
+    Servers: the named release, else the server build table. Clients: the
+    exact build when one is available (AD, SentinelOne), else the free-text
+    name (Carbon Black, BitDefender, or an AD row with no captured build).
+    See the module docstring for why servers and clients differ.
     """
-    if os_build is not None:
-        build_eol = eol_date_for_build(os_build)
-        if build_eol is not None:
-            return _classify(build_eol, as_of, warning_days)
+    if is_server_os(os_text):
+        named = eol_date_for(os_text)
+        if named is not None:
+            return _classify(named, as_of, warning_days)
+        return _classify(eol_date_for_build(os_build, server=True), as_of, warning_days)
+    build_eol = eol_date_for_build(os_build)
+    if build_eol is not None:
+        return _classify(build_eol, as_of, warning_days)
     return eol_status(os_text, as_of, warning_days)
 
 

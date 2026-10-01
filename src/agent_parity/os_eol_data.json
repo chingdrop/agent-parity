@@ -1,32 +1,270 @@
-[
-  {
-    "name": "Windows Server 2012 R2",
-    "match": "windows server 2012 r2",
-    "eol_date": "2023-10-10",
-    "source": "https://endoflife.date/windows-server"
-  },
-  {
-    "name": "Windows Server 2016",
-    "match": "windows server 2016",
-    "eol_date": "2027-01-12",
-    "source": "https://endoflife.date/windows-server"
-  },
-  {
-    "name": "Windows Server 2019",
-    "match": "windows server 2019",
-    "eol_date": "2029-01-09",
-    "source": "https://endoflife.date/windows-server"
-  },
-  {
-    "name": "Windows Server 2022",
-    "match": "windows server 2022",
-    "eol_date": "2031-10-14",
-    "source": "https://endoflife.date/windows-server"
-  },
-  {
-    "name": "Windows 10",
-    "match": "windows 10",
-    "eol_date": "2025-10-14",
-    "source": "https://endoflife.date/windows"
-  }
-]
+{
+  "source": "https://endoflife.date",
+  "generated_at": "2026-10-01",
+  "free_text": [
+    {
+      "name": "Windows 10",
+      "match": "windows 10",
+      "eol_date": "2025-10-14"
+    },
+    {
+      "name": "Windows 7",
+      "match": "windows 7",
+      "eol_date": "2020-01-14"
+    },
+    {
+      "name": "Windows 8",
+      "match": "windows 8",
+      "eol_date": "2016-01-12"
+    },
+    {
+      "name": "Windows 8.1",
+      "match": "windows 8.1",
+      "eol_date": "2023-01-10"
+    },
+    {
+      "name": "Windows Server 2000",
+      "match": "windows server 2000",
+      "eol_date": "2010-07-13"
+    },
+    {
+      "name": "Windows Server 2003",
+      "match": "windows server 2003",
+      "eol_date": "2015-07-14"
+    },
+    {
+      "name": "Windows Server 2008",
+      "match": "windows server 2008",
+      "eol_date": "2020-01-14"
+    },
+    {
+      "name": "Windows Server 2008 R2",
+      "match": "windows server 2008 r2",
+      "eol_date": "2020-01-14"
+    },
+    {
+      "name": "Windows Server 2012",
+      "match": "windows server 2012",
+      "eol_date": "2023-10-10"
+    },
+    {
+      "name": "Windows Server 2012 R2",
+      "match": "windows server 2012 r2",
+      "eol_date": "2023-10-10"
+    },
+    {
+      "name": "Windows Server 2016",
+      "match": "windows server 2016",
+      "eol_date": "2027-01-12"
+    },
+    {
+      "name": "Windows Server 2019",
+      "match": "windows server 2019",
+      "eol_date": "2029-01-09"
+    },
+    {
+      "name": "Windows Server 2022",
+      "match": "windows server 2022",
+      "eol_date": "2031-10-14"
+    },
+    {
+      "name": "Windows Server 2025",
+      "match": "windows server 2025",
+      "eol_date": "2034-11-14"
+    }
+  ],
+  "builds": [
+    {
+      "product": "windows",
+      "build": 10240,
+      "name": "Windows 10 1507",
+      "eol_date": "2017-05-09"
+    },
+    {
+      "product": "windows",
+      "build": 10586,
+      "name": "Windows 10 1511",
+      "eol_date": "2017-10-10"
+    },
+    {
+      "product": "windows",
+      "build": 14393,
+      "name": "Windows 10 1607",
+      "eol_date": "2018-04-10"
+    },
+    {
+      "product": "windows",
+      "build": 15063,
+      "name": "Windows 10 1703",
+      "eol_date": "2018-10-09"
+    },
+    {
+      "product": "windows",
+      "build": 16299,
+      "name": "Windows 10 1709",
+      "eol_date": "2019-04-09"
+    },
+    {
+      "product": "windows",
+      "build": 17134,
+      "name": "Windows 10 1803",
+      "eol_date": "2019-11-12"
+    },
+    {
+      "product": "windows",
+      "build": 17763,
+      "name": "Windows 10 1809",
+      "eol_date": "2020-11-10"
+    },
+    {
+      "product": "windows",
+      "build": 18362,
+      "name": "Windows 10 1903",
+      "eol_date": "2020-12-08"
+    },
+    {
+      "product": "windows",
+      "build": 18363,
+      "name": "Windows 10 1909",
+      "eol_date": "2021-05-11"
+    },
+    {
+      "product": "windows",
+      "build": 19041,
+      "name": "Windows 10 2004",
+      "eol_date": "2021-12-14"
+    },
+    {
+      "product": "windows",
+      "build": 19042,
+      "name": "Windows 10 20H2",
+      "eol_date": "2022-05-10"
+    },
+    {
+      "product": "windows",
+      "build": 19043,
+      "name": "Windows 10 21H1",
+      "eol_date": "2022-12-13"
+    },
+    {
+      "product": "windows",
+      "build": 19044,
+      "name": "Windows 10 21H2",
+      "eol_date": "2023-06-13"
+    },
+    {
+      "product": "windows",
+      "build": 19045,
+      "name": "Windows 10 22H2",
+      "eol_date": "2025-10-14"
+    },
+    {
+      "product": "windows",
+      "build": 22000,
+      "name": "Windows 11 21H2",
+      "eol_date": "2023-10-10"
+    },
+    {
+      "product": "windows",
+      "build": 22621,
+      "name": "Windows 11 22H2",
+      "eol_date": "2024-10-08"
+    },
+    {
+      "product": "windows",
+      "build": 22631,
+      "name": "Windows 11 23H2",
+      "eol_date": "2025-11-11"
+    },
+    {
+      "product": "windows",
+      "build": 26100,
+      "name": "Windows 11 24H2",
+      "eol_date": "2026-10-13"
+    },
+    {
+      "product": "windows",
+      "build": 26200,
+      "name": "Windows 11 25H2",
+      "eol_date": "2027-10-12"
+    },
+    {
+      "product": "windows",
+      "build": 26300,
+      "name": "Windows 11 26H2",
+      "eol_date": "2028-10-10"
+    },
+    {
+      "product": "windows",
+      "build": 28000,
+      "name": "Windows 11 26H1",
+      "eol_date": "2028-03-14"
+    },
+    {
+      "product": "windows-server",
+      "build": 14393,
+      "name": "Windows Server 2016",
+      "eol_date": "2027-01-12"
+    },
+    {
+      "product": "windows-server",
+      "build": 16299,
+      "name": "Windows Server 1709 SAC",
+      "eol_date": "2019-04-09"
+    },
+    {
+      "product": "windows-server",
+      "build": 17134,
+      "name": "Windows Server 1803 SAC",
+      "eol_date": "2019-11-12"
+    },
+    {
+      "product": "windows-server",
+      "build": 17763,
+      "name": "Windows Server 1809 SAC",
+      "eol_date": "2020-11-10"
+    },
+    {
+      "product": "windows-server",
+      "build": 18362,
+      "name": "Windows Server 1903 SAC",
+      "eol_date": "2020-12-08"
+    },
+    {
+      "product": "windows-server",
+      "build": 18363,
+      "name": "Windows Server 1909 SAC",
+      "eol_date": "2021-05-11"
+    },
+    {
+      "product": "windows-server",
+      "build": 19041,
+      "name": "Windows Server 2004 SAC",
+      "eol_date": "2021-12-14"
+    },
+    {
+      "product": "windows-server",
+      "build": 19042,
+      "name": "Windows Server 20H2 SAC",
+      "eol_date": "2022-08-09"
+    },
+    {
+      "product": "windows-server",
+      "build": 20348,
+      "name": "Windows Server 2022",
+      "eol_date": "2031-10-14"
+    },
+    {
+      "product": "windows-server",
+      "build": 25398,
+      "name": "Windows Server 23H2 AC",
+      "eol_date": "2026-05-12"
+    },
+    {
+      "product": "windows-server",
+      "build": 26100,
+      "name": "Windows Server 2025",
+      "eol_date": "2034-11-14"
+    }
+  ]
+}
