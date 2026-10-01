@@ -213,8 +213,10 @@ cd docker
 ```
 
 Neither this nor `uv run pytest` (which never touches real infrastructure)
-overlap — the smoke test needs Docker and touches a real network. Run it
-manually, e.g. before cutting a release.
+overlap — the smoke test needs Docker and touches a real network. CI runs it
+weekly and on any change to the Docker stack or the scheduling code
+(`.github/workflows/smoke.yml`), so a withdrawn image or a broken volume shows
+up within days.
 
 ## Tests
 
