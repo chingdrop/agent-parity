@@ -25,14 +25,17 @@ Matched rows carry `match_method = "hostname_exact"`. There is no fuzzy matching
 
 - FQDN and case differences resolve; a renamed machine does not, until its agent reports the new hostname. The fixtures
   deliberately include one such orphan per client.
-- A duplicate join key is not detected or deduplicated.
+- A short hostname that exists in more than one AD domain (2026-10-01 addition): an agent that reported a full DNS
+  name is matched only to the AD object with exactly that `DNSHostName` (`match_method = fqdn_exact`); one that
+  reported only the short name stays matched to all of them, with each row flagged `ambiguous_join_key` and counted in
+  the summary. Both are exact comparisons, so this is still no fuzzy matching.
 - A matched agent with no `last_seen` counts as stale, not covered (the conservative call).
 - Rules out probabilistic matching without a new stage in the `.pipe()` chain.
 
 ## Evidence
 
 - Code: [`src/agent_parity/correlation.py`](../../src/agent_parity/correlation.py) (`add_join_key`, `merge_with_agents`,
-  `classify_coverage`), `normalize_hostname` in [`src/agent_parity/models.py`](../../src/agent_parity/models.py)
+  `resolve_ambiguous_join_keys`, `classify_coverage`), `normalize_hostname` in [`src/agent_parity/models.py`](../../src/agent_parity/models.py)
 - Tests: [`tests/test_models.py`](../../tests/test_models.py) `test_normalize_hostname`; [
   `tests/test_correlation.py`](../../tests/test_correlation.py) `test_hostname_normalization_matches_fqdn_and_case`,
   `test_merged_row_count_equals_union_of_join_keys`, `test_matched_agent_with_no_last_seen_is_stale_not_covered`; [

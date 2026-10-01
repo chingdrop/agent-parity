@@ -172,6 +172,7 @@ def correlate_client(results: list[dict], run_id: int, include_csv: bool = False
             "rows": len(result.frame) if result is not None else 0,
             "coverage_pct": result.summary["coverage_pct"] if result is not None else None,
             "status_counts": result.summary["status_counts"] if result is not None else {},
+            "ambiguous_join_keys": result.summary["ambiguous_join_keys"] if result is not None else 0,
         }
         if include_csv and result is not None:
             report["csv"] = result.frame.to_csv(index=False)

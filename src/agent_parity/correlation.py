@@ -14,6 +14,7 @@ classify) is independently testable and reads top to bottom:
 
     ad_df.pipe(add_join_key)
          .pipe(merge_with_agents, agents_df)
+         .pipe(resolve_ambiguous_join_keys)
          .pipe(classify_coverage, stale_days=14)
 
 This module must stay importable without Celery or SQLAlchemy: it is called
@@ -23,6 +24,7 @@ the Celery chord callback.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import timedelta
@@ -39,6 +41,8 @@ from agent_parity.models import (
 )
 from agent_parity.os_eol import DEFAULT_WARNING_DAYS as DEFAULT_EOL_WARNING_DAYS
 from agent_parity.os_eol import eol_status_for_device
+
+logger = logging.getLogger(__name__)
 
 #: Columns every agents frame carries into the merge. platform/machine_type
 #: are worded to match SentinelOne's own vocabulary regardless of which
@@ -110,6 +114,81 @@ def merge_with_agents(ad_df: pd.DataFrame, agents_df: pd.DataFrame) -> pd.DataFr
     )
 
 
+def resolve_ambiguous_join_keys(merged: pd.DataFrame) -> pd.DataFrame:
+    """Stage 2b: handle a short hostname that exists in more than one AD domain.
+
+    Domains are separate namespaces, so ``WS-001.corp`` and ``WS-001.branch``
+    are two machines that share one join key. A short-name merge pairs every
+    agent called ``WS-001`` with both, so one agent would make both look
+    covered. Two things happen here, both exact (no fuzzy matching):
+
+    * **FQDN tiebreak.** An agent that reported a full DNS name (``hostname``
+      containing a dot) keeps only its pairing with the AD object whose
+      ``DNSHostName`` equals it, marked ``match_method = "fqdn_exact"``. An AD
+      object left with no agent becomes ``missing_agent``; an agent whose FQDN
+      matches none of them becomes ``orphaned_agent``.
+    * **Flag the rest.** Pairings that still rest on the short name alone get
+      ``ambiguous_join_key = True`` — they may be crediting the wrong machine,
+      and ``summarize`` counts them.
+
+    An AD object's identity is its DNS name, else its distinguished name. With
+    neither (a hand-built frame), there's nothing to tell objects apart and the
+    frame passes through unflagged.
+    """
+    out = merged.copy()
+    out["ambiguous_join_key"] = False
+    if "dns_hostname" not in out.columns and "distinguished_name" not in out.columns:
+        return out
+
+    def _text(col: str) -> pd.Series:
+        if col not in out.columns:
+            return pd.Series("", index=out.index)
+        return out[col].fillna("").astype(str).str.strip().str.lower()
+
+    dns, dn = _text("dns_hostname"), _text("distinguished_name")
+    ad_id = dns.where(dns != "", dn)
+    has_ad = out["_merge"] != "right_only"
+    objects_per_key = ad_id[has_ad & (ad_id != "")].groupby(out.loc[has_ad, "join_key"]).nunique()
+    ambiguous = out["join_key"].isin(objects_per_key[objects_per_key > 1].index)
+    if not ambiguous.any():
+        return out
+
+    agent_hostname = _text("hostname_agent" if "hostname_agent" in out.columns else "hostname")
+    paired = ambiguous & (out["_merge"] == "both")
+    by_fqdn = paired & agent_hostname.str.contains(".", regex=False)
+    keep = by_fqdn & (agent_hostname == dns)
+    drop = by_fqdn & ~keep
+
+    agent_cols = [
+        c + "_agent" if c + "_agent" in out.columns else c
+        for c in AGENT_COLUMNS
+        if c != "join_key" and (c in out.columns or c + "_agent" in out.columns)
+    ]
+    bookkeeping = {"join_key", "_merge", "ambiguous_join_key", "match_method"}
+    ad_cols = [c for c in out.columns if c not in agent_cols and c not in bookkeeping]
+    agent_id = out["vendor"].astype(str) + "/" + out["agent_id"].astype(str)
+
+    kept = out[~drop].copy()
+    kept["match_method"] = pd.Series("fqdn_exact", index=kept.index).where(keep[~drop])
+    kept["ambiguous_join_key"] = (paired & ~by_fqdn)[~drop]
+
+    still_paired_ad = set(ad_id[~drop & has_ad])
+    unpaired_ad = out[drop & ~ad_id.isin(still_paired_ad)].copy()
+    unpaired_ad = unpaired_ad.loc[~ad_id[unpaired_ad.index].duplicated()]
+    unpaired_ad[agent_cols] = pd.NA
+    unpaired_ad["_merge"] = "left_only"
+
+    matched_agents = set(agent_id[keep])
+    unmatched_agents = out[drop & ~agent_id.isin(matched_agents)].copy()
+    unmatched_agents = unmatched_agents.loc[~agent_id[unmatched_agents.index].duplicated()]
+    unmatched_agents[ad_cols] = pd.NA
+    unmatched_agents["_merge"] = "right_only"
+
+    resolved = pd.concat([kept, unpaired_ad, unmatched_agents], ignore_index=True)
+    resolved["_merge"] = pd.Categorical(resolved["_merge"], categories=out["_merge"].cat.categories)
+    return resolved
+
+
 def classify_coverage(
     merged: pd.DataFrame,
     stale_days: int = 14,
@@ -136,7 +215,9 @@ def classify_coverage(
         ],
         default=CoverageStatus.STALE_COVERAGE.value,
     )
-    out["match_method"] = np.where(out["_merge"] == "both", "hostname_exact", "none")
+    # resolve_ambiguous_join_keys may already have marked a pairing fqdn_exact.
+    preset = out["match_method"] if "match_method" in out.columns else pd.Series(pd.NA, index=out.index)
+    out["match_method"] = np.where(out["_merge"] == "both", preset.fillna("hostname_exact"), "none")
     return out
 
 
@@ -272,6 +353,13 @@ def summarize(frame: pd.DataFrame) -> dict:
         "server_coverage_pct": round(100.0 * server_covered / server_denominator, 1) if server_denominator else 0.0,
         "eol_status_counts": {k: int(v) for k, v in eol_counts.items()},
         "at_risk_status_counts": {k: int(v) for k, v in at_risk_status_counts.items()},
+        # Join keys whose agent pairing rests on a short hostname that exists in
+        # more than one AD domain (see resolve_ambiguous_join_keys).
+        "ambiguous_join_keys": (
+            int(frame.loc[frame["ambiguous_join_key"].astype(bool), "join_key"].nunique())
+            if "ambiguous_join_key" in frame.columns
+            else 0
+        ),
     }
 
 
@@ -286,8 +374,17 @@ def correlate(
     frame = (
         ad_df.pipe(add_join_key)
         .pipe(merge_with_agents, agents_df)
+        .pipe(resolve_ambiguous_join_keys)
         .pipe(classify_coverage, stale_days=stale_days, as_of=as_of)
         .pipe(backfill_machine_type)
         .pipe(classify_eol_status, as_of=as_of, warning_days=eol_warning_days)
     )
+    if frame["ambiguous_join_key"].any():
+        keys = sorted(frame.loc[frame["ambiguous_join_key"], "join_key"].unique())
+        logger.warning(
+            "%d hostname(s) exist in more than one AD domain and an agent reported only the short name, "
+            "so its match can't be attributed to one machine: %s",
+            len(keys),
+            ", ".join(keys),
+        )
     return CorrelationResult(frame=frame, summary=summarize(frame))

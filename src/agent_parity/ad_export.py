@@ -74,8 +74,8 @@ def concat_ad_frames(frames: list[pd.DataFrame]) -> pd.DataFrame:
     ``agent_parity.pipeline.collect_ad_frame``) — this is where those per-domain
     results become the single frame the correlation engine sees. Domains are
     assumed to be disjoint namespaces (no computer object should appear in
-    more than one domain's export); a duplicate join_key across domains isn't
-    specially detected or deduplicated here, matching this project's existing
-    "no fuzzy matching, by design" stance on join-key ambiguity.
+    more than one domain's export). A short hostname that does recur across
+    domains is two machines, not a duplicate: it's handled after the merge by
+    ``correlation.resolve_ambiguous_join_keys``, not deduplicated here.
     """
     return pd.concat(frames, ignore_index=True)

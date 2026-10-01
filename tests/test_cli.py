@@ -254,3 +254,19 @@ def test_run_with_workers_stops_waiting_at_the_timeout(monkeypatch, sqlite_db):
     assert result.exit_code == 1
     assert "[acme] run 7: still running after 0.5 min; left running on the workers." in result.output
     assert 0 < waits[0] <= 30
+
+
+def test_run_summary_notes_hostnames_ambiguous_across_ad_domains(capsys):
+    report = {
+        "run_id": 3,
+        "status": "complete",
+        "vendor_status": {"ad:CORP-DC01": "ok"},
+        "rows": 10,
+        "coverage_pct": 90.0,
+        "status_counts": {"covered": 9, "missing_agent": 1},
+        "ambiguous_join_keys": 2,
+    }
+
+    assert cli._echo_report("acme", report, write_csv=False)
+
+    assert "; 2 hostname(s) ambiguous across AD domains)" in capsys.readouterr().out

@@ -89,12 +89,21 @@ Four layers, collect → correlate → report:
 
 This is the analytical core and is deliberately a `.pipe()` chain, not one function:
 `add_join_key` → `merge_with_agents` (`pd.merge(..., how="outer", indicator=True)`) →
-`classify_coverage` (turns the merge indicator + a `last_seen` staleness check into
+`resolve_ambiguous_join_keys` → `classify_coverage` (turns the merge indicator + a `last_seen` staleness check into
 `CoverageStatus`) → `backfill_machine_type` → `classify_eol_status`. Each stage is
 independently testable; keep it that way rather than inlining. `join_key`
 normalization (strip DNS suffix, lowercase, trim) is the only matching logic —
 there's no fuzzy matching, by design (a rename resolves itself once the agent reports the new hostname; see
-[ADR 0005](docs/decisions/0005-correlate-on-normalized-hostname-only.md)).
+[ADR 0005](docs/decisions/0005-correlate-on-normalized-hostname-only.md)). The one refinement is
+`resolve_ambiguous_join_keys`, for a short hostname that exists in more than one AD domain (two
+machines, one join key): an agent that reported a full DNS name keeps only its pairing with the AD
+object whose `dns_hostname` equals it exactly (`match_method = "fqdn_exact"`), and pairings that
+still rest on the short name alone are flagged `ambiguous_join_key` (counted as
+`summary["ambiguous_join_keys"]`, logged, and shown on `run`'s summary line). It's exact string
+equality, not fuzzy matching; keep it that way. It only runs when the merged frame has
+`dns_hostname` or `distinguished_name` to tell AD objects apart, so hand-built test frames without
+them pass through unchanged. The flag is in the frame and Splunk row events, not in
+`CoverageSnapshot` (adding a column there would need a migration this schema doesn't have).
 
 **`backfill_machine_type` exists for one reason**: `machine_type` (see
 `AgentDevice`'s docstring) only ever comes from the agent side of the merge, so a

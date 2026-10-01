@@ -39,8 +39,9 @@ and [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) is a manual ch
 
 **Matching is hostname-only.** The join key is the hostname with the DNS suffix stripped and lowercased. A renamed
 machine shows as a missing agent plus an orphan until its agent reports the new hostname (the fixtures include one
-such orphan per client), and a duplicate join key, including across
-domains, is not detected. See [ADR 0005](decisions/0005-correlate-on-normalized-hostname-only.md) and [
+such orphan per client). A short hostname that exists in two AD domains is resolved only when the agent reports a full
+DNS name; an agent reporting just the short name is credited to both machines, with the rows flagged
+`ambiguous_join_key` and counted in the run summary. See [ADR 0005](decisions/0005-correlate-on-normalized-hostname-only.md) and [
 `correlation.py`](../src/agent_parity/correlation.py).
 
 **`machine_type` is a text heuristic.** OS text containing "server" means server, anything else (including blank text)
@@ -79,8 +80,6 @@ maintainer's own picks.
   command reports it. See [`db.py`](../src/agent_parity/scheduling/db.py).
 - **A Splunk dashboard and saved reports.** The opt-in Splunk export forwards every run, but this repository doesn't
   include the dashboard and reports that turned it into the quarterly report.
-- **Duplicate join-key detection.** Flag two devices that normalize to the same hostname, including across AD domains
-  (see "Matching is hostname-only" above).
 - **The EOL drift check in CI.** [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) is manual today; a weekly
   scheduled workflow would flag stale dates without anyone remembering to run it.
 - **A live endoflife.date source** with a fixture fallback, the same shape as the vendor connectors. The API is free and

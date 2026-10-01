@@ -338,3 +338,89 @@ def test_summary_eol_status_counts_and_at_risk_cross_tab():
     # the cross-tab is what lets a report distinguish "unsupported but at
     # least visible" from "unsupported and invisible."
     assert summary["at_risk_status_counts"] == {CoverageStatus.COVERED: 1}
+
+
+# --- the same short hostname in two AD domains -------------------------------
+
+
+def two_domain_ad_frame(short_name: str = "WS-001") -> pd.DataFrame:
+    """One computer object per domain, both with the same short name."""
+    frame = ad_frame(short_name, short_name)
+    frame["dns_hostname"] = [f"{short_name.lower()}.corp.acme.example", f"{short_name.lower()}.branch.acme.example"]
+    return frame
+
+
+def rows_for(result, join_key: str) -> pd.DataFrame:
+    frame = result.frame
+    return frame[frame["join_key"] == join_key]
+
+
+def test_a_short_name_agent_matching_two_domains_is_flagged_on_both_rows():
+    result = correlate(two_domain_ad_frame(), agents_to_frame([agent("WS-001")]), as_of=AS_OF)
+
+    rows = rows_for(result, "ws-001")
+    assert len(rows) == 2
+    assert set(rows["status"]) == {CoverageStatus.COVERED}
+    assert rows["ambiguous_join_key"].all()
+    assert set(rows["match_method"]) == {"hostname_exact"}
+    assert result.summary["ambiguous_join_keys"] == 1
+
+
+def test_an_fqdn_agent_matches_only_the_ad_object_with_that_dns_name():
+    result = correlate(two_domain_ad_frame(), agents_to_frame([agent("WS-001.branch.acme.example")]), as_of=AS_OF)
+
+    rows = rows_for(result, "ws-001").set_index("dns_hostname")
+    assert rows.loc["ws-001.branch.acme.example", "status"] == CoverageStatus.COVERED
+    assert rows.loc["ws-001.branch.acme.example", "match_method"] == "fqdn_exact"
+    assert rows.loc["ws-001.corp.acme.example", "status"] == CoverageStatus.MISSING_AGENT
+    assert not rows["ambiguous_join_key"].any()
+    assert result.summary["ambiguous_join_keys"] == 0
+
+
+def test_an_fqdn_agent_matching_neither_domain_is_orphaned():
+    result = correlate(two_domain_ad_frame(), agents_to_frame([agent("WS-001.lab.acme.example")]), as_of=AS_OF)
+
+    rows = rows_for(result, "ws-001")
+    assert sorted(rows["status"]) == sorted(
+        [CoverageStatus.MISSING_AGENT, CoverageStatus.MISSING_AGENT, CoverageStatus.ORPHANED_AGENT]
+    )
+    orphan = rows[rows["status"] == CoverageStatus.ORPHANED_AGENT].iloc[0]
+    assert orphan["hostname_agent"] == "WS-001.lab.acme.example"
+    assert pd.isna(orphan["dns_hostname"])
+
+
+def test_short_name_and_fqdn_agents_on_the_same_ambiguous_key():
+    """The short-name vendor stays flagged on both domains; the FQDN vendor
+    resolves to exactly one."""
+    agents = agents_to_frame([agent("WS-001"), agent("WS-001.branch.acme.example", vendor="carbonblack")])
+
+    result = correlate(two_domain_ad_frame(), agents, as_of=AS_OF)
+
+    rows = rows_for(result, "ws-001")
+    s1 = rows[rows["vendor"] == "sentinelone"]
+    cb = rows[rows["vendor"] == "carbonblack"]
+    assert len(s1) == 2 and s1["ambiguous_join_key"].all()
+    assert len(cb) == 1
+    assert cb.iloc[0]["dns_hostname"] == "ws-001.branch.acme.example"
+    assert cb.iloc[0]["match_method"] == "fqdn_exact"
+
+
+def test_an_unambiguous_hostname_is_matched_exactly_as_before():
+    """The FQDN tiebreak only applies when the short name exists in two domains;
+    a single object still matches any agent with that short name."""
+    frame = ad_frame("WS-002")
+    frame["dns_hostname"] = ["ws-002.corp.acme.example"]
+
+    result = correlate(frame, agents_to_frame([agent("WS-002.elsewhere.example")]), as_of=AS_OF)
+
+    assert status_of(result, "ws-002") == CoverageStatus.COVERED
+    assert rows_for(result, "ws-002").iloc[0]["match_method"] == "hostname_exact"
+    assert not result.frame["ambiguous_join_key"].any()
+
+
+def test_an_ambiguous_match_is_logged_as_a_warning(caplog):
+    with caplog.at_level("WARNING", logger="agent_parity.correlation"):
+        correlate(two_domain_ad_frame(), agents_to_frame([agent("WS-001")]), as_of=AS_OF)
+
+    assert "1 hostname(s) exist in more than one AD domain" in caplog.text
+    assert "ws-001" in caplog.text

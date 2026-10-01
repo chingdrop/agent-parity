@@ -32,6 +32,10 @@ Notes on the record:
   run `pending` forever.
 - `.github/workflows/smoke.yml`, which runs `docker/smoke_test.sh` (a real S3 server and a real Celery chord) weekly
   and on changes to the Docker stack or scheduling code.
+- Detection of a short hostname that exists in more than one AD domain. An agent that reported a full DNS name is
+  matched only to the AD object with that exact `DNSHostName` (`match_method = fqdn_exact`); one that reported only the
+  short name is flagged `ambiguous_join_key` on every row it matched, counted in the summary, logged and noted in
+  `run`'s output. Previously one agent silently made every same-named machine look covered.
 - `run --workers --timeout MINUTES`, to stop waiting at a deadline while unfinished runs keep going on the workers.
 - An `inventory_rate_limit` attribute on each connector. The Celery inventory tasks are built from the connector
   registry with it, so adding a vendor needs no change to `scheduling/tasks.py`.

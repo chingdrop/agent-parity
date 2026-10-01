@@ -163,9 +163,11 @@ def _echo_report(slug: str, report: dict, write_csv: bool) -> bool:
         atomic_write(out_path, report["csv"])
         destination = f" -> {out_path}"
     counts = ", ".join(f"{k}={v}" for k, v in sorted(report["status_counts"].items()))
+    ambiguous = report.get("ambiguous_join_keys", 0)
+    ambiguous_note = f"; {ambiguous} hostname(s) ambiguous across AD domains" if ambiguous else ""
     click.echo(
         f"[{slug}] run {report['run_id']}: {report['status']}, {report['rows']} rows{destination} "
-        f"(coverage {report['coverage_pct']}%; {counts}; {status_summary})"
+        f"(coverage {report['coverage_pct']}%; {counts}; {status_summary}{ambiguous_note})"
     )
     return True
 
