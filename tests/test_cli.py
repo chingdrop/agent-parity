@@ -202,3 +202,55 @@ def test_run_with_workers_dispatches_the_chord_instead_of_running_it_in_process(
     assert "[acme] run 1: complete, 51 rows" in result.output
     assert "[globex] run 2: complete" in result.output
     assert len(pd.read_csv(tmp_path / "output" / "acme.csv")) == 51
+
+
+def test_run_first_marks_runs_abandoned_past_the_timeout_as_failed(sqlite_db):
+    from datetime import UTC, datetime, timedelta
+
+    from agent_parity.config import load_config
+    from agent_parity.scheduling.db import CorrelationRun, get_engine, init_db, session_factory
+    from agent_parity.scheduling.persistence import sync_client_from_config
+
+    engine = get_engine()
+    init_db(engine)
+    with session_factory(engine)() as session:
+        client = sync_client_from_config(session, load_config().client("acme"))
+        session.add(CorrelationRun(client_id=client.id, started_at=datetime.now(UTC) - timedelta(hours=48)))
+        session.commit()
+    engine.dispose()
+
+    result = CliRunner().invoke(cli.cli, ["run", "--client", "acme"])
+
+    assert result.exit_code == 0, result.output
+    assert "Marked 1 run(s) still pending after 24 h as failed: 1" in result.output
+    assert _run_status(1) == "failed"
+    assert "[acme] run 2: complete" in result.output
+
+
+def test_timeout_without_workers_is_a_usage_error(sqlite_db):
+    result = CliRunner().invoke(cli.cli, ["run", "--client", "acme", "--timeout", "5"])
+
+    assert result.exit_code == 2
+    assert "--timeout only applies with --workers" in result.output
+
+
+def test_run_with_workers_stops_waiting_at_the_timeout(monkeypatch, sqlite_db):
+    """A run still going at the deadline is reported and left alone — the
+    workers may yet finish it, and the abandoned-run cleanup catches it if not."""
+    from celery.exceptions import TimeoutError as CeleryTimeoutError
+
+    waits = []
+
+    class StillRunning:
+        def get(self, timeout=None):
+            waits.append(timeout)
+            raise CeleryTimeoutError("The operation timed out.")
+
+    monkeypatch.setattr(cli.celery_app.control, "ping", lambda timeout: [{"worker@host": {"ok": "pong"}}])
+    monkeypatch.setattr(cli, "start_client_run", lambda config, client_cfg, include_csv: (7, StillRunning()))
+
+    result = CliRunner().invoke(cli.cli, ["run", "--client", "acme", "--workers", "--timeout", "0.5"])
+
+    assert result.exit_code == 1
+    assert "[acme] run 7: still running after 0.5 min; left running on the workers." in result.output
+    assert 0 < waits[0] <= 30

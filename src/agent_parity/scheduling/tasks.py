@@ -53,6 +53,7 @@ from agent_parity.config import AppConfig, ClientConfig, load_config
 from agent_parity.connectors import CONNECTOR_CLASSES
 from agent_parity.models import AgentDevice
 from agent_parity.pipeline import ad_frame_from_csvs, collect_ad_domain, collect_vendor_site
+from agent_parity.scheduling import persistence
 from agent_parity.scheduling.celery_app import app
 from agent_parity.scheduling.db import CorrelationRun, RunStatus, get_engine, init_db, session_factory
 from agent_parity.scheduling.persistence import finalize_run, sync_client_from_config
@@ -197,6 +198,18 @@ def mark_run_failed(_request, exc, _traceback, run_id: int) -> None:
 # --- orchestration ---------------------------------------------------------------
 
 
+def fail_abandoned_runs(config: AppConfig) -> list[int]:
+    """Mark runs stuck PENDING past ``config.pending_run_timeout_hours`` as FAILED.
+
+    Called at the start of every beat tick (``dispatch_all_clients``) and every
+    ``agent-parity run``; see ``persistence.fail_abandoned_runs``.
+    """
+    with _session() as session:
+        failed = persistence.fail_abandoned_runs(session, timedelta(hours=config.pending_run_timeout_hours))
+        session.commit()
+    return failed
+
+
 def start_client_run(
     config: AppConfig, client_cfg: ClientConfig, *, include_csv: bool = False
 ) -> tuple[int, AsyncResult]:
@@ -256,6 +269,7 @@ def dispatch_all_clients(force: bool = False) -> list[str]:
     whether it actually runs this tick.
     """
     config = load_config()
+    fail_abandoned_runs(config)
     dispatched = []
     for slug, client_cfg in sorted(config.clients.items()):
         if not force and not _client_is_due(client_cfg):

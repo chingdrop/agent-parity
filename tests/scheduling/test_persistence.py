@@ -7,13 +7,14 @@ tests/test_pipeline_sync.py already pins for the pure (unpersisted) path.
 """
 
 import json
-from datetime import UTC
+from datetime import UTC, datetime, timedelta
 
 from agent_parity.config import SplunkConfig, load_config
 from agent_parity.scheduling.db import CorrelationRun, CoverageSnapshot, RunStatus, get_engine, init_db, session_factory
 from agent_parity.scheduling.persistence import (
     SplunkExportError,
     export_run_to_splunk,
+    fail_abandoned_runs,
     finalize_run,
     persist_correlation,
     sync_client_from_config,
@@ -190,3 +191,45 @@ def test_finalize_run_does_not_fail_when_splunk_export_raises(monkeypatch):
     assert result is not None
     assert len(result.frame) == 51
     assert run.status == RunStatus.COMPLETE.value
+
+
+# --- abandoned runs ------------------------------------------------------------
+
+
+def test_fail_abandoned_runs_fails_only_old_pending_runs():
+    config = load_config()
+    now = datetime.now(UTC)
+    with _session() as session:
+        client = sync_client_from_config(session, config.client("acme"))
+        old_pending = CorrelationRun(client_id=client.id, started_at=now - timedelta(hours=30))
+        recent_pending = CorrelationRun(client_id=client.id, started_at=now - timedelta(hours=1))
+        old_complete = CorrelationRun(
+            client_id=client.id, started_at=now - timedelta(hours=30), status=RunStatus.COMPLETE.value
+        )
+        session.add_all([old_pending, recent_pending, old_complete])
+        session.commit()
+
+        failed = fail_abandoned_runs(session, timedelta(hours=24), now=now)
+        session.commit()
+
+        assert failed == [old_pending.id]
+        assert old_pending.status == RunStatus.FAILED.value
+        assert old_pending.finished_at is not None
+        assert old_pending.vendor_status["run"] == "error: abandoned, still pending after 24 h"
+        assert recent_pending.status == RunStatus.PENDING.value
+        assert old_complete.status == RunStatus.COMPLETE.value
+
+
+def test_a_late_callback_cannot_revive_an_abandoned_run():
+    """Once marked FAILED, a callback that fires after all is discarded."""
+    config = load_config()
+    with _session() as session:
+        run, result = _finalize_acme_run(session)
+        fresh = CorrelationRun(client_id=run.client_id, started_at=datetime.now(UTC) - timedelta(hours=30))
+        session.add(fresh)
+        session.commit()
+        fail_abandoned_runs(session, timedelta(hours=config.pending_run_timeout_hours))
+
+        assert persist_correlation(session, fresh, result, {}) == 0
+        assert fresh.status == RunStatus.FAILED.value
+        assert session.query(CoverageSnapshot).filter_by(run_id=fresh.id).count() == 0

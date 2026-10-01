@@ -8,6 +8,12 @@
 
 stale_days: 14
 
+# A run still pending this many hours after it started is marked failed (a
+# killed `agent-parity run`, a worker that died mid-run). Checked hourly by
+# beat and at the start of every `run`. Generous on purpose: collecting a
+# large estate sequentially took hours.
+pending_run_timeout_hours: 24
+
 vendors:
   # SentinelOne: global scope (one API token per named account, shared by
   # whichever clients use that account) — historically two genuinely

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 from sqlalchemy import select
@@ -149,6 +149,33 @@ def persist_correlation(
     count = len(frame)
     logger.info("Run %s for %s: %d snapshots, status=%s", current.id, client.slug, count, current.status)
     return count
+
+
+def fail_abandoned_runs(session: Session, older_than: timedelta, now: datetime | None = None) -> list[int]:
+    """Mark PENDING runs that started more than ``older_than`` ago as FAILED.
+
+    A run is left PENDING forever when its process dies before the chord
+    callback runs (Ctrl-C during an in-process ``agent-parity run``, a worker
+    killed mid-run). Returns the ids it marked. The reason is recorded under
+    ``vendor_status["run"]`` so it shows wherever runs are read. If such a run's
+    callback does fire later, ``persist_correlation`` sees it is no longer
+    PENDING and discards the late result rather than reviving it.
+    """
+    now = _naive_utc(now or datetime.now(UTC))
+    abandoned = session.scalars(
+        select(CorrelationRun).where(
+            CorrelationRun.status == RunStatus.PENDING.value,
+            CorrelationRun.started_at < now - older_than,
+        )
+    ).all()
+    hours = older_than.total_seconds() / 3600
+    for run in abandoned:
+        logger.warning("Run %s still pending after %g h; marking it failed", run.id, hours)
+        run.status = RunStatus.FAILED.value
+        run.finished_at = now
+        run.vendor_status = {**(run.vendor_status or {}), "run": f"error: abandoned, still pending after {hours:g} h"}
+    session.flush()
+    return [run.id for run in abandoned]
 
 
 def export_run_to_splunk(session: Session, run: CorrelationRun, result: CorrelationResult, splunk: SplunkConfig) -> int:

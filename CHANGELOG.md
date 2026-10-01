@@ -27,6 +27,10 @@ Notes on the record:
 - CI: a `security` job running pip-audit and gitleaks (also weekly), coverage reporting with an 88% gate, ruff's
   security (`S`) rules and stricter mypy flags.
 - `TODO.md`, tracking open documentation and hygiene items.
+- Runs still `pending` after `pending_run_timeout_hours` (a new `config.yaml` setting, default 24) are marked
+  `failed`, checked on every beat tick and at the start of every `run`. A killed CLI or worker could otherwise leave a
+  run `pending` forever.
+- `run --workers --timeout MINUTES`, to stop waiting at a deadline while unfinished runs keep going on the workers.
 - An `inventory_rate_limit` attribute on each connector. The Celery inventory tasks are built from the connector
   registry with it, so adding a vendor needs no change to `scheduling/tasks.py`.
 

@@ -149,6 +149,11 @@ class AppConfig:
     clients: dict[str, ClientConfig]
     storage: StorageConfig
     splunk: SplunkConfig
+    #: A run still PENDING this long after it started is treated as abandoned
+    #: (a killed CLI, a dead worker) and marked FAILED — see
+    #: agent_parity.scheduling.persistence.fail_abandoned_runs. Generous on
+    #: purpose: sequential collection of a large estate took hours.
+    pending_run_timeout_hours: int = 24
 
     def client(self, slug: str) -> ClientConfig:
         try:
@@ -263,6 +268,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         clients=clients,
         storage=parse_storage_config(raw),
         splunk=splunk,
+        pending_run_timeout_hours=int(raw.get("pending_run_timeout_hours", 24)),
     )
 
 
