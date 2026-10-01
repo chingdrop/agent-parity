@@ -390,9 +390,9 @@ one filter, not a manual search.
 
 ## OS end-of-life: a third prioritization axis
 
-[endoflife.date](https://endoflife.date/) is the source for a small,
-hand-typed reference table (`src/agent_parity/os_eol_data.json`,
-`os_eol_builds_data.json`) mapping OS names — and, where possible, exact
+[endoflife.date](https://endoflife.date/) is the source for the reference
+data (`src/agent_parity/os_eol_data.json`, derived from its API by
+`agent_parity.os_eol_live`), mapping OS names — and, where possible, exact
 Windows build numbers — to their end-of-life date. Every device gets
 classified against today's date into `unknown` / `supported` / `eol_soon`
 (within 180 days) / `end_of_life` (`src/agent_parity/os_eol.py`). This is
@@ -422,7 +422,15 @@ precisely instead:
 trailing UBR/revision component. `classify_eol_status()` in
 `correlation.py` prefers a build number when either side of the merge
 has one — agent-reported first, then AD's — and only falls back to free-text
-matching when neither does. AD's own build number is captured for *every*
+matching when neither does.
+
+A build number alone doesn't identify an OS: 26100 is both Windows 11 24H2
+(end of life 2026-10-13) and Windows Server 2025 (2034-11-14), and 17763 is
+both Server 2019 and a short-lived semi-annual server release. So build
+entries are keyed by product, and servers are looked up by their release
+name first ("Windows Server 2019" is exact), using the server build table
+only when the name carries no year. Before this, every Windows Server 2025
+machine was flagged end of life nine years early. AD's own build number is captured for *every*
 device (the same backfill principle as `machine_type`), so even a
 `missing_agent` row — no agent record at all — still gets a precise EOL
 classification instead of `unknown`.

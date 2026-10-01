@@ -125,7 +125,16 @@ upgrade. It resolves `os_build` per row with the same both-sides-then-fallback
 precedence as `backfill_machine_type` — agent-reported build first (only
 SentinelOne sets one), then AD's own `operatingSystemVersion`-derived build, then
 free-text OS-name matching (the only option for Carbon Black/BitDefender-only
-rows, which never carry a build number). Because a column is only pandas-suffixed
+rows, which never carry a build number). **Servers are the exception** in
+`os_eol.eol_status_for_device`: build numbers are shared across products (26100 is Windows 11
+24H2 *and* Server 2025; 17763 is Server 2019 *and* a 2020-EOL semi-annual release), so build
+entries are keyed by `(product, build)` and a server (OS text containing "server", the same
+signal as `infer_machine_type`) is resolved by its named release first, falling back to the
+server build table only for year-less SAC names. Don't reintroduce a build-only lookup — it
+flagged every Server 2025 machine end of life from 2026-10-14. The data is
+`src/agent_parity/os_eol_data.json`, a snapshot derived from endoflife.date by
+`os_eol_live.derive_lifecycle_data` — regenerate it with `scripts/check_eol_drift.py --write`,
+never by hand, so the snapshot and any live fetch follow the same rules. Because a column is only pandas-suffixed
 when it exists on *both* merge sides, watch for a bare (unsuffixed) `os_build`
 column if a test helper's frame doesn't include it on both the AD and agent side —
 this silently breaks the precedence logic without erroring. `eol_status` is always

@@ -103,18 +103,53 @@ def test_extract_build_number_ignores_a_revision_suffix_below_the_build_floor():
 
 
 @pytest.mark.parametrize(
-    "build,expected",
+    "build,server,expected",
     [
-        (19045, date(2025, 10, 14)),  # Windows 10 22H2
-        (22631, date(2025, 11, 11)),  # Windows 11 23H2
-        (26100, date(2026, 10, 13)),  # Windows 11 24H2
-        (20348, date(2031, 10, 14)),  # Windows Server 2022
-        (99999, None),  # not in the table
-        (None, None),
+        (19045, False, date(2025, 10, 14)),  # Windows 10 22H2
+        (22631, False, date(2025, 11, 11)),  # Windows 11 23H2
+        (26100, False, date(2026, 10, 13)),  # Windows 11 24H2
+        (26100, True, date(2034, 11, 14)),  # Windows Server 2025: same build, different product
+        (20348, True, date(2031, 10, 14)),  # Windows Server 2022
+        (20348, False, None),  # a server-only build isn't a client build
+        (99999, False, None),  # not in the table
+        (None, False, None),
     ],
 )
-def test_eol_date_for_build(build, expected):
-    assert eol_date_for_build(build) == expected
+def test_eol_date_for_build(build, server, expected):
+    assert eol_date_for_build(build, server=server) == expected
+
+
+def test_windows_server_2025_is_not_given_windows_11_24h2s_date():
+    """Regression: build 26100 is shared, and a build-only lookup flagged every
+    Windows Server 2025 machine end of life from 2026-10-14."""
+    status = eol_status_for_device("Windows Server 2025 Datacenter", os_build=26100, as_of=date(2026, 10, 14))
+    assert status == OSLifecycleStatus.SUPPORTED
+
+
+def test_a_named_server_release_wins_over_a_build_shared_with_a_semi_annual_release():
+    """17763 is Server 2019 (LTSC, 2029) and Server 1809 SAC (2020); the name decides."""
+    status = eol_status_for_device("Windows Server 2019 Standard", os_build=17763, as_of=date(2026, 10, 1))
+    assert status == OSLifecycleStatus.SUPPORTED
+
+
+def test_a_server_name_without_a_year_uses_the_server_build_table():
+    """Semi-annual-channel servers report "Windows Server Datacenter", no year."""
+    status = eol_status_for_device("Windows Server Datacenter", os_build=17763, as_of=date(2026, 10, 1))
+    assert status == OSLifecycleStatus.END_OF_LIFE  # 1809 SAC, 2020-11-10
+
+
+@pytest.mark.parametrize(
+    "os_text,expected",
+    [
+        ("Windows Server 2012 R2 Standard", date(2023, 10, 10)),
+        ("Windows Server 2012 Standard", date(2023, 10, 10)),
+        ("Windows 8.1 Pro", date(2023, 1, 10)),
+        ("Windows 8 Pro", date(2016, 1, 12)),
+        ("Windows 11 Enterprise", None),  # deliberately unmatched
+    ],
+)
+def test_the_most_specific_free_text_name_matches(os_text, expected):
+    assert eol_date_for(os_text) == expected
 
 
 def test_eol_status_for_device_prefers_build_over_free_text():

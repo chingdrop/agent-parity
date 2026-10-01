@@ -76,6 +76,10 @@ Notes on the record:
 
 ### Fixed
 
+- Windows Server 2025 was classified end of life from 2026-10-14, nine years early: build 26100 is shared with Windows
+  11 24H2, and the lookup went by build alone. Builds are now keyed by product, and servers resolve by release name
+  first. The bundled EOL data is now one snapshot derived from endoflife.date (`os_eol_data.json`, 14 names and 32
+  builds, up from 5 and 6), regenerated with `scripts/check_eol_drift.py --write`.
 - The tests' own HTTP calls now have timeouts.
 - Stale module paths in docs and comments.
 - The Docker image creates `/app/data`, so the compose stack's shared SQLite volume is writable. It was created

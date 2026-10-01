@@ -31,9 +31,10 @@ captured, otherwise the free-text table, where a bare "Windows 11" name stays `u
 See [ADR 0008](decisions/0008-classify-os-eol-by-build-number-with-free-text-fallback.md) and
 `test_carbonblack_and_bitdefender_never_set_os_build` in [`test_connectors.py`](../tests/connectors/test_connectors.py).
 
-**The OS end-of-life data is small, Windows-only and hand-maintained.** It has five free-text entries and six build
-entries, covering Windows and Windows Server; other operating systems classify as `unknown`. It is refreshed by hand,
-and [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) is a manual check that is not part of CI. See [
+**The OS end-of-life data is Windows-only.** It covers Windows and Windows Server (named releases plus every build
+since Windows 10, per product); other operating systems classify as `unknown`. It is a committed snapshot of
+endoflife.date, which [`scripts/check_eol_drift.py`](../scripts/check_eol_drift.py) compares and, with `--write`,
+regenerates. See [
 `os_eol.py`](../src/agent_parity/os_eol.py) and `test_eol_date_for_unknown_os_returns_none` in [
 `test_os_eol.py`](../tests/test_os_eol.py).
 
