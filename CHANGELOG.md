@@ -20,13 +20,15 @@ Notes on the record:
 - `CONTRIBUTING.md`, and project URLs in the package metadata.
 - `scripts/check_eol_drift.py`, a maintainer-run check of the committed OS end-of-life data against endoflife.date.
 - `docs/sample-report.md`, generated from a real run against the fixtures by `scripts/gen_sample_report.py`.
-- `docs/architecture.md`, ten architecture decision records under `docs/decisions/`, and `docs/threat-model.md`.
+- `docs/architecture.md`, eleven architecture decision records under `docs/decisions/`, and `docs/threat-model.md`.
 - A README first screen with badges, a short "what it answers" list and a 60-second try-it, plus `docs/demo.tape`, a vhs
   script for a terminal recording, rendered as `docs/demo.gif`.
 - `SECURITY.md`, Dependabot (uv and GitHub Actions) and a weekly CodeQL workflow.
 - CI: a `security` job running pip-audit and gitleaks (also weekly), coverage reporting with an 88% gate, ruff's
   security (`S`) rules and stricter mypy flags.
 - `TODO.md`, tracking open documentation and hygiene items.
+- An `inventory_rate_limit` attribute on each connector. The Celery inventory tasks are built from the connector
+  registry with it, so adding a vendor needs no change to `scheduling/tasks.py`.
 
 ### Changed
 
@@ -41,14 +43,12 @@ Notes on the record:
 - Package version set to 1.2.0, to match the latest tag.
 - **Breaking:** `agent-parity run` now records every run in the SQLite history (what `sync` used to do). Pass `--csv`
   to also write `output/<client>.csv`, which `run` previously wrote by default.
-- `run_and_persist_for_client` returns `(CorrelationRun, CorrelationResult | None)` and reuses
-  `run_correlation_for_client` instead of duplicating collection. The persist-and-forward half of `finalize_run` is now
+- `agent-parity run` now executes the same Celery chord the beat schedule dispatches, as the original tool did:
+  in-process by default, or on running workers with the new `--workers` flag. `run_and_persist_for_client` is removed;
+  `finalize_run` returns the `CorrelationResult` instead of a snapshot count, and its persist-and-send half is now
   `persist_result`.
-
-- `agent-parity run` now executes the same Celery chord the beat schedule dispatches: in-process by default, or on
-  running workers with the new `--workers` flag. `run_and_persist_for_client` is removed; `finalize_run` returns the
-  `CorrelationResult` instead of a snapshot count.
-
+- The Celery tasks and the in-process pipeline share one per-domain and one per-site collection helper
+  (`pipeline.collect_ad_domain`, `pipeline.collect_vendor_site`) instead of duplicating collection and error handling.
 - **Breaking:** the Splunk export sends every run whole, one event per row (`agent_parity:coverage`) plus a summary
   event (`agent_parity:coverage_summary`), as the original tool did, instead of per-run deltas. The delta design lost
   gap closures (a fixed gap's new row never matched its old one) and re-sent everything after a failed run.
@@ -68,6 +68,11 @@ Notes on the record:
 
 - The tests' own HTTP calls now have timeouts.
 - Stale module paths in docs and comments.
+- The Docker image creates `/app/data`, so the compose stack's shared SQLite volume is writable. It was created
+  root-owned, so the worker, beat and CLI containers could never save a run.
+- On the Celery path, a malformed AD export now fails only its own domain instead of the whole run.
+- Celery tasks close their database engines; each task leaked a SQLite connection.
+- `docker/smoke_test.sh` runs in its own compose project, so its teardown no longer deletes a dev stack's run history.
 
 ## [1.2.0] - 2026-07-14
 
