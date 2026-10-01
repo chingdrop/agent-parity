@@ -53,7 +53,8 @@ if enabled, Splunk. The endpoint receives a URL, never a storage credential.
 - **Credentials in error text:** vendor API credentials and the Splunk token are sent only in request headers, never in
   the URL, params or body. HTTP error text includes the URL but not headers, so it does not contain them. Vendor error
   bodies are echoed as received (for example BitDefender's RPC error) and have not been checked for embedded secrets.
-- **Splunk (opt-in):** forwards coverage deltas to the configured HEC URL.
+- **Splunk (opt-in):** forwards each run (one event per device row, with hostnames, OS and coverage status, plus
+  a summary) to the configured HEC URL.
 - **Keeping secrets out of the repo:** `.env` and `.env.*` are gitignored (`.env.example` has empty values),
   `config.yaml` holds only `${VAR}` references, and with nothing set every connector runs against synthetic fixtures. CI
   runs gitleaks and pip-audit, and Actions are pinned to commit SHAs.

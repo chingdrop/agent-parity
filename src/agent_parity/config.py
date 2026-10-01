@@ -124,8 +124,9 @@ class ClientConfig:
 
 @dataclass(frozen=True)
 class SplunkConfig:
-    """HTTP Event Collector settings for the coverage-delta export (see
-    ``agent_parity.splunk_export``). A no-op unless both
+    """HTTP Event Collector settings for the per-run coverage export (see
+    ``agent_parity.splunk_export``): ``sourcetype`` for the one-per-row
+    events, ``summary_sourcetype`` for each run's summary event. A no-op unless both
     ``hec_url`` and ``hec_token`` are configured — same opt-in shape as
     object storage or a vendor's own credentials.
     """
@@ -133,7 +134,8 @@ class SplunkConfig:
     hec_url: str | None = None
     hec_token: str | None = None
     index: str = "security_coverage"
-    sourcetype: str = "agent_parity:coverage_delta"
+    sourcetype: str = "agent_parity:coverage"
+    summary_sourcetype: str = "agent_parity:coverage_summary"
 
     @property
     def enabled(self) -> bool:
@@ -251,7 +253,8 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         hec_url=splunk_raw.get("hec_url"),
         hec_token=splunk_raw.get("hec_token"),
         index=splunk_raw.get("index") or "security_coverage",
-        sourcetype=splunk_raw.get("sourcetype") or "agent_parity:coverage_delta",
+        sourcetype=splunk_raw.get("sourcetype") or "agent_parity:coverage",
+        summary_sourcetype=splunk_raw.get("summary_sourcetype") or "agent_parity:coverage_summary",
     )
 
     return AppConfig(

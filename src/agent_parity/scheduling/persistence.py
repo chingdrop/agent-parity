@@ -14,6 +14,7 @@ collected.
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import UTC, datetime
 
@@ -150,55 +151,39 @@ def persist_correlation(
     return count
 
 
-def export_deltas_to_splunk(session: Session, run: CorrelationRun, splunk: SplunkConfig) -> int:
-    """Diff this run against the client's previous run and forward transitions.
+def export_run_to_splunk(session: Session, run: CorrelationRun, result: CorrelationResult, splunk: SplunkConfig) -> int:
+    """Send a finalized run to Splunk: one event per frame row, then a summary.
 
-    Splunk is a pure sink for state transitions, not a snapshot dump — see
-    ``agent_parity.splunk_export``'s module docstring for why.
+    The whole run, every time — the dashboard shows the latest run, and the
+    summaries chart the trend (see ``agent_parity.splunk_export``). Each row
+    and the summary carry the client, run id and run start, so rows from one
+    run can be selected together.
     """
     if not splunk.enabled:
         return 0
 
-    previous = session.scalar(
-        select(CorrelationRun)
-        .where(
-            CorrelationRun.client_id == run.client_id,
-            CorrelationRun.started_at < run.started_at,
-            CorrelationRun.status != RunStatus.PENDING.value,
-        )
-        .order_by(CorrelationRun.started_at.desc())
-        .limit(1)
-    )
-
-    def snapshot_map(r: CorrelationRun | None) -> dict[tuple[int, str], CoverageSnapshot]:
-        if r is None:
-            return {}
-        rows = session.scalars(select(CoverageSnapshot).where(CoverageSnapshot.run_id == r.id))
-        return {(s.device_id, s.vendor): s for s in rows}
-
-    before = snapshot_map(previous)
-    current_snapshots = session.scalars(select(CoverageSnapshot).where(CoverageSnapshot.run_id == run.id)).all()
     client = session.get_one(Client, run.client_id)
+    started_at = _naive_utc(run.started_at).replace(tzinfo=UTC)
+    context = {"client": client.slug, "run_id": run.id, "run_started_at": started_at.isoformat()}
+    # to_json handles NaN -> null, timestamps -> ISO 8601 and numpy scalars in one pass.
+    # _merge is pandas' merge indicator, already folded into status.
+    frame = result.frame.drop(columns=["_merge"], errors="ignore")
+    records = json.loads(frame.to_json(orient="records", date_format="iso"))
+    rows = [{**context, **record} for record in records]
+    summary = {
+        **context,
+        "status": run.status,
+        "vendor_status": run.vendor_status,
+        **json.loads(json.dumps(result.summary, default=_json_scalar)),
+    }
+    return splunk_export.send_run(rows, summary, splunk, event_time=started_at.timestamp())
 
-    deltas = []
-    for snap in current_snapshots:
-        old = before.get((snap.device_id, snap.vendor))
-        if old is not None and old.status == snap.status:
-            continue
-        device = session.get_one(Device, snap.device_id)
-        deltas.append(
-            {
-                "client": client.slug,
-                "join_key": device.join_key,
-                "hostname": device.hostname,
-                "vendor": snap.vendor or None,
-                "previous_status": old.status if old else None,
-                "status": snap.status,
-                "run_id": run.id,
-                "run_started_at": run.started_at.isoformat(),
-            }
-        )
-    return splunk_export.send_deltas(deltas, splunk)
+
+def _json_scalar(value):
+    """``json.dumps`` fallback for numpy scalars (``by_vendor``'s counts)."""
+    if hasattr(value, "item"):
+        return value.item()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
 def persist_result(
@@ -208,7 +193,7 @@ def persist_result(
     vendor_status: dict[str, str],
     splunk: SplunkConfig | None = None,
 ) -> int:
-    """Persist an already-correlated result + (optionally) forward deltas.
+    """Persist an already-correlated result + (optionally) send it to Splunk.
 
     ``result`` is ``None`` when every one of a client's domains failed to
     export (see ``pipeline.collect_ad_frame``) — there's nothing to
@@ -223,10 +208,10 @@ def persist_result(
     count = persist_correlation(session, run, result, vendor_status)
     if count and splunk is not None:
         try:
-            export_deltas_to_splunk(session, run, splunk)
+            export_run_to_splunk(session, run, result, splunk)
         except SplunkExportError:
             # A reporting sink outage must never fail the run itself.
-            logger.exception("Splunk delta export failed for run %s", run.id)
+            logger.exception("Splunk export failed for run %s", run.id)
     return count
 
 

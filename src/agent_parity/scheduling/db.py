@@ -3,8 +3,7 @@
 This package owns scheduling and persistence directly (see ADR 0009). The
 job here: track one ``CorrelationRun`` per pipeline execution and enough
 device/snapshot history to make a Celery chord callback idempotent (see
-``agent_parity.scheduling.persistence``) and to compute deltas for Splunk
-export.
+``agent_parity.scheduling.persistence``).
 
 ``config.yaml`` stays the sole topology/credential source — nothing here
 duplicates client/vendor configuration. ``Client`` is just an identity
