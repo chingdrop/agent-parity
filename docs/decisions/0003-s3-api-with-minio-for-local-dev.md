@@ -32,7 +32,7 @@ dev, via `docker/docker-compose.yml`) and real AWS S3. `StorageConfig.backend` s
 - Path-style addressing and SigV4 are pinned for S3-compatible services.
 - `ObjectStorage` has no bucket-admin methods on purpose; bucket provisioning is out-of-band, and only the smoke test
   creates a bucket.
-- Tests use `moto`; `docker/smoke_check_storage.py` exercises real MinIO and is not part of `uv run pytest`.
+- Tests use `moto`; `docker/smoke_check_storage.py` exercises a real local S3 server (see [0011](0011-versity-s3-gateway-for-local-dev.md)) and is not part of `uv run pytest`.
 - Rules out Azure Blob without new code.
 
 ## Evidence
