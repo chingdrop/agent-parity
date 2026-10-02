@@ -1,79 +1,68 @@
 # TODO
 
-Open items for this repo.
+Open items for this repo. Finished items are recorded in [CHANGELOG.md](CHANGELOG.md) and the git history rather than
+kept here. There are no open `TODO(craig)` questions: every one in the ADRs and the threat model has been answered.
 
-## Docs
+## Features
 
-- [x] Fill in the "Original deployment" result in `README.md`: coverage rose from 47% to 80% (33 percentage points)
-  across ~6,000 endpoints over ~6 months, and the quarterly report was automated through Splunk.
-- [x] Render the demo GIF and embed it in the README's "See it" section. `docs/demo.tape` is untested because `vhs`
-  wasn't available when it was written:
-  ```bash
-  brew install vhs && uv sync && vhs docs/demo.tape
-  ```
-  Then replace the hidden TODO comment in the README with `![agent-parity demo](docs/demo.gif)`.
+- [ ] **Coverage-trend report.** The original tool's purpose: coverage climbing quarter over quarter, with servers called
+  out. The history is already in `CoverageSnapshot`, but nothing reads it back. Agreed shape so far:
+  - `agent-parity report`, with `--by quarter|month|run` (default quarter; the last finished run per client per period)
+    and `--client`, printing a table with overall and server coverage, change since the previous period, and a sparkline.
+  - `--csv`, and `--html` for an interactive chart via Plotly as an optional extra (`agent-parity[report]`, with
+    Plotly's JavaScript embedded so the file works offline). No Dash or Streamlit: there is no web dashboard (ADR 0009).
+  - A generated `docs/sample-trend.md` with a Mermaid chart, so the trend shows on the GitHub page.
+  - A deterministic history seeder (`scripts/seed_history.py`), writing only to a demo database, so the demo isn't a flat
+    line: gaps close quarter by quarter, servers first, ending at today's fixture numbers.
+  - Still to decide: how many quarters the demo history covers (about two, 47% to 80%, like the original, or more for a
+    smoother line), and which of the formats above to build.
+- [ ] **Splunk saved searches and a dashboard.** The export sends every run (one event per row plus a summary), but the
+  repo has no Splunk-side content. Ship the latest-run search and the trend `timechart` from
+  [docs/architecture.md](docs/architecture.md#splunk-export) as saved searches, plus a dashboard definition.
+- [ ] **EOL drift check in CI.** Deployments refresh OS end-of-life data daily, but the committed snapshot
+  (`src/agent_parity/os_eol_data.json`) only changes when someone runs `scripts/check_eol_drift.py --write`. A weekly
+  workflow could run it and open a PR when the snapshot drifts.
+- [ ] **A demo fixture for a hostname shared by two AD domains.** `resolve_ambiguous_join_keys` is covered by unit tests,
+  but `sample_data/` has no such case, so the demo never shows the `ambiguous_join_key` flag or an `fqdn_exact` match.
+  Globex is already multi-domain. Adding one would change the fixture counts in the README, `docs/sample-report.md` and
+  `tests/test_pipeline_sync.py`.
 
-## Design decisions (ADRs)
+## Bugs and unverified behavior
 
-The ADRs in `docs/decisions/` leave a hidden `TODO(craig)` comment wherever the repo doesn't record why a choice was
-made or what else was considered. Replace each comment with the answer, or delete it if there was no alternative. Find
-them all with `grep -rn "TODO(craig)" docs/decisions`.
+No known bugs are open. These are things that are untested against the real thing:
 
-- [x] [0001](docs/decisions/0001-collect-ad-data-via-vendor-remote-scripting.md): other AD collection methods you
-  weighed besides a direct LDAP bind (WinRM, a scheduled task, a collector agent), and why they lost.
-- [x] [0002](docs/decisions/0002-return-ad-export-via-presigned-put-url.md): other ways to hand the export back besides
-  the vendor's output channel, and why they lost.
-- [x] [0003](docs/decisions/0003-s3-api-with-minio-for-local-dev.md): why the S3 API was chosen at all. The repo records
-  that it is S3, not why.
-- [x] [0003](docs/decisions/0003-s3-api-with-minio-for-local-dev.md): other storage backends you considered besides S3
-  and Azure Blob.
-- [x] [0005](docs/decisions/0005-correlate-on-normalized-hostname-only.md): why fuzzy hostname matching is left out "by
-  design". The repo records that it is, not the reason.
-- [x] [0007](docs/decisions/0007-normalize-vendor-wording-to-sentinelone.md): other canonical vocabularies considered,
-  such as a vendor-neutral one.
-- [x] [0010](docs/decisions/0010-multi-domain-ad-one-export-per-domain.md): alternatives weighed for handling several AD
-  domains.
+- [ ] **`run --workers --timeout` against a real worker.** It is unit-tested with a faked Celery timeout; the live check
+  was skipped because Docker wasn't running. Start `redis` and `worker`, then run
+  `docker compose -f docker/docker-compose.yml run --rm --no-deps agent-parity run --client acme --workers --timeout 0.001`
+  and confirm it reports the run as still going and the worker then finishes it.
+- [ ] **SentinelOne's build-number field** (`osRevision`) is a reconstruction from memory, not checked against current API
+  docs or a live tenant. See `connectors/sentinelone.py`.
+- [ ] **BitDefender's `company_id` filter** is plausible from GravityZone's MSP company hierarchy but unverified against
+  its API docs or a live tenant. See `connectors/bitdefender.py`.
+
+## Release
+
+- [ ] **Bump the version and tag a release.** `pyproject.toml` still says 1.2.0, and 71 commits have landed since the
+  `v1.2.0` tag, including breaking changes (`sync` removed, `run` no longer writes a CSV by default, the Splunk sourcetype
+  renamed, `MINIO_ROOT_*` renamed). Under semantic versioning that makes the next release 2.0.0. Move the CHANGELOG's
+  Unreleased section under the new version when tagging.
+- [ ] **Regenerate `docs/sample-report.md`** before the release (`uv run python scripts/gen_sample_report.py`). Its OS
+  end-of-life section is evaluated as of the day it's generated.
 
 ## Security and CI
 
-Set up by the security-hygiene branch; none of the new workflows has run on GitHub yet.
-
-- [x] Enable private vulnerability reporting (Settings → Code security). `SECURITY.md` links to it. Enabled and
-  verified through the API; the link checker can't confirm it, since GitHub redirects that URL to the login page.
-- [x] Confirm the response windows in `SECURITY.md` (7 days to acknowledge, 30 to assess) and decide on a backup
-  contact. Windows kept as proposed; no backup contact is published.
-- [x] Answer the four `TODO(craig)` questions in `docs/threat-model.md`: how you load `.env` locally, what SentinelOne
-  and Carbon Black retain of script arguments, whether vendor or HTTP error text can ever include credentials, and which
-  account and privileges the export script runs as. Find them with `grep -rn "TODO(craig)" docs/threat-model.md`.
-- [ ] After the first CI run, check the `security` job. gitleaks couldn't be run locally, so the first run is its first
-  real scan. The action is free for a personal account; if the repo moves to an organization it needs a
-  `GITLEAKS_LICENSE` secret.
-- [x] Check that CodeQL "default setup" is not enabled (Settings → Code security). It conflicts with
-  `.github/workflows/codeql.yml`.
-- [ ] `main` has no branch protection or rulesets today. If you add protection, require these check names: `lint`,
-  `typecheck`, `test`, `build`, `security` and `Analyze (python)`. `lint` no longer runs mypy; that is `typecheck`.
-- [ ] Decide on a coverage badge. None was added on purpose; the CI gate is 88% (measured 92.84%, line and branch).
-- [ ] Optionally tighten mypy toward `strict`, one flag at a time. `--strict` currently reports 71 errors in 17 files:
-  41 bare generics, 15 missing annotations, 6 untyped calls, 4 untyped Celery decorators, 5 `no-any-return`.
-
-## Repo hygiene
-
-- [x] Add a general `*.csv` rule to `.gitignore` (with `!sample_data/**/*.csv`). Only `output/` is ignored today, so a
-  stray CSV elsewhere would not be.
-- [x] Optionally commit a doc link checker under `scripts/` and run it in CI. `lychee` is the off-the-shelf option.
-- [x] `charset-normalizer` 3.4.8 is a yanked release (`uv lock` warns), pulled in at runtime through `requests`. A
-  non-yanked 3.5.1 resolves: `uv lock --upgrade-package charset-normalizer`. It changes a runtime dependency, so it was
-  left for you.
-- [x] Upgrade the dev-only `cryptography` 49.0.0 (PYSEC-2026-3552, fixed in 50.0.0). It arrives through `moto`, so it is
-  not in the runtime audit that CI gates on: `uv lock --upgrade-package cryptography`.
-- [ ] Newer majors exist for the pinned actions (`checkout` v7, `setup-uv` v10, `upload-artifact` v7, `gitleaks-action`
-  v3). Dependabot will propose them; review the major bumps rather than auto-merging.
-- [ ] `pyproject.toml` now says 1.2.0 to match the `v1.2.0` tag, but 21 commits have landed since that tag. Bump the
-  version and tag together at the next release. The old tags never tracked the package version (`v1.0.0` and `v1.1.0`
-  sit on commits that said 0.1.0).
-- [x] Optionally extend ruff to `scripts/` and `docker/`; CI lints only `src` and `tests`.
+- [ ] `main` has no branch protection or rulesets. If you add protection, require `lint`, `typecheck`, `test`, `build`,
+  `security` and `Analyze (python)`. Don't require `smoke`: it only runs when the Docker stack or scheduling code
+  changes, and a required check that never starts blocks the PR.
+- [ ] Decide on a coverage badge. None was added on purpose; the CI gate is 88% (measured 93.3%, line and branch).
+- [ ] Optionally tighten mypy toward `strict`, one flag at a time. `--strict` now reports 90 errors in 19 files: 56 bare
+  generics (`type-arg`), 16 missing annotations, 7 `no-any-return`, 6 untyped calls and 5 untyped Celery decorators.
+- [ ] Pin the remaining floating images. `docker/Dockerfile` copies uv from `ghcr.io/astral-sh/uv:latest`, and compose
+  uses `redis:7-alpine`. A floating tag is how the MinIO image broke the stack; the S3 server is already pinned.
 
 ## Notes
 
 - `docs/sample-report.md` is generated: `uv run python scripts/gen_sample_report.py`. Its OS end-of-life counts depend
   on the date it was generated, so regenerate it when the numbers matter.
+- `src/agent_parity/os_eol_data.json` is generated too: `uv run python scripts/check_eol_drift.py --write`. Never edit it
+  by hand.

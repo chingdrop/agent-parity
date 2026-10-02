@@ -80,10 +80,10 @@ warn_unused_ignores = true
 check_untyped_defs = true
 strict_equality = true
 warn_unreachable = true
-# Deliberately not `strict = true`: that currently reports 71 errors in 17 files
-# (41 bare generics [type-arg], 15 missing annotations [no-untyped-def],
-# 6 [no-untyped-call], 4 untyped Celery decorators [untyped-decorator],
-# 5 [no-any-return]). Tighten one flag at a time from here.
+# Deliberately not `strict = true`: that currently reports 90 errors in 19 files
+# (56 bare generics [type-arg], 16 missing annotations [no-untyped-def],
+# 7 [no-any-return], 6 [no-untyped-call], 5 untyped Celery decorators
+# [untyped-decorator]). Tighten one flag at a time from here.
 
 [[tool.mypy.overrides]]
 module = ["celery.*"]
