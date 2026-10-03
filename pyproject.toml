@@ -45,7 +45,7 @@ dev = [
     "pytest-cov>=7.1.0",
     "reportlab>=4.4",
     # Rasterizes the sample report's first page for the README
-    # (scripts/gen_sample_quarterly_report.py); not used at runtime.
+    # (tools/gen_sample_quarterly_report.py); not used at runtime.
     "pypdfium2>=4.30",
 ]
 

@@ -41,7 +41,7 @@ endoflife.date by `agent_parity.os_eol_live`.
   `src/agent_parity/os_eol_data.json`](../../src/agent_parity/os_eol_data.json), [
   `src/agent_parity/os_eol_live.py`](../../src/agent_parity/os_eol_live.py), `classify_eol_status`
   in [`src/agent_parity/correlation.py`](../../src/agent_parity/correlation.py), [
-  `scripts/check_eol_drift.py`](../../scripts/check_eol_drift.py)
+  `scripts/check_eol_drift.py`](../../tools/check_eol_drift.py)
 - Tests: [`tests/test_os_eol.py`](../../tests/test_os_eol.py) `test_eol_date_for_unknown_os_returns_none`,
   `test_eol_status_for_device_prefers_build_over_free_text`,
   `test_eol_status_for_device_distinguishes_feature_updates`,

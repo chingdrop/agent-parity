@@ -308,7 +308,7 @@ Each quarter is its last finished run, the state the client was in at quarter
 end. `scheduling/history.py` reads the history into plain data and
 `quarterly_report.py` renders it with ReportLab (an optional extra,
 `agent-parity[report]`), the same split as the Splunk export. The fixtures are
-static, so `scripts/seed_history.py` builds a deterministic demo history in a
+static, so `tools/seed_history.py` builds a deterministic demo history in a
 separate database for the sample.
 
 ## AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
@@ -467,7 +467,7 @@ cache whenever it exists and is valid, re-reading it when it changes, and
 fall back to the bundled snapshot (`os_eol_data.json`) otherwise, so an
 endoflife.date outage never stops a run. `refresh_os_eol: false` in
 `config.yaml` turns it off for air-gapped deployments. The bundled snapshot
-in the repo is regenerated with `scripts/check_eol_drift.py --write`. AD's own build number is captured for *every*
+in the repo is regenerated with `tools/check_eol_drift.py --write`. AD's own build number is captured for *every*
 device (the same backfill principle as `machine_type`), so even a
 `missing_agent` row — no agent record at all — still gets a precise EOL
 classification instead of `unknown`.

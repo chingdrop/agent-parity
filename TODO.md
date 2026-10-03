@@ -14,7 +14,7 @@ kept here. There are no open `TODO(craig)` questions: every one in the ADRs and 
   repo has no Splunk-side content. Ship the latest-run search and the trend `timechart` from
   [docs/architecture.md](docs/architecture.md#splunk-export) as saved searches, plus a dashboard definition.
 - [ ] **EOL drift check in CI.** Deployments refresh OS end-of-life data daily, but the committed snapshot
-  (`src/agent_parity/os_eol_data.json`) only changes when someone runs `scripts/check_eol_drift.py --write`. A weekly
+  (`src/agent_parity/os_eol_data.json`) only changes when someone runs `tools/check_eol_drift.py --write`. A weekly
   workflow could run it and open a PR when the snapshot drifts.
 - [ ] **A demo fixture for a hostname shared by two AD domains.** `resolve_ambiguous_join_keys` is covered by unit tests,
   but `sample_data/` has no such case, so the demo never shows the `ambiguous_join_key` flag or an `fqdn_exact` match.
@@ -40,7 +40,7 @@ No known bugs are open. These are things that are untested against the real thin
   `v1.2.0` tag, including breaking changes (`sync` removed, `run` no longer writes a CSV by default, the Splunk sourcetype
   renamed, `MINIO_ROOT_*` renamed). Under semantic versioning that makes the next release 2.0.0. Move the CHANGELOG's
   Unreleased section under the new version when tagging.
-- [ ] **Regenerate `docs/sample-report.md`** before the release (`uv run python scripts/gen_sample_report.py`). Its OS
+- [ ] **Regenerate `docs/sample-report.md`** before the release (`uv run python tools/gen_sample_report.py`). Its OS
   end-of-life section is evaluated as of the day it's generated.
 
 ## Security and CI
@@ -56,7 +56,7 @@ No known bugs are open. These are things that are untested against the real thin
 
 ## Notes
 
-- `docs/sample-report.md` is generated: `uv run python scripts/gen_sample_report.py`. Its OS end-of-life counts depend
+- `docs/sample-report.md` is generated: `uv run python tools/gen_sample_report.py`. Its OS end-of-life counts depend
   on the date it was generated, so regenerate it when the numbers matter.
-- `src/agent_parity/os_eol_data.json` is generated too: `uv run python scripts/check_eol_drift.py --write`. Never edit it
+- `src/agent_parity/os_eol_data.json` is generated too: `uv run python tools/check_eol_drift.py --write`. Never edit it
   by hand.

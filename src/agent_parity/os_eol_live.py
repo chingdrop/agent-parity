@@ -2,7 +2,7 @@
 
 The one place the rules for turning endoflife.date's public API into
 ``os_eol``'s lookup tables live, so the committed snapshot
-(``scripts/check_eol_drift.py --write``) and the daily refresh
+(``tools/check_eol_drift.py --write``) and the daily refresh
 (``refresh_cache``: beat at 06:30, and ``agent-parity run`` when the cache is
 over a day old) can't disagree:
 
