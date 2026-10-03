@@ -16,6 +16,10 @@ Notes on the record:
 
 ### Added
 
+- `.python-version` (3.12) and `license-files = ["LICENSE"]` in the package metadata.
+- Pre-commit hooks for gitleaks, `detect-private-key` and `check-added-large-files` (500 KB).
+- ADR 0012, adopting the shared Python tooling standard, and CONTRIBUTING sections on prerequisites, pre-PR checks,
+  ADRs, the changelog, the test layout, the coverage policy and `vendor/`.
 - Ruff (lint and format) and mypy, with CI checks for each.
 - `CONTRIBUTING.md`, and project URLs in the package metadata.
 - `scripts/check_eol_drift.py`, a maintainer-run check of the committed OS end-of-life data against endoflife.date.
@@ -52,6 +56,12 @@ Notes on the record:
 
 ### Changed
 
+- The repo-root `scripts/` directory is now `tools/`. The bundled `src/agent_parity/scripts/` is unchanged.
+- `agent_parity.shared` is now `agent_parity.vendor` (tests in `tests/vendor/`). Each module names its py-shared-tools
+  source in a header and says this repo owns the copy.
+- The coverage floor moved from CI's `--cov-fail-under=88` to `fail_under = 92` in `pyproject.toml` (measured
+  baseline 94.14% minus 2), so `uv run pytest --cov` enforces it locally too.
+- `actions/checkout` no longer persists the GitHub token (`persist-credentials: false`) in any workflow.
 - Source moved to a `src/agent_parity/` layout. Single-module folders were flattened, the scheduling modules were
   grouped into `scheduling/`, and the tests now mirror the source layout.
 - The shared HTTP adapter, object storage and related helpers were inlined from `py-shared-tools` into

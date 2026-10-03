@@ -16,6 +16,7 @@ they rule out.
 | [0009](0009-standalone-package-owning-scheduling-and-persistence.md)    | Standalone package owning scheduling and persistence | No web dashboard; Celery and SQLite are owned here. Replaces the 2026-07-05 single-organization scope.                                     |
 | [0010](0010-multi-domain-ad-one-export-per-domain.md)                   | Multi-domain AD: one export per domain               | Exports are concatenated and tolerate partial failure; `None` only when every domain fails.                                                |
 | [0011](0011-versity-s3-gateway-for-local-dev.md)                        | Versity S3 Gateway for local development             | Replaces MinIO (images withdrawn) as the local S3 server; pinned, and no code change needed.                                               |
+| [0012](0012-adopt-the-shared-python-tooling-standard.md)                | Adopt the shared Python tooling standard             | `scripts/` to `tools/`, `shared/` to `vendor/` (owned copies), coverage floor in pyproject.toml, new hooks.                                |
 
 ## How decisions are recorded
 
