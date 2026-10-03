@@ -20,10 +20,10 @@ WORKDIR /app
 # Dependencies first for layer-cache friendliness: pyproject.toml/uv.lock
 # change far less often than agent_parity/ itself.
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+RUN uv sync --frozen --no-dev --extra report --no-install-project
 
 COPY . .
-RUN uv sync --frozen --no-dev
+RUN uv sync --frozen --no-dev --extra report
 
 # /app/data is where compose mounts the shared SQLite volume (dbdata). It has to
 # exist in the image, owned by parity, so a new named volume inherits that

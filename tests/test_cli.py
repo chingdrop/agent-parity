@@ -300,3 +300,56 @@ def test_run_skips_the_os_eol_refresh_when_disabled(monkeypatch, sqlite_db):
 
     assert result.exit_code == 0, result.output
     assert not os_eol.cache_path().exists()
+
+
+# --- report ---------------------------------------------------------------------
+
+
+def test_report_writes_a_pdf_for_the_latest_quarter_with_a_run(tmp_path, sqlite_db):
+    from agent_parity.quarterly_report import Quarter
+
+    assert CliRunner().invoke(cli.cli, ["run", "--client", "acme"]).exit_code == 0
+
+    result = CliRunner().invoke(cli.cli, ["report", "--client", "acme", "--out-dir", str(tmp_path)])
+
+    quarter = Quarter.of(datetime.now(UTC))
+    assert result.exit_code == 0, result.output
+    assert f"[acme] {quarter} report -> " in result.output
+    assert f"{quarter} 81.8%" in result.output
+    assert (tmp_path / f"acme-{quarter}.pdf").read_bytes().startswith(b"%PDF")
+
+
+def test_report_says_so_when_there_is_no_history(tmp_path, sqlite_db):
+    result = CliRunner().invoke(cli.cli, ["report", "--all", "--out-dir", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "[acme] no finished run yet; nothing to report." in result.output
+    assert "[globex] no finished run yet" in result.output
+
+
+def test_report_for_a_quarter_without_a_run(tmp_path, sqlite_db):
+    assert CliRunner().invoke(cli.cli, ["run", "--client", "acme"]).exit_code == 0
+
+    result = CliRunner().invoke(
+        cli.cli, ["report", "--client", "acme", "--quarter", "2020-Q1", "--out-dir", str(tmp_path)]
+    )
+
+    assert result.exit_code == 1
+    assert "[acme] no finished run in 2020-Q1" in result.output
+
+
+def test_report_rejects_a_malformed_quarter(sqlite_db):
+    result = CliRunner().invoke(cli.cli, ["report", "--quarter", "Q3"])
+
+    assert result.exit_code == 2
+    assert "not a quarter" in result.output
+
+
+def test_report_explains_the_missing_extra(tmp_path, sqlite_db, request):
+    assert CliRunner().invoke(cli.cli, ["run", "--client", "acme"]).exit_code == 0
+    request.getfixturevalue("no_reportlab")  # only after `run`, which doesn't need it
+
+    result = CliRunner().invoke(cli.cli, ["report", "--client", "acme", "--out-dir", str(tmp_path)])
+
+    assert result.exit_code == 1
+    assert "install the `report` extra" in result.output

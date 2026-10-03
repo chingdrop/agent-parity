@@ -22,6 +22,11 @@ dependencies = [
     "celery[redis]>=5.4",
 ]
 
+[project.optional-dependencies]
+# The quarterly PDF report (`agent-parity report`). Optional so the scheduled
+# path and the CLI's other commands don't carry a PDF stack.
+report = ["reportlab>=4.4"]
+
 [project.urls]
 Repository = "https://github.com/chingdrop/agent-parity"
 
@@ -37,6 +42,7 @@ dev = [
     "types-pyyaml",
     "pre-commit>=4.0",
     "pytest-cov>=7.1.0",
+    "reportlab>=4.4",
 ]
 
 [project.scripts]
@@ -86,5 +92,5 @@ warn_unreachable = true
 # [untyped-decorator]). Tighten one flag at a time from here.
 
 [[tool.mypy.overrides]]
-module = ["celery.*"]
+module = ["celery.*", "reportlab.*"]
 ignore_missing_imports = true

@@ -37,8 +37,11 @@ from agent_parity.ad_export import ADParseError
 from agent_parity.agent_csv import AgentCSVParseError
 from agent_parity.config import load_config
 from agent_parity.pipeline import correlate_from_csvs
+from agent_parity.quarterly_report import Quarter, ReportDependencyError, render_pdf
 from agent_parity.scheduling.celery_app import app as celery_app
 from agent_parity.scheduling.celery_app import run_eagerly
+from agent_parity.scheduling.db import get_engine, init_db, session_factory
+from agent_parity.scheduling.history import build_quarterly_report, latest_finished_quarter
 from agent_parity.scheduling.tasks import fail_abandoned_runs, start_client_run
 from agent_parity.shared.atomic_io import atomic_write, ensure_dir
 from agent_parity.shared.logging_setup import setup_logging
@@ -206,6 +209,74 @@ def compare(ad_csv: Path, agent_csv: Path, stale_days: int, out_path: Path | Non
         "For repeatable, scheduled runs against a live vendor API instead of a "
         "one-off export, see config.yaml and `agent-parity run` in the README."
     )
+
+
+@cli.command()
+@click.option("--client", help="Client slug (default: the first client, alphabetically).")
+@click.option("--all", "report_all", is_flag=True, help="One report per client.")
+@click.option(
+    "--quarter",
+    metavar="YYYY-QN",
+    help="Quarter to report on, e.g. 2026-Q3 (default: each client's latest quarter with a finished run).",
+)
+@click.option("--quarters", default=4, show_default=True, type=click.IntRange(min=1), help="Quarters of trend to show.")
+@click.option(
+    "--out-dir",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+    help="Where to write the PDFs (default: output/).",
+)
+def report(client: str | None, report_all: bool, quarter: str | None, quarters: int, out_dir: Path | None) -> None:
+    """Write the quarterly coverage report, one PDF per client, from the run history.
+
+    Coverage trend by quarter (overall and servers), the servers with gaps, the
+    itemized gaps to act on, and devices on an end-of-life OS. Each quarter is
+    its last finished run, so the history `run` and the schedule record is the
+    only input.
+    """
+    try:
+        wanted = Quarter.parse(quarter) if quarter else None
+    except ValueError as exc:
+        raise click.BadParameter(str(exc), param_hint="--quarter") from exc
+
+    config = load_config()
+    if report_all:
+        slugs = sorted(config.clients)
+    elif client:
+        if client not in config.clients:
+            raise click.ClickException(f"Unknown client {client!r}; configured: {', '.join(sorted(config.clients))}")
+        slugs = [client]
+    else:
+        slugs = [sorted(config.clients)[0]]
+
+    out_dir = out_dir or OUT_DIR
+    engine = get_engine()
+    init_db(engine)
+    had_failure = False
+    try:
+        with session_factory(engine)() as session:
+            for slug in slugs:
+                client_quarter = wanted or latest_finished_quarter(session, slug)
+                built = (
+                    build_quarterly_report(session, slug, client_quarter, quarters, config.client(slug).name)
+                    if client_quarter
+                    else None
+                )
+                if built is None:
+                    when = f"in {client_quarter}" if client_quarter else "yet"
+                    click.echo(f"[{slug}] no finished run {when}; nothing to report.", err=True)
+                    had_failure = True
+                    continue
+                try:
+                    path = render_pdf(built, out_dir / f"{slug}-{built.quarter}.pdf")
+                except ReportDependencyError as exc:
+                    raise click.ClickException(str(exc)) from exc
+                trend = " -> ".join(f"{p.quarter} {p.coverage_pct:.1f}%" for p in built.trend)
+                click.echo(f"[{slug}] {built.quarter} report -> {path} (coverage {trend})")
+    finally:
+        engine.dispose()
+    if had_failure:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
