@@ -43,6 +43,9 @@ dev = [
     "pre-commit>=4.0",
     "pytest-cov>=7.1.0",
     "reportlab>=4.4",
+    # Rasterizes the sample report's first page for the README
+    # (scripts/gen_sample_quarterly_report.py); not used at runtime.
+    "pypdfium2>=4.30",
 ]
 
 [project.scripts]
@@ -92,5 +95,5 @@ warn_unreachable = true
 # [untyped-decorator]). Tighten one flag at a time from here.
 
 [[tool.mypy.overrides]]
-module = ["celery.*", "reportlab.*"]
+module = ["celery.*", "reportlab.*", "pypdfium2.*"]
 ignore_missing_imports = true

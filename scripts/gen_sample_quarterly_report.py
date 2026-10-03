@@ -1,9 +1,13 @@
-"""Regenerate ``docs/sample-quarterly-report.pdf`` from the fixtures.
+"""Regenerate ``docs/sample-quarterly-report.pdf`` (and its PNG) from the fixtures.
 
 Seeds a throwaway demo history (``scripts/seed_history.py``: two quarters of
 coverage climbing to today's fixture numbers) and renders Acme's report for the
 last complete quarter from it. Nothing touches your real run history or OS EOL
 cache.
+
+The README shows the report's first page as ``docs/sample-quarterly-report.png``,
+rasterized with pypdfium2 (a dev dependency bundling PDFium, so the standard PDF
+fonts render the same on any OS, unlike poppler's fontconfig substitution).
 
     uv run python scripts/gen_sample_quarterly_report.py
 """
@@ -19,6 +23,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT = REPO_ROOT / "docs" / "sample-quarterly-report.pdf"
+PNG_OUTPUT = OUTPUT.with_suffix(".png")
+#: Resolution of the README image: legible table text at GitHub's content width.
+PNG_DPI = 110
 
 
 def main() -> int:
@@ -38,6 +45,15 @@ def main() -> int:
         (pdf,) = Path(tmp).glob("acme-*.pdf")
         shutil.copyfile(pdf, OUTPUT)
     print(f"Wrote {OUTPUT.relative_to(REPO_ROOT)}")
+
+    import pypdfium2
+
+    document = pypdfium2.PdfDocument(OUTPUT)
+    try:
+        document[0].render(scale=PNG_DPI / 72).to_pil().save(PNG_OUTPUT, optimize=True)
+    finally:
+        document.close()
+    print(f"Wrote {PNG_OUTPUT.relative_to(REPO_ROOT)}")
     return 0
 
 
