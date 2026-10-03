@@ -42,7 +42,10 @@ Notes on the record:
 - `agent-parity report`: the quarterly PDF report per client, rebuilt from the run history — coverage trend by quarter
   (overall and servers), headline numbers with quarter-on-quarter change, servers with gaps, itemized gap lists, and OS
   end of life per device. ReportLab is an optional extra (`agent-parity[report]`). `scripts/seed_history.py` writes a
-  deterministic demo history, and `docs/sample-quarterly-report.pdf` is generated from it.
+  deterministic demo history, and `docs/sample-quarterly-report.pdf` (with a PNG of its first page) is generated from
+  it.
+- A README "Results" section, in the style of the other portfolio repos: the demo run's numbers, the demo quarterly
+  history, the original deployment's 47% to 80%, and the report's first page as an image.
 - `run --workers --timeout MINUTES`, to stop waiting at a deadline while unfinished runs keep going on the workers.
 - An `inventory_rate_limit` attribute on each connector. The Celery inventory tasks are built from the connector
   registry with it, so adding a vendor needs no change to `scheduling/tasks.py`.
