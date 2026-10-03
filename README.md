@@ -37,7 +37,8 @@ Of the devices AD knows about, 36 are covered (81.8%); 5 have no agent, 3 have g
 
 ## See it
 
-- [Sample report](docs/sample-report.md): the coverage, high-value-asset and OS end-of-life views, generated from a real run against the fixtures.
+- [Sample quarterly report (PDF)](docs/sample-quarterly-report.pdf): the per-client report the original tool's data fed every quarter — coverage climbing from 46.5% to 81.8% over two quarters, servers called out, the gaps to act on, and devices on an end-of-life OS. Generated from a demo history built on the fixtures.
+- [Sample report](docs/sample-report.md): the coverage, high-value-asset and OS end-of-life views of a single run, generated from the fixtures.
 
 ![agent-parity demo](docs/demo.gif)
 
@@ -80,6 +81,7 @@ uv run agent-parity run --all                                 # config.yaml + co
 uv run agent-parity run --client acme --csv                   # just one client, plus output/acme.csv
 uv run agent-parity run --all --workers                       # fan out to running Celery workers
 uv run agent-parity run --all --workers --timeout 90          # ... and stop waiting after 90 minutes
+uv run agent-parity report --all                              # one quarterly PDF per client, from the run history
 uv run pytest                                                  # 290+ tests, all offline
 ```
 

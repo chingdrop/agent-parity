@@ -39,6 +39,10 @@ Notes on the record:
 - OS end-of-life data refreshed from endoflife.date daily by beat (06:30) and at the start of `run` when over a day
   old, written to a shared cache (`AGENT_PARITY_EOL_CACHE`) and logged when dates change. The bundled snapshot is the
   fallback on any error; `refresh_os_eol: false` in `config.yaml` turns it off.
+- `agent-parity report`: the quarterly PDF report per client, rebuilt from the run history — coverage trend by quarter
+  (overall and servers), headline numbers with quarter-on-quarter change, servers with gaps, itemized gap lists, and OS
+  end of life per device. ReportLab is an optional extra (`agent-parity[report]`). `scripts/seed_history.py` writes a
+  deterministic demo history, and `docs/sample-quarterly-report.pdf` is generated from it.
 - `run --workers --timeout MINUTES`, to stop waiting at a deadline while unfinished runs keep going on the workers.
 - An `inventory_rate_limit` attribute on each connector. The Celery inventory tasks are built from the connector
   registry with it, so adding a vendor needs no change to `scheduling/tasks.py`.

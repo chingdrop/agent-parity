@@ -77,9 +77,6 @@ the next weekly run.
 These are directions, not commitments. Some come from follow-ups the code and README already flag; the rest are the
 maintainer's own picks.
 
-- **A coverage-trend report.** A command that reports coverage over time from the stored `CoverageSnapshot` history. The
-  original tool existed to show the quarterly upward trend; today `run` and the Celery tasks store the history, but no
-  command reports it. See [`db.py`](../src/agent_parity/scheduling/db.py).
 - **A Splunk dashboard and saved reports.** The opt-in Splunk export forwards every run, but this repository doesn't
   include the dashboard and reports that turned it into the quarterly report.
 - **The EOL drift check in CI.** Running deployments refresh their OS end-of-life data daily, but the snapshot committed
