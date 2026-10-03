@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # Pushes and PRs check only relative links and #anchors (`--offline`), so a
       # third-party site having a bad day can't block a merge. The weekly run
