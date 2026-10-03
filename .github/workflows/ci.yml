@@ -72,9 +72,10 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked
 
-      # Measured baseline was 90.83% (line + branch); the gate is baseline minus 2 points, rounded down.
+      # The coverage floor lives in pyproject.toml ([tool.coverage.report] fail_under): the measured
+      # baseline (line + branch) minus 2 points, rounded down.
       - name: Run tests with coverage
-        run: uv run pytest -v --cov --cov-report=term-missing --cov-fail-under=88
+        run: uv run pytest -v --cov --cov-report=term-missing
 
       - name: Coverage summary
         if: always()

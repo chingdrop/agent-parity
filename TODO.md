@@ -48,7 +48,7 @@ No known bugs are open. These are things that are untested against the real thin
 - [ ] `main` has no branch protection or rulesets. If you add protection, require `lint`, `typecheck`, `test`, `build`,
   `security` and `Analyze (python)`. Don't require `smoke`: it only runs when the Docker stack or scheduling code
   changes, and a required check that never starts blocks the PR.
-- [ ] Decide on a coverage badge. None was added on purpose; the CI gate is 88% (measured 93.3%, line and branch).
+- [ ] Decide on a coverage badge. None was added on purpose; the gate is 92% (`fail_under` in pyproject.toml; measured 94.14%, line and branch).
 - [ ] Optionally tighten mypy toward `strict`, one flag at a time. `--strict` now reports 90 errors in 19 files: 56 bare
   generics (`type-arg`), 16 missing annotations, 7 `no-any-return`, 6 untyped calls and 5 untyped Celery decorators.
 - [ ] Pin the remaining floating images. `docker/Dockerfile` copies uv from `ghcr.io/astral-sh/uv:latest`, and compose
