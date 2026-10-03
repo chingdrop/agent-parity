@@ -7,8 +7,8 @@ Both use the same derivation (``os_eol_live.derive_lifecycle_data``), so a
 clean check here means the bundled data and a fresh fetch agree exactly.
 
 Usage:
-    uv run python scripts/check_eol_drift.py           # report drift, exit 1 if any
-    uv run python scripts/check_eol_drift.py --write   # also rewrite the committed file
+    uv run python tools/check_eol_drift.py           # report drift, exit 1 if any
+    uv run python tools/check_eol_drift.py --write   # also rewrite the committed file
 """
 
 from __future__ import annotations

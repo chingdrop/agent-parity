@@ -6,7 +6,7 @@ correlation pipeline (``run_correlation_for_client``, the same call
 from the code. Re-run it after changing the correlation engine or the
 fixtures:
 
-    uv run python scripts/gen_sample_report.py
+    uv run python tools/gen_sample_report.py
 
 The OS end-of-life view is evaluated against today's date (that's how the
 engine itself works), so the EOL counts can legitimately change as time
@@ -103,7 +103,7 @@ def build_report(result: CorrelationResult, client_name: str, *, generated: date
     out.append(f"# Sample report — {client_name}\n")
     out.append(f"> Generated from synthetic sample data ({client_name}).\n")
     out.append(
-        f"> Produced by `scripts/gen_sample_report.py` from a real `agent-parity` run against `sample_data/` "
+        f"> Produced by `tools/gen_sample_report.py` from a real `agent-parity` run against `sample_data/` "
         f"on {generated.date().isoformat()}. OS lifecycle is evaluated as of that date; "
         "coverage counts don't depend on it.\n"
     )

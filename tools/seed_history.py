@@ -15,7 +15,7 @@ run's date.
 
 Writes only to the database you name, never the default ``agent_parity.db``:
 
-    uv run python scripts/seed_history.py output/demo_history.db
+    uv run python tools/seed_history.py output/demo_history.db
     uv run --env-file /dev/null env AGENT_PARITY_DB_URL=sqlite:///output/demo_history.db \\
         agent-parity report --client acme --quarter 2026-Q3
 """

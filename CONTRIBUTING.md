@@ -56,7 +56,7 @@ uv run pytest
 the correlation engine or the fixtures, regenerate it:
 
 ```bash
-uv run python scripts/gen_sample_report.py
+uv run python tools/gen_sample_report.py
 ```
 
 It refuses to run if any connector has live credentials configured, so the published doc only ever contains
@@ -76,8 +76,8 @@ vhs docs/demo.tape
 ## Linting, formatting, and type-checking
 
 ```bash
-uv run ruff check src tests scripts docker   # lint
-uv run ruff format src tests scripts docker  # format
+uv run ruff check src tests tools docker   # lint
+uv run ruff format src tests tools docker  # format
 uv run mypy src/agent_parity                 # type-check
 ```
 

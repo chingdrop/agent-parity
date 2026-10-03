@@ -2,7 +2,7 @@
 
 > Generated from synthetic sample data (Acme Corp).
 
-> Produced by `scripts/gen_sample_report.py` from a real `agent-parity` run against `sample_data/` on 2026-09-20. OS lifecycle is evaluated as of that date; coverage counts don't depend on it.
+> Produced by `tools/gen_sample_report.py` from a real `agent-parity` run against `sample_data/` on 2026-09-20. OS lifecycle is evaluated as of that date; coverage counts don't depend on it.
 
 ## Coverage at a glance
 

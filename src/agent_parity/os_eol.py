@@ -4,7 +4,7 @@ Lookups use the refreshed copy written daily by ``os_eol_live.refresh_cache``
 (``AGENT_PARITY_EOL_CACHE``) when there is one, else the bundled snapshot.
 ``os_eol_data.json`` is that snapshot of endoflife.date's Windows and Windows
 Server lifecycle data, derived by ``agent_parity.os_eol_live`` (regenerate it
-with ``scripts/check_eol_drift.py --write``). It holds two tables, two
+with ``tools/check_eol_drift.py --write``). It holds two tables, two
 precisions, matching what's actually available per source:
 
 * ``free_text`` — OS name -> end-of-life date ("Windows Server 2019", "Windows

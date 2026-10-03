@@ -1,6 +1,6 @@
 """Regenerate ``docs/sample-quarterly-report.pdf`` (and its PNG) from the fixtures.
 
-Seeds a throwaway demo history (``scripts/seed_history.py``: two quarters of
+Seeds a throwaway demo history (``tools/seed_history.py``: two quarters of
 coverage climbing to today's fixture numbers) and renders Acme's report for the
 last complete quarter from it. Nothing touches your real run history or OS EOL
 cache.
@@ -9,7 +9,7 @@ The README shows the report's first page as ``docs/sample-quarterly-report.png``
 rasterized with pypdfium2 (a dev dependency bundling PDFium, so the standard PDF
 fonts render the same on any OS, unlike poppler's fontconfig substitution).
 
-    uv run python scripts/gen_sample_quarterly_report.py
+    uv run python tools/gen_sample_quarterly_report.py
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def main() -> int:
             "AGENT_PARITY_EOL_CACHE": str(Path(tmp) / "os_eol_cache.json"),
         }
         steps = [
-            [sys.executable, str(REPO_ROOT / "scripts" / "seed_history.py"), str(db)],
+            [sys.executable, str(REPO_ROOT / "tools" / "seed_history.py"), str(db)],
             [sys.executable, "-m", "agent_parity.cli", "report", "--client", "acme", "--out-dir", tmp],
         ]
         for step in steps:

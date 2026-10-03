@@ -43,14 +43,14 @@ uv run agent-parity run --client acme --csv    # just one client, and also write
 uv run agent-parity run --all --workers        # same chord, on running Celery workers (in parallel)
 uv run agent-parity run --all --workers --timeout 90   # ... but stop waiting after 90 minutes
 uv run agent-parity report --all --quarter 2026-Q3     # quarterly PDF per client, from the run history
-uv run python scripts/gen_sample_quarterly_report.py  # regenerate docs/sample-quarterly-report.pdf
+uv run python tools/gen_sample_quarterly_report.py  # regenerate docs/sample-quarterly-report.pdf
 
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
 uv run pytest --cov --cov-fail-under=88     # the coverage gate CI enforces (line + branch)
 
-uv run ruff check src tests scripts docker  # lint (E, F, I, UP, B, SIM, S)
-uv run ruff format src tests scripts docker # format
+uv run ruff check src tests tools docker  # lint (E, F, I, UP, B, SIM, S)
+uv run ruff format src tests tools docker # format
 uv run mypy                                 # type-check; config in pyproject.toml, not strict
 lychee './**/*.md'                          # doc links + #anchors (config in .lychee.toml)
 
@@ -135,7 +135,7 @@ signal as `infer_machine_type`) is resolved by its named release first, falling 
 server build table only for year-less SAC names. Don't reintroduce a build-only lookup — it
 flagged every Server 2025 machine end of life from 2026-10-14. The data is
 `src/agent_parity/os_eol_data.json`, a snapshot derived from endoflife.date by
-`os_eol_live.derive_lifecycle_data` — regenerate it with `scripts/check_eol_drift.py --write`,
+`os_eol_live.derive_lifecycle_data` — regenerate it with `tools/check_eol_drift.py --write`,
 never by hand, so the snapshot and any live fetch follow the same rules.
 **Live refresh**: `os_eol_live.refresh_cache` (the original tool queried endoflife.date
 every run) fetches and writes `os_eol.cache_path()` (`AGENT_PARITY_EOL_CACHE`, default
@@ -188,7 +188,7 @@ CSV text in its report, so the CSV never needs a second collection pass and work
 the worker doesn't share the CLI's filesystem. There is deliberately no un-persisted
 config.yaml path in the CLI any more (a separate pure `run` and persisted `sync` used to
 duplicate each other). `run_correlation_for_client` itself stays pure and is still used
-directly by `scripts/gen_sample_report.py` and the tests.
+directly by `tools/gen_sample_report.py` and the tests.
 
 ## Scheduling & persistence (`src/agent_parity/scheduling/`: `db.py`, `persistence.py`, `celery_app.py`, `tasks.py`)
 
@@ -343,12 +343,12 @@ group and the Docker image), imported only inside `render_pdf`, which raises
 `ReportDependencyError` with install instructions when it's missing. Not Plotly (its PDF export
 needs a headless Chrome) or WeasyPrint (needs Pango/Cairo system libraries).
 
-The fixtures are static, so real runs give a flat trend. `scripts/seed_history.py <db>` writes a
+The fixtures are static, so real runs give a flat trend. `tools/seed_history.py <db>` writes a
 deterministic demo history to a database you name (never the default `agent_parity.db`): it
 correlates the fixtures once (the final quarter) and derives two earlier quarters by reverting
 whole fully-covered devices to `missing_agent` in hash order — servers less than workstations —
 stopping closest to each target, so Acme goes 46.5% → 63.6% → 81.8% with servers ahead every
-quarter. `scripts/gen_sample_quarterly_report.py` seeds a temp DB and writes
+quarter. `tools/gen_sample_quarterly_report.py` seeds a temp DB and writes
 `docs/sample-quarterly-report.pdf` from it, plus `docs/sample-quarterly-report.png` (page one, the
 README's "Results" image) rasterized with `pypdfium2` (dev-only). Not `pdftoppm`: poppler asks
 fontconfig for "Helvetica-Bold" by PostScript name and gets the Regular face on macOS, so every

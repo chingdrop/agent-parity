@@ -50,12 +50,12 @@ Of the devices AD knows about, 36 are covered (81.8%); 5 have no agent, 3 have g
 ## Results
 
 - **Demo run** (synthetic fixtures): Acme Corp has 51 rows at 81.8% agent coverage (36 covered, 5 missing an agent, 3 stale, 7 orphaned), with servers at 87.5% and one server, ACME-SQL02, missing an agent. Globex, split across two AD domains, has 40 rows at 73.0% coverage, with servers at 75.0%.
-- **Demo quarterly history** (`scripts/seed_history.py`, deterministic): Acme's coverage climbs 46.5% → 63.6% → 81.8% over three quarters, with servers ahead every quarter at 62.5% → 87.5% → 87.5%.
+- **Demo quarterly history** (`tools/seed_history.py`, deterministic): Acme's coverage climbs 46.5% → 63.6% → 81.8% over three quarters, with servers ahead every quarter at 62.5% → 87.5% → 87.5%.
 - **Original deployment:** agent coverage (SentinelOne agents divided by computers in AD) rose from 47% to 80%, a gain of 33 percentage points, across roughly 6,000 endpoints over about six months. The quarterly report, previously assembled by hand, was automated, through Splunk dashboards fed by the tool's per-run export. This repo includes that [export](docs/architecture.md#splunk-export) and rebuilds the report itself as a PDF.
 
 ![First page of Acme Corp's quarterly report: headline coverage of 81.8%, up 18.2 points on last quarter; a chart of coverage by quarter for all devices and for servers; the one server missing an agent; and the start of the gap lists](docs/sample-quarterly-report.png)
 
-*The first page of Acme Corp's quarterly report, rendered from the demo history (`uv run python scripts/gen_sample_quarterly_report.py`). The full three-page report, with every gap and the OS end-of-life list, is [docs/sample-quarterly-report.pdf](docs/sample-quarterly-report.pdf); a single run's views are in [docs/sample-report.md](docs/sample-report.md).*
+*The first page of Acme Corp's quarterly report, rendered from the demo history (`uv run python tools/gen_sample_quarterly_report.py`). The full three-page report, with every gap and the OS end-of-life list, is [docs/sample-quarterly-report.pdf](docs/sample-quarterly-report.pdf); a single run's views are in [docs/sample-report.md](docs/sample-report.md).*
 
 ## Quick start
 
