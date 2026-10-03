@@ -65,6 +65,10 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
+# The coverage floor (line + branch): the measured baseline (94.14% on
+# 2026-10-03) minus 2 points, rounded down. Raise it when the baseline
+# exceeds the floor by more than 4.
+fail_under = 92
 
 [tool.ruff]
 line-length = 120

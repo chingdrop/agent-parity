@@ -47,7 +47,7 @@ uv run python tools/gen_sample_quarterly_report.py  # regenerate docs/sample-qua
 
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
-uv run pytest --cov --cov-fail-under=88     # the coverage gate CI enforces (line + branch)
+uv run pytest --cov                         # the coverage gate CI enforces (line + branch; floor in pyproject.toml)
 
 uv run ruff check src tests tools docker  # lint (E, F, I, UP, B, SIM, S)
 uv run ruff format src tests tools docker # format
