@@ -1,3 +1,5 @@
+import sys
+
 import pytest
 import requests
 
@@ -41,3 +43,11 @@ def sqlite_db(tmp_path, monkeypatch):
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("AGENT_PARITY_DB_URL", f"sqlite:///{db_path}")
     return f"sqlite:///{db_path}"
+
+
+@pytest.fixture
+def no_reportlab(monkeypatch):
+    """Make every ``reportlab`` import fail, as without the `report` extra —
+    including submodules an earlier test already loaded."""
+    for name in [n for n in sys.modules if n == "reportlab" or n.startswith("reportlab.")] + ["reportlab"]:
+        monkeypatch.setitem(sys.modules, name, None)

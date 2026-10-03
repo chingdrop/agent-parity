@@ -307,13 +307,21 @@ def classify_eol_status(
     return out
 
 
+def coverage_pct(status_counts: dict[str, int]) -> float:
+    """Covered rows as a share of the rows AD knows about (covered, stale or
+    missing; orphaned agents have no AD record, so they don't count). The one
+    definition of coverage, shared by ``summarize`` and the quarterly report's
+    history so the two can never disagree."""
+    covered = status_counts.get(CoverageStatus.COVERED.value, 0)
+    known = covered + sum(
+        status_counts.get(s.value, 0) for s in (CoverageStatus.STALE_COVERAGE, CoverageStatus.MISSING_AGENT)
+    )
+    return round(100.0 * covered / known, 1) if known else 0.0
+
+
 def summarize(frame: pd.DataFrame) -> dict:
     """Aggregates for reporting — plain value_counts/groupby, nothing clever."""
-    status_counts = frame["status"].value_counts().to_dict()
-    covered = status_counts.get(CoverageStatus.COVERED.value, 0)
-    stale = status_counts.get(CoverageStatus.STALE_COVERAGE.value, 0)
-    missing = status_counts.get(CoverageStatus.MISSING_AGENT.value, 0)
-    denominator = covered + stale + missing  # AD-known device rows
+    status_counts = {str(k): int(v) for k, v in frame["status"].value_counts().items()}
 
     matched = frame[frame["vendor"].notna()]
     by_vendor = {vendor: group["status"].value_counts().to_dict() for vendor, group in matched.groupby("vendor")}
@@ -324,11 +332,7 @@ def summarize(frame: pd.DataFrame) -> dict:
     # coverage stats so a quarterly report can show "coverage is improving"
     # and "the assets that matter most are covered" side by side.
     servers = frame[frame["machine_type"] == "server"]
-    server_status_counts = servers["status"].value_counts().to_dict()
-    server_covered = server_status_counts.get(CoverageStatus.COVERED.value, 0)
-    server_stale = server_status_counts.get(CoverageStatus.STALE_COVERAGE.value, 0)
-    server_missing = server_status_counts.get(CoverageStatus.MISSING_AGENT.value, 0)
-    server_denominator = server_covered + server_stale + server_missing
+    server_status_counts = {str(k): int(v) for k, v in servers["status"].value_counts().items()}
 
     # OS lifecycle status is a third, independent prioritization axis: a
     # device whose OS is already end-of-life (or close to it) is worth
@@ -347,10 +351,10 @@ def summarize(frame: pd.DataFrame) -> dict:
         "total_rows": int(len(frame)),
         "unique_devices": int(frame["join_key"].nunique()),
         "status_counts": {k: int(v) for k, v in status_counts.items()},
-        "coverage_pct": round(100.0 * covered / denominator, 1) if denominator else 0.0,
+        "coverage_pct": coverage_pct(status_counts),
         "by_vendor": by_vendor,
         "server_status_counts": {k: int(v) for k, v in server_status_counts.items()},
-        "server_coverage_pct": round(100.0 * server_covered / server_denominator, 1) if server_denominator else 0.0,
+        "server_coverage_pct": coverage_pct(server_status_counts),
         "eol_status_counts": {k: int(v) for k, v in eol_counts.items()},
         "at_risk_status_counts": {k: int(v) for k, v in at_risk_status_counts.items()},
         # Join keys whose agent pairing rests on a short hostname that exists in
