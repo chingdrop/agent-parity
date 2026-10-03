@@ -287,6 +287,30 @@ depends only on collection/correlation, never on whether the export
 succeeded. A `FAILED` run has no table and sends nothing. Only `run` and the
 schedule send to Splunk; `compare` never does.
 
+## The quarterly report
+
+The original tool's data fed a quarterly PDF report to each client, and
+`agent-parity report` rebuilds it from the run history, one PDF per client
+(`output/<client>-<quarter>.pdf`; see the
+[sample](sample-quarterly-report.pdf)):
+
+1. **Headline numbers** — coverage, server coverage, and the missing, stale
+   and orphaned counts, each with its change since last quarter.
+2. **Coverage trend** — a chart and table of overall and server coverage by
+   quarter.
+3. **High-value assets** — server coverage and the servers with a gap.
+4. **Gaps to act on** — devices with no agent, agents that stopped checking
+   in, and agents with no AD computer, servers first.
+5. **OS end of life** — per device, with its build, and the highest-risk case:
+   an end-of-life OS with no agent at all.
+
+Each quarter is its last finished run, the state the client was in at quarter
+end. `scheduling/history.py` reads the history into plain data and
+`quarterly_report.py` renders it with ReportLab (an optional extra,
+`agent-parity[report]`), the same split as the Splunk export. The fixtures are
+static, so `scripts/seed_history.py` builds a deterministic demo history in a
+separate database for the sample.
+
 ## AD-export handoff: object storage instead of the vendor channel (mandatory for live exports)
 
 Vendor remote-execution output channels are not a reliable way to get a full

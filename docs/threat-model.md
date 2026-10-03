@@ -46,6 +46,8 @@ enabled, Splunk. The endpoint receives a URL, never a storage credential.
 
 - **Credentials:** never written by the package.
 - **`compare`:** writes a CSV to `output/` (gitignored) and persists nothing else.
+- **`report`:** writes one PDF per client to `output/` with hostnames, OS, coverage and lifecycle status. These are
+  client-facing documents; treat them like the run history they're built from.
 - **`run` and the Celery tasks:** `run --csv` also writes CSVs to `output/`. Both persist a local SQLite file (`agent_parity.db` by default, `*.db` gitignored) with
   hostnames, OS, coverage status and per-vendor status text, which includes error messages from failed calls.
 - **Logs:** the CLI logs at WARNING; failures include exception text. Debug logging (not enabled by the CLI) records

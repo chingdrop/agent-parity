@@ -5,17 +5,11 @@ kept here. There are no open `TODO(craig)` questions: every one in the ADRs and 
 
 ## Features
 
-- [ ] **Coverage-trend report.** The original tool's purpose: coverage climbing quarter over quarter, with servers called
-  out. The history is already in `CoverageSnapshot`, but nothing reads it back. Agreed shape so far:
-  - `agent-parity report`, with `--by quarter|month|run` (default quarter; the last finished run per client per period)
-    and `--client`, printing a table with overall and server coverage, change since the previous period, and a sparkline.
-  - `--csv`, and `--html` for an interactive chart via Plotly as an optional extra (`agent-parity[report]`, with
-    Plotly's JavaScript embedded so the file works offline). No Dash or Streamlit: there is no web dashboard (ADR 0009).
-  - A generated `docs/sample-trend.md` with a Mermaid chart, so the trend shows on the GitHub page.
-  - A deterministic history seeder (`scripts/seed_history.py`), writing only to a demo database, so the demo isn't a flat
-    line: gaps close quarter by quarter, servers first, ending at today's fixture numbers.
-  - Still to decide: how many quarters the demo history covers (about two, 47% to 80%, like the original, or more for a
-    smoother line), and which of the formats above to build.
+- [ ] **Quarterly report follow-ups.** `agent-parity report` is built (see the CHANGELOG); possible next steps:
+  - Single out Domain Controllers. The history doesn't store the AD distinguished name, so they're reported as servers.
+    Needs a column on `Device` and a migration path, which the schema doesn't have yet.
+  - A combined roll-up across all clients for internal use, alongside the per-client PDFs.
+  - Generate and email the reports on a schedule (a beat task after quarter end).
 - [ ] **Splunk saved searches and a dashboard.** The export sends every run (one event per row plus a summary), but the
   repo has no Splunk-side content. Ship the latest-run search and the trend `timechart` from
   [docs/architecture.md](docs/architecture.md#splunk-export) as saved searches, plus a dashboard definition.

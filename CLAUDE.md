@@ -42,6 +42,8 @@ uv run agent-parity run --all                  # config.yaml + connectors, every
 uv run agent-parity run --client acme --csv    # just one client, and also write output/acme.csv
 uv run agent-parity run --all --workers        # same chord, on running Celery workers (in parallel)
 uv run agent-parity run --all --workers --timeout 90   # ... but stop waiting after 90 minutes
+uv run agent-parity report --all --quarter 2026-Q3     # quarterly PDF per client, from the run history
+uv run python scripts/gen_sample_quarterly_report.py  # regenerate docs/sample-quarterly-report.pdf
 
 uv run pytest                               # full suite, offline, no live credentials needed
 uv run pytest tests/test_correlation.py -k covered   # single test/file
@@ -319,6 +321,35 @@ swallowing it; the run itself stays `COMPLETE`/`PARTIAL` based on collection/
 correlation outcome alone. The chord callback (`tasks.correlate_client`, which has no
 live `AppConfig` in scope) loads a fresh `SplunkConfig` via `load_config().splunk`, as
 its own fan-out tasks already do. The pure `compare` CLI path never touches Splunk.
+
+## Quarterly report (`src/agent_parity/quarterly_report.py`, `scheduling/history.py`)
+
+The original tool's data fed **a quarterly PDF report to each client**: coverage climbing
+quarter over quarter, high-value assets called out, the itemized gaps, and OS end-of-life.
+`agent-parity report [--client X|--all] [--quarter YYYY-QN] [--quarters 4]` rebuilds it from
+the run history, writing `output/<client>-<quarter>.pdf`. Same seam as the Splunk export:
+`scheduling/history.py` reads SQLAlchemy and builds plain data (`QuarterlyReport`,
+`QuarterPoint`, `DeviceRow`); `quarterly_report.py` renders it and never touches the database.
+Each quarter is its **last finished run** (`complete`/`partial`; pending and failed never count),
+and coverage uses `correlation.coverage_pct`, the one definition `summarize()` uses too — don't
+compute coverage another way in the report. Counts are rows, like every other output, except
+the OS end-of-life section, which is per device (`devices_by_eol`, most severe status per
+hostname), since an OS is a property of the device, not of each agent on it. Servers stand in
+for high-value assets, including Domain Controllers, because the history doesn't store the AD
+distinguished name needed to single DCs out (adding it would need a schema migration).
+
+ReportLab renders the PDF and is an **optional extra** (`agent-parity[report]`; also in the dev
+group and the Docker image), imported only inside `render_pdf`, which raises
+`ReportDependencyError` with install instructions when it's missing. Not Plotly (its PDF export
+needs a headless Chrome) or WeasyPrint (needs Pango/Cairo system libraries).
+
+The fixtures are static, so real runs give a flat trend. `scripts/seed_history.py <db>` writes a
+deterministic demo history to a database you name (never the default `agent_parity.db`): it
+correlates the fixtures once (the final quarter) and derives two earlier quarters by reverting
+whole fully-covered devices to `missing_agent` in hash order — servers less than workstations —
+stopping closest to each target, so Acme goes 46.5% → 63.6% → 81.8% with servers ahead every
+quarter. `scripts/gen_sample_quarterly_report.py` seeds a temp DB and writes
+`docs/sample-quarterly-report.pdf` from it.
 
 ## Connectors (`src/agent_parity/connectors/`)
 
