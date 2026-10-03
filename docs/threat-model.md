@@ -90,6 +90,6 @@ enabled, Splunk. The endpoint receives a URL, never a storage credential.
 
 Sources: [`storage.py`](../src/agent_parity/storage.py), [
 `script_runner.py`](../src/agent_parity/script_runner.py), [
-`rest_adapter.py`](../src/agent_parity/shared/rest_adapter.py), [
+`rest_adapter.py`](../src/agent_parity/vendor/rest_adapter.py), [
 `Export-ADDevices.ps1`](../src/agent_parity/scripts/Export-ADDevices.ps1), [
 `db.py`](../src/agent_parity/scheduling/db.py), [`docker-compose.yml`](../docker/docker-compose.yml).

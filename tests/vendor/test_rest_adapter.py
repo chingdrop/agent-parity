@@ -1,4 +1,4 @@
-"""Tests for agent_parity/shared/rest_adapter.py: content-type parsing, header
+"""Tests for agent_parity/vendor/rest_adapter.py: content-type parsing, header
 merging, retry configuration, and the ``files`` passthrough, in isolation.
 
 Monkeypatches the underlying requests.Session.request, never touches the
@@ -8,7 +8,7 @@ network.
 import pytest
 import requests
 
-from agent_parity.shared.rest_adapter import RestAdapter, RestAdapterConfig
+from agent_parity.vendor.rest_adapter import RestAdapter, RestAdapterConfig
 
 
 class _FakeResponse:

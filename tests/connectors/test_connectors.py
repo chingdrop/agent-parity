@@ -16,7 +16,7 @@ from agent_parity.connectors import (
     SentinelOneConnector,
 )
 from agent_parity.connectors.base import infer_machine_type, infer_platform
-from agent_parity.shared.rest_adapter import RestAdapter
+from agent_parity.vendor.rest_adapter import RestAdapter
 
 ACME = SAMPLE_DATA_DIR / "acme"
 GLOBEX = SAMPLE_DATA_DIR / "globex"

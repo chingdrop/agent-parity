@@ -413,33 +413,34 @@ rather than silently skipping it. If a 4th vendor connector genuinely can't run
 scripts either, set this the same way — don't leave `_live_deploy_and_run`
 unimplemented and let it fail some other way.
 
-Live mode goes through `agent_parity.shared.rest_adapter` (`RestAdapter`) rather than a
+Live mode goes through `agent_parity.vendor.rest_adapter` (`RestAdapter`) rather than a
 bare `requests.Session` — retries/backoff on 429/5xx are configured there once,
 shared by all three vendors (wired up inside `VendorConnector.__init__`, not
 per-connector).
 
-**`src/agent_parity/shared/` is inlined from a former shared library.** The HTTP adapter
+**`src/agent_parity/vendor/` holds copies of a former shared library.** The HTTP adapter
 (`rest_adapter.py`), `atomic_io`, `logging_setup`, `tabular_io` and the `${VAR}` resolver in
-`config.py` were factored out of a shared library (`py-shared-tools`, v1.3.1) and inlined here
-so the repo is self-contained — no git dependency, no submodule, and
+`config.py` (a partial copy: only `ConfigError` and `resolve_env_refs`) were copied from a shared
+library (`py-shared-tools` v1.3.1, commit d54dcd6; each module says so in a header comment) so the
+repo is self-contained — no git dependency, no submodule, and
 `uv sync && uv run pytest` works from a plain clone. The standalone library is not a
-dependency and is not kept in sync; edit the files here. Their tests live in `tests/shared/`.
+dependency and is not kept in sync: this repo owns these copies, so edit the files here. Their tests live in `tests/vendor/`.
 The pieces only this project used — `VendorConnector`/`ConnectorRegistry`/`ConnectorError`, the
 SentinelOne RSO mixin, the storage-backed script export, `ObjectStorage` and the storage
-config — were later moved out of `shared/` into the modules that own them
+config — were later moved out of it into the modules that own them
 (`connectors/base.py`, `connectors/sentinelone.py`, `script_runner.py`, `storage.py`,
 `config.py`).
 
 Two of the shared, stdlib-only helpers are used outside the connector stack:
 `src/agent_parity/scheduling/db.py`'s
-`get_engine()` calls `agent_parity.shared.atomic_io.ensure_dir()` on a file-based
+`get_engine()` calls `agent_parity.vendor.atomic_io.ensure_dir()` on a file-based
 `AGENT_PARITY_DB_URL`'s parent directory before `create_engine()` (a fresh
 Docker-volume path with no directory yet would otherwise fail); `cli.py`'s
-group callback calls `agent_parity.shared.logging_setup.setup_logging(level=WARNING)`
+group callback calls `agent_parity.vendor.logging_setup.setup_logging(level=WARNING)`
 so the `logger.warning`/`.exception` calls already scattered across
 `pipeline.py`/`persistence.py`/`tasks.py` print with a timestamp and logger
 name instead of Python's unconfigured bare-message default — `run --csv`/`compare`
-also write their CSV output through `agent_parity.shared.atomic_io.ensure_dir()`/
+also write their CSV output through `agent_parity.vendor.atomic_io.ensure_dir()`/
 `atomic_write()` instead of `Path.mkdir()`/`DataFrame.to_csv(path)` directly,
 so a crash mid-write can never leave a truncated CSV or DB file behind.
 The library's `config_loader.ConfigLoader` and `retry.call_with_retry` were **not** inlined — nothing here uses them:
@@ -457,7 +458,7 @@ test exercises real network I/O; `tests/connectors/test_connectors.py` proves th
 RestAdapter wiring (retry config, JSON/text parsing) by monkeypatching the
 underlying `requests.Session.request`, not by hitting a live API.
 `RestAdapter`'s own unit tests (content-type parsing, header merging, retry
-config, the `files=` passthrough) live in `tests/shared/test_rest_adapter.py`.
+config, the `files=` passthrough) live in `tests/vendor/test_rest_adapter.py`.
 
 **`AgentDevice.platform`/`machine_type` are normalized to SentinelOne's wording**
 (most of the historical client base was on S1, so its vocabulary is canonical).
@@ -690,8 +691,8 @@ bug `pick_ad_export_vendor` already exists to avoid elsewhere in this file.
 ## Testing conventions
 
 - Test files mirror `src/agent_parity/`'s subpackage layout, same convention
-  vega-tools uses: `tests/connectors/`, `tests/scheduling/` and `tests/shared/`
-  pair with `connectors/`, `scheduling/` and `shared/` (each with its own `__init__.py`), since
+  vega-tools uses: `tests/connectors/`, `tests/scheduling/` and `tests/vendor/`
+  pair with `connectors/`, `scheduling/` and `vendor/` (each with its own `__init__.py`), since
   those are genuine multi-module subpackages. Everything else stays flat in
   `tests/` because its source module is flat too — don't nest a test file
   one level deeper than its module actually lives.
@@ -713,8 +714,8 @@ bug `pick_ad_export_vendor` already exists to avoid elsewhere in this file.
   `sample_data/`, to prove that path has zero dependency on the demo fixtures),
   `test_agent_csv.py` ↔ `src/agent_parity/agent_csv.py`, `test_cli.py` ↔
   `src/agent_parity/cli.py`, `test_config.py` ↔ `src/agent_parity/config.py`. The
-  inlined `src/agent_parity/shared/` modules (`RestAdapter`, ...) have one test file each in
-  `tests/shared/`, all part of the normal `uv run pytest`.
+  copied `src/agent_parity/vendor/` modules (`RestAdapter`, ...) have one test file each in
+  `tests/vendor/`, all part of the normal `uv run pytest`.
   `tests/connectors/test_connectors.py` covers `AgentConnector`'s own
   inventory-fetching and fixture-deploy-and-run behavior — the generic
   dispatch/polling/registry mechanics are tested in

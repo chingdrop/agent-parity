@@ -6,7 +6,7 @@ writes actually go through atomic_write (no partial file, no temp leftovers).
 import pandas as pd
 import pytest
 
-from agent_parity.shared.tabular_io import TabularIOError, read_structured_file, write_structured_file
+from agent_parity.vendor.tabular_io import TabularIOError, read_structured_file, write_structured_file
 
 
 @pytest.fixture

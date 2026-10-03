@@ -1,3 +1,5 @@
+# Copied from py-shared-tools v1.3.1 (https://github.com/chingdrop/py-shared-tools, commit d54dcd6).
+# This repo owns this copy and does not keep it in sync with upstream.
 """Crash-safe, idempotent local file writes: write-to-temp-then-rename, and
 directory creation that never fails just because the directory already
 exists.

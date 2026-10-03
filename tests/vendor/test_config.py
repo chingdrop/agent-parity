@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent_parity.shared.config import ConfigError, resolve_env_refs
+from agent_parity.vendor.config import ConfigError, resolve_env_refs
 
 
 def test_resolves_set_env_var(monkeypatch):

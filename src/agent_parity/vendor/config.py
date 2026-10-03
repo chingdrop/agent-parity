@@ -1,3 +1,6 @@
+# Copied in part from py-shared-tools v1.3.1 (https://github.com/chingdrop/py-shared-tools, commit d54dcd6):
+# only ConfigError and resolve_env_refs, not the whole module. This repo owns this copy and does not
+# keep it in sync with upstream.
 """``${VAR}`` secret resolution for YAML-based configs.
 
 A committed ``config.yaml`` holds topology/tuning, with every secret value

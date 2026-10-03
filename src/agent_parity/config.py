@@ -7,7 +7,7 @@ e.g. SentinelOne) or ``per_client`` (a distinct credential set per client,
 e.g. Carbon Black), and which vendors each client uses. Secret values in the
 file are never literal — they are ``${VAR}`` references resolved from the
 environment at load time. The ``${VAR}`` resolution rule itself
-(``resolve_env_refs``) lives in ``agent_parity.shared.config``; this module
+(``resolve_env_refs``) lives in ``agent_parity.vendor.config``; this module
 owns the ``AppConfig`` shape and its own section parsing.
 
 The same file also declares a ``storage:`` section (object storage for the
@@ -29,7 +29,7 @@ from pathlib import Path
 
 import yaml
 
-from agent_parity.shared.config import ConfigError, resolve_env_refs
+from agent_parity.vendor.config import ConfigError, resolve_env_refs
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = REPO_ROOT / "config.yaml"

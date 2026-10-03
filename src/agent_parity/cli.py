@@ -43,9 +43,9 @@ from agent_parity.scheduling.celery_app import run_eagerly
 from agent_parity.scheduling.db import get_engine, init_db, session_factory
 from agent_parity.scheduling.history import build_quarterly_report, latest_finished_quarter
 from agent_parity.scheduling.tasks import fail_abandoned_runs, start_client_run
-from agent_parity.shared.atomic_io import atomic_write, ensure_dir
-from agent_parity.shared.logging_setup import setup_logging
-from agent_parity.shared.tabular_io import write_structured_file
+from agent_parity.vendor.atomic_io import atomic_write, ensure_dir
+from agent_parity.vendor.logging_setup import setup_logging
+from agent_parity.vendor.tabular_io import write_structured_file
 
 OUT_DIR = Path("output")
 

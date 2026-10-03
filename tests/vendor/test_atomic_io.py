@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from agent_parity.shared.atomic_io import atomic_write, ensure_dir
+from agent_parity.vendor.atomic_io import atomic_write, ensure_dir
 
 
 def test_ensure_dir_creates_missing_directory(tmp_path):
