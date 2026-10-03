@@ -357,8 +357,10 @@ def _trend_chart(report: QuarterlyReport, accent, server_accent):  # noqa: ANN00
         [p.server_coverage_pct for p in report.trend],
     ]
     chart.categoryAxis.categoryNames = [str(p.quarter) for p in report.trend]
+    chart.categoryAxis.labels.fontName = "Helvetica"
     chart.categoryAxis.labels.fontSize = 8
     chart.valueAxis.valueMin, chart.valueAxis.valueMax, chart.valueAxis.valueStep = 0, 100, 20
+    chart.valueAxis.labels.fontName = "Helvetica"
     chart.valueAxis.labels.fontSize = 8
     chart.valueAxis.labelTextFormat = "%d%%"
     chart.valueAxis.visibleGrid = True
@@ -368,16 +370,18 @@ def _trend_chart(report: QuarterlyReport, accent, server_accent):  # noqa: ANN00
         chart.lines[index].strokeWidth = 2
     # Label each point with its value.
     chart.lineLabelFormat = "%.1f%%"
+    chart.lineLabels.fontName = "Helvetica"
     chart.lineLabels.fontSize = 7
     chart.lineLabels.dy = 6
     drawing.add(chart)
 
     legend = Legend()
     legend.x, legend.y = chart.x + chart.width + 15, chart.y + chart.height - 10
+    legend.fontName = "Helvetica"
     legend.fontSize = 8
     legend.colorNamePairs = [(accent, "All devices"), (server_accent, "Servers")]
     drawing.add(legend)
-    drawing.add(String(0, chart.y + chart.height + 8, "Agent coverage by quarter", fontSize=8))
+    drawing.add(String(0, chart.y + chart.height + 8, "Agent coverage by quarter", fontName="Helvetica", fontSize=8))
     return drawing
 
 

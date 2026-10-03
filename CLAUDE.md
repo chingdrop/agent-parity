@@ -349,7 +349,10 @@ correlates the fixtures once (the final quarter) and derives two earlier quarter
 whole fully-covered devices to `missing_agent` in hash order — servers less than workstations —
 stopping closest to each target, so Acme goes 46.5% → 63.6% → 81.8% with servers ahead every
 quarter. `scripts/gen_sample_quarterly_report.py` seeds a temp DB and writes
-`docs/sample-quarterly-report.pdf` from it.
+`docs/sample-quarterly-report.pdf` from it, plus `docs/sample-quarterly-report.png` (page one, the
+README's "Results" image) rasterized with `pypdfium2` (dev-only). Not `pdftoppm`: poppler asks
+fontconfig for "Helvetica-Bold" by PostScript name and gets the Regular face on macOS, so every
+heading lost its bold. Regenerate both whenever the report's layout changes.
 
 ## Connectors (`src/agent_parity/connectors/`)
 
