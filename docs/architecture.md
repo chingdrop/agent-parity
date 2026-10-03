@@ -74,7 +74,7 @@ Black, one on BitDefender) and raising a clear `ConfigError` if a client has
 neither.
 
 All three connectors share one HTTP transport —
-`agent_parity.shared.rest_adapter` (`RestAdapter`) —
+`agent_parity.vendor.rest_adapter` (`RestAdapter`) —
 instead of a bare `requests.Session`: automatic retries with backoff on
 429/5xx, content-type-aware parsing (JSON responses come back as `dict`,
 text/HTML as `str`, everything else as raw `bytes`), and a single place to
@@ -82,9 +82,10 @@ add auth/proxy config if a vendor ever needs it. `connectors/base.py`'s
 `_request_json()`/`_as_text()` helpers narrow that `dict | str | bytes` result
 for call sites that know which one they expect.
 
-`RestAdapter` and a few small helpers were factored out of a shared
-library and inlined here (`src/agent_parity/shared/`, with their tests in
-`tests/shared/`) so the repo is self-contained. The code only this project used
+`RestAdapter` and a few small helpers were copied from a shared library,
+py-shared-tools (`src/agent_parity/vendor/`, with their tests in
+`tests/vendor/`), so the repo is self-contained. This repo owns those copies
+and doesn't keep them in sync with upstream. The code only this project used
 has since moved into the modules that own it: the vendor-connector base in
 `connectors/base.py`, the SentinelOne RSO mixin in `connectors/sentinelone.py`, the
 storage-backed export in `script_runner.py`, `ObjectStorage` in `storage.py`, and the

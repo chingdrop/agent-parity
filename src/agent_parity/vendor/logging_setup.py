@@ -1,3 +1,5 @@
+# Copied from py-shared-tools v1.3.1 (https://github.com/chingdrop/py-shared-tools, commit d54dcd6).
+# This repo owns this copy and does not keep it in sync with upstream.
 """Idempotent console logging setup for CLI scripts.
 
 ``logging.basicConfig()`` is *supposed* to be a no-op after the first call,

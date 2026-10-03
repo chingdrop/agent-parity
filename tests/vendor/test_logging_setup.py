@@ -9,7 +9,7 @@ so tests never share state with each other or with the real root logger.
 import io
 import logging
 
-from agent_parity.shared.logging_setup import setup_logging
+from agent_parity.vendor.logging_setup import setup_logging
 
 
 def test_attaches_a_stream_handler():

@@ -31,7 +31,7 @@ from datetime import UTC, datetime, timedelta
 import requests
 
 from agent_parity import os_eol
-from agent_parity.shared.atomic_io import atomic_write, ensure_dir
+from agent_parity.vendor.atomic_io import atomic_write, ensure_dir
 
 logger = logging.getLogger(__name__)
 

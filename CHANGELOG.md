@@ -55,7 +55,7 @@ Notes on the record:
 - Source moved to a `src/agent_parity/` layout. Single-module folders were flattened, the scheduling modules were
   grouped into `scheduling/`, and the tests now mirror the source layout.
 - The shared HTTP adapter, object storage and related helpers were inlined from `py-shared-tools` into
-  `agent_parity.shared`, so the repository is self-contained and a fresh clone needs no git dependency.
+  `agent_parity.vendor` (originally `agent_parity.shared`), so the repository is self-contained and a fresh clone needs no git dependency.
 - The README's architecture sections moved to `docs/architecture.md`.
 - The pieces only agent-parity used were moved out of `agent_parity.shared` into the modules that own them: the vendor-connector base into `connectors/base.py`, the SentinelOne remote-script mixin into `connectors/sentinelone.py`, the storage-backed script export into `script_runner.py`, object storage into `storage.py` and the storage config into `config.py`. `agent_parity.shared` keeps the HTTP adapter, atomic writes, logging setup, tabular I/O and the `${VAR}` resolver.
 - CI hardened: least-privilege permissions, actions pinned to full commit SHAs, and lint and type-check split into

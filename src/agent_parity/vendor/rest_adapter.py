@@ -1,3 +1,5 @@
+# Copied from py-shared-tools v1.3.1 (https://github.com/chingdrop/py-shared-tools, commit d54dcd6).
+# This repo owns this copy and does not keep it in sync with upstream.
 """Thin HTTP wrapper shared by every consumer of this package.
 
 A ``requests.Session`` with automatic retries, content-type-aware response

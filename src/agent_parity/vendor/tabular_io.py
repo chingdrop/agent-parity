@@ -1,3 +1,5 @@
+# Copied from py-shared-tools v1.3.1 (https://github.com/chingdrop/py-shared-tools, commit d54dcd6).
+# This repo owns this copy and does not keep it in sync with upstream.
 """Extension-dispatch tabular file I/O: read or write a DataFrame as CSV,
 Excel, JSON, or HTML based on the file's extension, without the caller
 picking the right pandas reader/writer method itself.
@@ -13,7 +15,7 @@ Two changes from the original: this raises :class:`TabularIOError` instead
 of printing and returning ``None``/``False`` (matching every other typed
 exception in this package — ``ConfigError``, ``StorageError``,
 ``ConnectorError``, ...), and text-based formats (csv/txt/json/html) are
-written through :func:`agent_parity.shared.atomic_io.atomic_write` rather than
+written through :func:`agent_parity.vendor.atomic_io.atomic_write` rather than
 pandas' own ``to_csv``/etc. writing directly to the target path — the same
 "a plain ``to_csv(path)`` isn't atomic" reasoning agent-parity's own
 ``_write_csv`` already used. Excel has no equivalent in-memory-string
@@ -32,7 +34,7 @@ from typing import Any
 
 import pandas as pd
 
-from agent_parity.shared.atomic_io import atomic_write
+from agent_parity.vendor.atomic_io import atomic_write
 
 
 class TabularIOError(Exception):

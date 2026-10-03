@@ -214,8 +214,8 @@ up within days.
 
 `uv run pytest` — all offline, no live credentials or external services.
 Test files mirror `src/agent_parity/`'s subpackage layout — `tests/connectors/`,
-`tests/scheduling/` and `tests/shared/` pair with `connectors/`, `scheduling/`
-and `shared/`, matching
+`tests/scheduling/` and `tests/vendor/` pair with `connectors/`, `scheduling/`
+and `vendor/`, matching
 vega-tools' convention — while everything else stays flat since its source
 module does too:
 
@@ -266,7 +266,7 @@ module does too:
   run: every row of the table plus a correct summary, a run after a failed
   run sending exactly its own rows, and a simulated Splunk outage never
   failing the underlying `finalize_run`.
-- **Inlined helpers in isolation** (`tests/shared/`): `RestAdapter`'s
+- **Vendored helpers in isolation** (`tests/vendor/`): `RestAdapter`'s
   content-type-based parsing, retry configuration, header merging, `files=`
   passthrough; `ObjectStorage`'s presigned-URL round trip (against `moto`);
   the storage-backed script-export handoff, the vendor-connector base, the

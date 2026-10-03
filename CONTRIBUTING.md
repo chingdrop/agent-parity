@@ -35,10 +35,10 @@ src/agent_parity/
     script_runner.py   # runs the AD export script through a vendor connector
     splunk_export.py   # Splunk export (one event per row + a run summary)
     scheduling/        # SQLAlchemy schema, persistence, and the Celery scheduled path
-    shared/            # inlined HTTP adapter, object storage and helpers
+    vendor/            # helpers copied from py-shared-tools (HTTP adapter, atomic writes, ...)
     scripts/           # Export-ADDevices.ps1
 tests/
-    mirrors the layout above (tests/connectors/, tests/scheduling/, tests/shared/); see CLAUDE.md's "Testing conventions"
+    mirrors the layout above (tests/connectors/, tests/scheduling/, tests/vendor/); see CLAUDE.md's "Testing conventions"
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the full architecture writeup — why each
