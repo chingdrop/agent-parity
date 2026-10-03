@@ -6,6 +6,16 @@ Correlate an Active Directory computer inventory against an EDR/security agent i
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+## About this project
+
+- **What it does:** correlates an Active Directory computer inventory with EDR agent inventories (SentinelOne, Carbon Black, BitDefender) to find devices with missing, orphaned or stale agent coverage, ranks the gaps by server priority and OS end of life, keeps a run history, and writes a quarterly PDF report for each client.
+- **Context:** I built the original at a managed security services provider, to track agent coverage across client organizations and produce the quarterly coverage report sent to each client. This repository is a from-scratch rebuild, published as a portfolio project.
+- **Shape:** a standalone library and CLI with no web framework. It owns its scheduling (Celery) and persistence (SQLite) and models a real MSSP topology: many clients in one `config.yaml`, each with its own AD domains and vendors. See [docs/architecture.md](docs/architecture.md).
+- **Data:** all data is synthetic: two fictional clients, Acme Corp and Globex, under `sample_data/`. Vendor API calls are shaped from public API documentation, and everything runs against the fixtures unless live credentials are configured.
+- **Boundary:** no proprietary code, client data or credentials appear in the code or in the commit history.
+- **Try it:** one command, no credentials or server, in [Try it in 60 seconds](#try-it-in-60-seconds).
+- **More:** [design decisions](docs/decisions/README.md), the [threat model](docs/threat-model.md), and [limitations and roadmap](docs/limitations-and-roadmap.md).
+
 ## What it answers
 
 Three questions a SOC or compliance team actually cares about:
@@ -35,39 +45,17 @@ Real output:
 
 Of the devices AD knows about, 36 are covered (81.8%); 5 have no agent, 3 have gone quiet, and 7 agents belong to no AD device. The per-device table is in `output/acme.csv` (that's what `--csv` adds), and the run is also recorded in a local SQLite history (`agent_parity.db`). Add `--all` to run every client (Acme and Globex).
 
-## See it
+![agent-parity demo: one run against the fixtures, printing the per-client coverage summary](docs/demo.gif)
 
-- [Sample quarterly report (PDF)](docs/sample-quarterly-report.pdf): the per-client report the original tool's data fed every quarter — coverage climbing from 46.5% to 81.8% over two quarters, servers called out, the gaps to act on, and devices on an end-of-life OS. Generated from a demo history built on the fixtures.
-- [Sample report](docs/sample-report.md): the coverage, high-value-asset and OS end-of-life views of a single run, generated from the fixtures.
+## Results
 
-![agent-parity demo](docs/demo.gif)
+- **Demo run** (synthetic fixtures): Acme Corp has 51 rows at 81.8% agent coverage (36 covered, 5 missing an agent, 3 stale, 7 orphaned), with servers at 87.5% and one server, ACME-SQL02, missing an agent. Globex, split across two AD domains, has 40 rows at 73.0% coverage, with servers at 75.0%.
+- **Demo quarterly history** (`scripts/seed_history.py`, deterministic): Acme's coverage climbs 46.5% → 63.6% → 81.8% over three quarters, with servers ahead every quarter at 62.5% → 87.5% → 87.5%.
+- **Original deployment:** agent coverage (SentinelOne agents divided by computers in AD) rose from 47% to 80%, a gain of 33 percentage points, across roughly 6,000 endpoints over about six months. The quarterly report, previously assembled by hand, was automated, through Splunk dashboards fed by the tool's per-run export. This repo includes that [export](docs/architecture.md#splunk-export) and rebuilds the report itself as a PDF.
 
-## Original deployment
+![First page of Acme Corp's quarterly report: headline coverage of 81.8%, up 18.2 points on last quarter; a chart of coverage by quarter for all devices and for servers; the one server missing an agent; and the start of the gap lists](docs/sample-quarterly-report.png)
 
-This is a from-scratch rebuild of a tool I originally built professionally, using entirely synthetic data. No proprietary code, client data, or credentials are involved; vendor API interactions are shaped from public API documentation, and **everything runs against local fixtures by default** — no live credentials required.
-
-In the original deployment, agent coverage (SentinelOne agents divided by computers in AD) rose from 47% to 80%, a gain of 33 percentage points, across roughly 6,000 endpoints over about six months.
-
-I also automated the quarterly report, which had been assembled by hand: gathering the data, running the calculations and building the graphs. Splunk dashboards and reports replaced that. This repo includes the opt-in [Splunk export](docs/architecture.md#splunk-export) that feeds Splunk, but not the dashboards themselves.
-
-## About this project
-
-The original tool existed to feed a quarterly report: show that agent
-coverage was trending upward over time, and flag high-value assets (Domain
-Controllers, file/storage servers) specifically, so gaps there got
-prioritized over a missing agent on a random workstation. A third axis works
-the same way: a device running an OS that's already end-of-life (or soon
-will be) is a risk finding independent of whether an agent is installed on
-it. All three are first-class in this rebuild, not just implied by the raw
-data — see [High-value assets](docs/architecture.md#high-value-assets-servers-as-the-prioritization-signal)
-and [OS end-of-life](docs/architecture.md#os-end-of-life-a-third-prioritization-axis).
-
-This package is a standalone library and CLI — no Django, no web framework —
-but it does own real scheduling (Celery) and persistence (SQLAlchemy/SQLite)
-directly; see [Scheduling & persistence](docs/architecture.md#scheduling--persistence). It
-models a real MSSP-style topology: multiple client organizations in one
-`config.yaml`, each with its own AD domain(s) and enabled vendor(s) — see
-[Credentials](docs/architecture.md#credentials-configyaml--env).
+*The first page of Acme Corp's quarterly report, rendered from the demo history (`uv run python scripts/gen_sample_quarterly_report.py`). The full three-page report, with every gap and the OS end-of-life list, is [docs/sample-quarterly-report.pdf](docs/sample-quarterly-report.pdf); a single run's views are in [docs/sample-report.md](docs/sample-report.md).*
 
 ## Quick start
 
