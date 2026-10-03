@@ -8,6 +8,7 @@ version = "1.2.0"
 description = "Device coverage reconciliation: correlate an AD computer inventory against EDR agent inventories (SentinelOne, Carbon Black, BitDefender) to find missing, orphaned, and stale agent coverage."
 readme = "README.md"
 license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "pandas>=2.2",
